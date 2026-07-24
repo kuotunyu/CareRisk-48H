@@ -1,0 +1,11 @@
+mode: full
+model: auto
+data_dir: data/raw
+output_dir: artifacts
+split_seed: 2026
+model_seeds: [17, 42, 2026]
+bootstrap_samples: 2000
+cpu_threads: 2
+max_patients: null
+epochs: 50
+batch_size: 64

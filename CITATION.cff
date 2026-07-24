@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use CareRisk 48H, cite this software and the PhysioNet Challenge 2012 sources."
+title: "CareRisk 48H"
+type: software
+version: 0.1.0
+date-released: 2026-07-19
+authors:
+  - name: "CareRisk 48H contributors"
+license: Apache-2.0
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Silva
+      given-names: Ikaro
+    - family-names: Moody
+      given-names: George
+    - family-names: Scott
+      given-names: Daniel J.
+    - family-names: Celi
+      given-names: Leo Anthony
+    - family-names: Mark
+      given-names: Roger G.
+  title: "Predicting in-hospital mortality of ICU patients: The PhysioNet/Computing in Cardiology Challenge 2012"
+  journal: "Computing in Cardiology"
+  year: 2012
+  volume: 39
+  start: 245
+  end: 248

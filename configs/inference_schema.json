@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CareRisk 48H inference payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["static", "measurements"],
+  "properties": {
+    "static": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Age", "Gender", "Height", "ICUType", "Weight"],
+      "properties": {
+        "Age": {"type": ["number", "null"], "description": "Years"},
+        "Gender": {"enum": [0, 1, -1, null]},
+        "Height": {"type": ["number", "null"], "description": "Centimetres"},
+        "ICUType": {"enum": [1, 2, 3, 4]},
+        "Weight": {"type": ["number", "null"], "description": "Kilograms"}
+      }
+    },
+    "measurements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["time", "parameter", "value"],
+        "properties": {
+          "time": {"type": "string", "pattern": "^(?:[0-3][0-9]|4[0-7]):[0-5][0-9]$|^48:00$"},
+          "parameter": {"type": "string", "description": "One of the documented 37 dynamic variables"},
+          "value": {"type": "number"}
+        }
+      }
+    }
+  }
+}

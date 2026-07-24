@@ -1,0 +1,14 @@
+CareRisk 48H
+Copyright 2026 CareRisk 48H contributors
+
+This repository's original source code is licensed under Apache-2.0.
+
+The PhysioNet/Computing in Cardiology Challenge 2012 dataset is not part of
+the Apache-2.0 Work and is not redistributed here. It is provided separately
+under the Open Data Commons Attribution License v1.0. Dataset users and users
+of data-derived artifacts must preserve the attribution and license notice at:
+https://physionet.org/content/challenge-2012/view-license/1.0.0/
+
+Please cite PhysioNet and Silva et al., "Predicting in-hospital mortality of
+ICU patients: The PhysioNet/Computing in Cardiology Challenge 2012,"
+Computing in Cardiology 39 (2012), 245-248.

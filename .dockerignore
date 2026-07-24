@@ -1,0 +1,17 @@
+.env
+.env.*
+.git
+.github
+.venv
+__pycache__
+*.pyc
+artifacts
+build
+checkpoints
+data
+dist
+models
+notebooks
+reports/generated
+results
+tests

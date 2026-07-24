@@ -1,0 +1,35 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Data and generated artifacts
+data/raw/
+data/processed/
+artifacts/
+checkpoints/
+models/
+results/
+reports/generated/
+
+# Notebook and OS state
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

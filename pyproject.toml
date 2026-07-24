@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carerisk48h"
+version = "0.1.0"
+description = "Leakage-safe and calibrated mortality-risk research for irregular ICU time series."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "CareRisk 48H contributors" }]
+dependencies = [
+  "joblib>=1.3,<2",
+  "matplotlib>=3.7,<4",
+  "numpy>=1.24,<3",
+  "pandas>=2.0,<3",
+  "psutil>=5.9,<8",
+  "PyYAML>=6,<7",
+  "scikit-learn>=1.3,<2",
+  "scipy>=1.10,<2",
+  "seaborn>=0.12,<1",
+]
+
+[project.optional-dependencies]
+tabular = ["lightgbm>=4.0,<5", "shap>=0.44,<1"]
+deep = ["torch>=2.1,<3"]
+app = ["gradio>=4.0,<7", "plotly>=5.18,<7"]
+dev = [
+  "mypy>=1.8,<2",
+  "pandas-stubs>=2.0",
+  "pre-commit>=3.6,<5",
+  "pytest>=7.4,<9",
+  "pytest-cov>=4.1,<7",
+  "ruff>=0.3,<1",
+  "types-PyYAML>=6",
+]
+all = [
+  "carerisk48h[tabular,deep,app,dev]",
+]
+
+[project.scripts]
+carerisk-train = "carerisk48h.cli:train_main"
+carerisk-evaluate = "carerisk48h.cli:evaluate_main"
+carerisk-calibrate = "carerisk48h.cli:calibrate_main"
+carerisk-predict = "carerisk48h.cli:predict_main"
+carerisk-benchmark = "carerisk48h.cli:benchmark_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+carerisk48h = ["py.typed"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+  "integration: requires explicit network access or external data",
+  "slow: longer CPU-only test",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["carerisk48h"]
+mypy_path = "src"
+strict = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+disable_error_code = ["type-arg", "no-any-return"]
+exclude = ["tests", "notebooks"]
+
+[[tool.mypy.overrides]]
+module = ["carerisk48h.models.deep", "carerisk48h.deep_training"]
+ignore_errors = true

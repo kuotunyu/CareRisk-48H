@@ -1,0 +1,4 @@
+interface:
+  display_name: "CareRisk 48H Workflow"
+  short_description: "Resume and execute CareRisk 48H safely"
+  default_prompt: "Use $carerisk-48h to resume the next CareRisk 48H milestone safely and update the project handoff."

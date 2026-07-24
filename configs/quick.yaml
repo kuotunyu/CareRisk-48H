@@ -1,0 +1,11 @@
+mode: quick
+model: logistic
+data_dir: data/raw
+output_dir: artifacts
+split_seed: 2026
+model_seeds: [17, 42, 2026]
+bootstrap_samples: 200
+cpu_threads: 2
+max_patients: 500
+epochs: 3
+batch_size: 64
