@@ -17,11 +17,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Download only input records (recommended for Set B before final evaluation).",
     )
-    parser.add_argument(
-        "--confirm-final",
-        action="store_true",
-        help="Permit Outcomes-b only after the separate freeze/evaluation gate is satisfied.",
-    )
     parser.add_argument("--verify-only", type=Path, help="Verify an existing manifest and exit.")
     return parser
 
@@ -36,7 +31,6 @@ def main() -> None:
         args.raw_dir,
         dataset_set=args.dataset_set,
         include_outcomes=not args.without_outcomes,
-        confirm_final=args.confirm_final,
     )
     print(f"Downloaded and verified: {manifest}")
 

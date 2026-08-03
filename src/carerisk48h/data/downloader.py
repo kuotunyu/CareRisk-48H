@@ -151,15 +151,17 @@ def download_physionet(
 ) -> Path:
     """Download one challenge set and create a checksum manifest.
 
-    Set A is the development default. Accessing Outcomes-b requires an explicit
-    final-evaluation confirmation and is intentionally unavailable through normal calls.
+    Set A is the development default. ``confirm_final`` is retained for API
+    compatibility but never authorizes Outcomes-b here; only the audited final
+    evaluation gate may download or read that file.
     """
     normalized = dataset_set.lower()
     if normalized not in {"a", "b"}:
         raise ValueError("dataset_set must be 'a' or 'b'; Set C is excluded by protocol")
-    if normalized == "b" and include_outcomes and not confirm_final:
+    if normalized == "b" and include_outcomes:
         raise PermissionError(
-            "Outcomes-b is gated until model freeze; pass confirm_final only via final evaluation"
+            "Outcomes-b is gated behind the audited final evaluation and cannot be "
+            "downloaded through the general downloader"
         )
 
     root = Path(raw_dir)
