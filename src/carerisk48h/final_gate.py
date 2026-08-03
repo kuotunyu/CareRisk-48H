@@ -11,7 +11,8 @@ from typing import Any
 import pandas as pd
 
 from carerisk48h.artifacts import write_json_atomic
-from carerisk48h.data.downloader import sha256_file
+from carerisk48h.constants import PHYSIONET_BASE_URL
+from carerisk48h.data.downloader import download_file, sha256_file
 from carerisk48h.data.parser import load_outcomes
 from carerisk48h.freezing import validate_freeze_manifest
 
@@ -48,6 +49,7 @@ def load_set_b_outcomes_once(
     freeze_manifest_path: str | Path,
     ledger_path: str | Path,
     confirm_final: bool,
+    download_if_missing: bool = False,
 ) -> pd.DataFrame:
     """Read Outcomes-b at most once successfully, with an append-only audit trail."""
     outcome_file = Path(outcomes_path)
@@ -63,6 +65,9 @@ def load_set_b_outcomes_once(
     try:
         ledger = _load_ledger(ledger_file)
         successes = [item for item in ledger["attempts"] if item.get("status") == "success"]
+        unresolved = [
+            item for item in ledger["attempts"] if item.get("status") in {"failed", "in_progress"}
+        ]
         final_lock = ledger_file.with_suffix(".final-lock.json")
         if final_lock.exists() and not successes:
             raise PermissionError("final lock exists without a matching successful ledger entry")
@@ -70,6 +75,10 @@ def load_set_b_outcomes_once(
             if not final_lock.exists():
                 _write_final_lock(ledger_file, ledger, successes[0])
             raise PermissionError("Set B outcomes have already been accessed successfully")
+        if unresolved:
+            raise PermissionError(
+                "previous failed or in-progress Set B attempt requires manual audit"
+            )
         attempt: dict[str, Any] = {
             "attempted_at_utc": _utc_now(),
             "status": "denied",
@@ -96,7 +105,13 @@ def load_set_b_outcomes_once(
             attempt["reason"] = f"freeze validation failed: {type(exc).__name__}"
             write_json_atomic(ledger_file, ledger)
             raise
+        attempt.update({"status": "in_progress", "started_at_utc": _utc_now()})
+        write_json_atomic(ledger_file, ledger)
         try:
+            if not outcome_file.is_file():
+                if not download_if_missing:
+                    raise FileNotFoundError(outcome_file)
+                download_file(f"{PHYSIONET_BASE_URL}/Outcomes-b.txt", outcome_file)
             outcomes = load_outcomes(outcome_file)
         except Exception as exc:
             attempt["status"] = "failed"
