@@ -250,12 +250,13 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | M4 clean Colab CPU retry | source `77f8b1ac2286f023c4b005330a71b9d6e28396c3` environment gate 與手動 captured `pip check` | 失敗原因已精確定位：`ipython 7.34.0 requires jedi, which is not installed`；先前 pandas/numba 衝突已消失；未開始 Set A 準備、未接觸 Set B |
 | 2026-08-04 | M4 jedi TDD/verification | targeted red→green、full pytest、Ruff、Mypy、local `pip check`、pre-commit all-files | RED：缺少 `jedi` pin；GREEN：3 targeted tests passed；完整驗證 74 tests passed、1 Torch module skipped per protocol，其餘 gates 全通過 |
 | 2026-08-04 | build after jedi lock | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse` | 通過；wheel 68,999 bytes、SHA-256 `2e07fa5128197f465c37bdc3d3da2b2daaefe9616f8176ec1840d8edae1819a3` |
+| 2026-08-04 | M4 jedi handoff gate | `create_source_bundle(...)`、`git bundle verify`、clean clone 與 exact pin assertions | 通過；source `6a8de02d359fd942b3386fd835799833e969aaff` bundle 128,537 bytes、SHA-256 `b7cebdb2...b3713`；clone 內 `jedi==0.19.2`、pandas/numba pins 與 notebook 均驗證 |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
 - **完成內容：** notebook 已固定 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與 checksummed result ZIP；hosted-runtime lock 已依兩次真實 Colab evidence 固定 pandas、numba、jedi，並保留嚴格 `pip check`。notebook 名稱為 `CareRisk48H_Deep_Experiments_Colab.ipynb`；schema-v2 freeze/final lock 維持不變。
-- **本機驗證：** jedi dependency regression 已完成 red→green；74 tests passed、1 Torch module skipped per protocol；Ruff、Mypy 34 source files、pip check、pre-commit all-files 與 wheel build 均通過。最終 bundle clean-clone gate 待本回合重建。
+- **本機驗證：** jedi dependency regression 已完成 red→green；74 tests passed、1 Torch module skipped per protocol；Ruff、Mypy 34 source files、pip check、pre-commit all-files、wheel build 與 bundle clean-clone/exact-pin gate 均通過。
 - **Commits：** `b171b90` include model source；`172f1bc` harden Colab handoff；`c4b2c18` formatting；`ec35454` harden freeze/final gate；`00c4ce0` readiness handoff；`67a17f8` Unicode-safe Git bundle；本段文件更新另見最新 commit。
 - **尚未進行：** jedi 修正版 Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
 - **下一步：** 使用者以本回合最終 bundle/receipt/notebook 取代 Drive 舊檔，開全新 CPU runtime 重跑 prepare；通過後依 L4 quick→L4 full 執行，把 full ZIP 與 `.sha256` 帶回本 task。
