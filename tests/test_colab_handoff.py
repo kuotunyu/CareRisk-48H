@@ -107,9 +107,7 @@ def _write_run(root: Path, family: str, *, source_sha: str) -> Path:
     config_hash = stable_hash(config)
     split_hash = "a" * 64
     data_hash = "b" * 64
-    checkpoint_hashes = {
-        f"{family}_seed_{seed}.pt": "" for seed in SEEDS
-    }
+    checkpoint_hashes = {f"{family}_seed_{seed}.pt": "" for seed in SEEDS}
     resume = [
         {
             "seed": seed,

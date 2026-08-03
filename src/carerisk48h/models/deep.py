@@ -35,9 +35,7 @@ class GRUD(nn.Module):
         for hour in range(values.shape[1]):
             current_mask = mask[:, hour]
             current_delta = delta[:, hour]
-            gamma_x = torch.exp(
-                -F.relu(current_delta * self.decay_x_weight + self.decay_x_bias)
-            )
+            gamma_x = torch.exp(-F.relu(current_delta * self.decay_x_weight + self.decay_x_bias))
             gamma_h = torch.exp(-F.relu(self.delta_to_hidden(current_delta)))
             hidden = gamma_h * hidden
             decayed_value = gamma_x * last_value + (1.0 - gamma_x) * self.feature_mean

@@ -326,9 +326,7 @@ def train_deep_family(
                 "resume_fingerprint": fingerprint,
             }
         )
-        seed_timings.append(
-            {"seed": seed, "elapsed_seconds": time.perf_counter() - seed_started}
-        )
+        seed_timings.append({"seed": seed, "elapsed_seconds": time.perf_counter() - seed_started})
 
     ensemble_logits = np.mean(np.stack(seed_logits), axis=0)
     ensemble_probabilities = 1.0 / (1.0 + np.exp(-ensemble_logits))

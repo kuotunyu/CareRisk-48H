@@ -31,9 +31,7 @@ def _resolve(root: Path, value: str) -> Path:
     return path if path.is_absolute() else (root / path).resolve()
 
 
-def canonical_config_payload(
-    config: RunConfig, *, repo_root: str | Path
-) -> dict[str, Any]:
+def canonical_config_payload(config: RunConfig, *, repo_root: str | Path) -> dict[str, Any]:
     """Return machine-independent config metadata with repository-relative paths."""
     root = Path(repo_root).resolve()
     payload = asdict(config)

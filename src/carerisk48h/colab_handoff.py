@@ -39,9 +39,7 @@ def _contains_sensitive_tracked_path(paths: list[str]) -> bool:
     return False
 
 
-def create_source_bundle(
-    repo_root: str | Path, output_dir: str | Path
-) -> tuple[Path, Path]:
+def create_source_bundle(repo_root: str | Path, output_dir: str | Path) -> tuple[Path, Path]:
     """Create a clean, cloneable Git bundle plus a SHA-256 provenance receipt."""
     root = Path(repo_root).resolve()
     if _git(root, "status", "--porcelain"):
