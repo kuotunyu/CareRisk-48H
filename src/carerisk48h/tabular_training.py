@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,7 +17,7 @@ from carerisk48h.artifacts import (
     utc_run_id,
     write_json_atomic,
 )
-from carerisk48h.config import RunConfig
+from carerisk48h.config import RunConfig, canonical_config_payload
 from carerisk48h.data.downloader import sha256_file
 from carerisk48h.data.parser import ParsedStay
 from carerisk48h.data.split import validate_split_manifest
@@ -71,6 +70,7 @@ def train_tabular_comparison(
     """Train all tabular candidates and write auditable development artifacts."""
     expected_ids = {stay.record_id for stay in stays}
     validate_split_manifest(split_manifest, expected_ids=expected_ids)
+    config_payload = canonical_config_payload(config, repo_root=repo_root)
     base_frame = build_feature_frame(stays, include_slope=False)
     slope_frame = build_feature_frame(stays, include_slope=True)
     base = _join_features(base_frame, outcomes, split_manifest)
@@ -201,11 +201,8 @@ def train_tabular_comparison(
         },
         "shap": shap_artifacts,
         "seeds": {"split": config.split_seed, "models": list(config.model_seeds)},
-        "config": {
-            key: str(value) if isinstance(value, Path) else value
-            for key, value in asdict(config).items()
-        },
-        "config_hash": stable_hash(config),
+        "config": config_payload,
+        "config_hash": stable_hash(config_payload),
         "data_manifest_hash": data_manifest_hash,
         "split_hash": stable_hash(split_manifest.to_dict(orient="records")),
         "git": git_state(repo_root),

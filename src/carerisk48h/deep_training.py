@@ -6,7 +6,7 @@ import copy
 import math
 import os
 import random
-from dataclasses import asdict
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,13 +23,14 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from carerisk48h.artifacts import (
+    deep_resume_fingerprint,
     environment_versions,
     git_state,
     stable_hash,
     utc_run_id,
     write_json_atomic,
 )
-from carerisk48h.config import RunConfig
+from carerisk48h.config import RunConfig, canonical_config_payload
 from carerisk48h.data.downloader import sha256_file
 from carerisk48h.data.parser import ParsedStay
 from carerisk48h.data.split import validate_split_manifest
@@ -137,6 +138,9 @@ def train_deep_family(
     """Train a three-seed deep ensemble without accessing calibration or Set B."""
     expected_ids = {stay.record_id for stay in stays}
     validate_split_manifest(split_manifest, expected_ids=expected_ids)
+    run_started = time.perf_counter()
+    split_hash = stable_hash(split_manifest.to_dict(orient="records"))
+    source_git = git_state(repo_root)
     split_lookup = split_manifest.set_index("RecordID")["split"].to_dict()
     outcome_lookup = outcomes.set_index("RecordID")["label"].to_dict()
     if set(outcome_lookup) != expected_ids:
@@ -153,6 +157,8 @@ def train_deep_family(
         [outcome_lookup[stay.record_id] for stay in validation_stays], dtype=np.int8
     )
     device = resolve_device(device_name)
+    config_payload = canonical_config_payload(config, repo_root=repo_root)
+    config_hash = stable_hash(config_payload)
     checkpoint_path = Path(checkpoint_dir)
     run_dir = config.output_dir / utc_run_id(family, config.mode)
     model_dir = run_dir / "models"
@@ -185,9 +191,13 @@ def train_deep_family(
     seed_logits: list[np.ndarray] = []
     seed_metrics: list[dict[str, Any]] = []
     model_paths: list[Path] = []
+    checkpoint_hashes: dict[str, str] = {}
+    resume_evidence: list[dict[str, Any]] = []
+    seed_timings: list[dict[str, Any]] = []
     parameter_count: int | None = None
 
     for seed in config.model_seeds:
+        seed_started = time.perf_counter()
         _set_seed(seed)
         model = build_deep_model(family).to(device)
         parameter_count = sum(parameter.numel() for parameter in model.parameters())
@@ -197,10 +207,20 @@ def train_deep_family(
         best_auprc = -math.inf
         best_state: dict[str, Tensor] | None = None
         stale_epochs = 0
-        if resume and checkpoint.exists():
+        epochs_executed = 0
+        checkpoint_found = bool(resume and checkpoint.exists())
+        fingerprint = deep_resume_fingerprint(
+            config_hash=config_hash,
+            data_manifest_hash=data_manifest_hash,
+            split_hash=split_hash,
+            source_git_sha=source_git["commit"],
+            family=family,
+            seed=seed,
+        )
+        if checkpoint_found:
             saved = torch.load(checkpoint, map_location=device, weights_only=False)
-            if saved.get("config_hash") != stable_hash(config):
-                raise ValueError(f"checkpoint config mismatch: {checkpoint}")
+            if saved.get("resume_fingerprint") != fingerprint:
+                raise ValueError(f"checkpoint provenance mismatch: {checkpoint}")
             model.load_state_dict(saved["model_state"])
             optimizer.load_state_dict(saved["optimizer_state"])
             start_epoch = int(saved["epoch"]) + 1
@@ -209,6 +229,9 @@ def train_deep_family(
             stale_epochs = int(saved["stale_epochs"])
 
         for epoch in range(start_epoch, config.epochs):
+            if stale_epochs >= patience:
+                break
+            epochs_executed += 1
             model.train()
             total_loss = 0.0
             total_items = 0
@@ -256,7 +279,11 @@ def train_deep_family(
                     "best_model_state": best_state,
                     "best_auprc": best_auprc,
                     "stale_epochs": stale_epochs,
-                    "config_hash": stable_hash(config),
+                    "config_hash": config_hash,
+                    "resume_fingerprint": fingerprint,
+                    "data_manifest_hash": data_manifest_hash,
+                    "split_hash": split_hash,
+                    "source_git_sha": source_git["commit"],
                 },
                 checkpoint,
             )
@@ -284,6 +311,24 @@ def train_deep_family(
             destination,
         )
         model_paths.append(destination)
+        checkpoint_hashes[checkpoint.name] = sha256_file(checkpoint)
+        resume_evidence.append(
+            {
+                "seed": seed,
+                "resume_requested": resume,
+                "checkpoint_found": checkpoint_found,
+                "resumed": checkpoint_found,
+                "start_epoch": start_epoch,
+                "epochs_executed": epochs_executed,
+                "completed_epochs": start_epoch + epochs_executed,
+                "early_stopping_reached": stale_epochs >= patience,
+                "checkpoint_file": checkpoint.name,
+                "resume_fingerprint": fingerprint,
+            }
+        )
+        seed_timings.append(
+            {"seed": seed, "elapsed_seconds": time.perf_counter() - seed_started}
+        )
 
     ensemble_logits = np.mean(np.stack(seed_logits), axis=0)
     ensemble_probabilities = 1.0 / (1.0 + np.exp(-ensemble_logits))
@@ -323,17 +368,20 @@ def train_deep_family(
         "seed_metrics": seed_metrics,
         "ensemble_metrics": ensemble_metrics,
         "seeds": {"split": config.split_seed, "models": list(config.model_seeds)},
-        "config": {
-            key: str(value) if isinstance(value, Path) else value
-            for key, value in asdict(config).items()
-        },
-        "config_hash": stable_hash(config),
+        "config": config_payload,
+        "config_hash": config_hash,
         "data_manifest_hash": data_manifest_hash,
-        "split_hash": stable_hash(split_manifest.to_dict(orient="records")),
+        "split_hash": split_hash,
         "preprocessor_fit_ids_hash": stable_hash(sorted(processor.fit_record_ids.tolist())),
-        "git": git_state(repo_root),
+        "git": source_git,
         "environment": environment_versions(("torch",)),
         "artifact_hashes": artifact_hashes,
+        "checkpoint_hashes": checkpoint_hashes,
+        "resume": resume_evidence,
+        "timing": {
+            "total_seconds": time.perf_counter() - run_started,
+            "per_seed": seed_timings,
+        },
         "notes": [
             "Validation metrics are uncalibrated development evidence.",
             "Full training is intended for Colab CPU/T4, not the local RTX 4090.",

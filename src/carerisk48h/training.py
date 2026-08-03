@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,7 +17,7 @@ from carerisk48h.artifacts import (
     utc_run_id,
     write_json_atomic,
 )
-from carerisk48h.config import RunConfig
+from carerisk48h.config import RunConfig, canonical_config_payload
 from carerisk48h.data.parser import ParsedStay
 from carerisk48h.data.split import make_split_manifest
 from carerisk48h.features.tabular import build_feature_frame
@@ -35,6 +34,7 @@ def train_logistic(
     data_manifest_hash: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Train the vertical-slice logistic model and serialize a smoke/full run."""
+    config_payload = canonical_config_payload(config, repo_root=repo_root)
     feature_frame = build_feature_frame(stays, include_slope=False)
     cohort = feature_frame.merge(outcomes, on="RecordID", how="inner", validate="one_to_one")
     if len(cohort) != len(feature_frame):
@@ -87,11 +87,8 @@ def train_logistic(
             "split": config.split_seed,
             "models": list(config.model_seeds),
         },
-        "config": {
-            key: str(value) if isinstance(value, Path) else value
-            for key, value in asdict(config).items()
-        },
-        "config_hash": stable_hash(config),
+        "config": config_payload,
+        "config_hash": stable_hash(config_payload),
         "data_manifest_hash": data_manifest_hash,
         "split_hash": stable_hash(split_manifest.to_dict(orient="records")),
         "git": git_state(repo_root),

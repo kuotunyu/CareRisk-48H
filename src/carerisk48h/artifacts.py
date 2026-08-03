@@ -25,6 +25,28 @@ def stable_hash(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def deep_resume_fingerprint(
+    *,
+    config_hash: str,
+    data_manifest_hash: str | None,
+    split_hash: str,
+    source_git_sha: str | None,
+    family: str,
+    seed: int,
+) -> str:
+    """Bind a deep checkpoint to every frozen training input and its source revision."""
+    return stable_hash(
+        {
+            "config_hash": config_hash,
+            "data_manifest_hash": data_manifest_hash,
+            "split_hash": split_hash,
+            "source_git_sha": source_git_sha,
+            "family": family,
+            "seed": seed,
+        }
+    )
+
+
 def git_state(repo_root: str | Path) -> dict[str, Any]:
     root = Path(repo_root)
     try:
