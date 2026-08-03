@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -13,3 +14,17 @@ def test_colab_notebook_has_safety_and_resume_contract() -> None:
     assert "--resume" in source
     assert "--synthetic" in source
     assert "Set B" in source
+
+
+def test_clean_git_source_contains_every_package_module() -> None:
+    package_files = sorted(Path("src/carerisk48h").rglob("*.py"))
+    tracked = set(
+        subprocess.run(
+            ["git", "ls-files", "--", "src/carerisk48h"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    )
+    missing = [path.as_posix() for path in package_files if path.as_posix() not in tracked]
+    assert missing == []
