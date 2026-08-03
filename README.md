@@ -59,7 +59,7 @@ python train.py --config configs/quick.yaml --synthetic
 python scripts/train_tabular.py --config configs/full.yaml
 ```
 
-正式 deep training 使用 [notebooks/01_train_colab.ipynb](notebooks/01_train_colab.ipynb)。Quick mode 只是 synthetic smoke；full mode 才產生候選。資料下載與 EDA 請使用 Colab CPU，資料到 Drive 後再切 T4，避免浪費 GPU runtime。本機流程預設 CPU，不需要 RTX 4090。
+正式 deep training 使用 [notebooks/CareRisk48H_Deep_Experiments_Colab.ipynb](notebooks/CareRisk48H_Deep_Experiments_Colab.ipynb)。Quick mode 只是 synthetic smoke；full mode 才產生候選。資料下載與 EDA 請使用 Colab CPU，資料到 Drive 後再切 L4，避免浪費 GPU runtime。本機流程預設 CPU，不需要 RTX 4090。
 
 ## 結果與校準
 

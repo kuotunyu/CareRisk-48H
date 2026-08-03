@@ -8,10 +8,10 @@
 | --- | --- |
 | 當前 milestone | M4 — clean Colab runtime quick/full 驗證；通過後進入 M5 final candidate refit/freeze |
 | 狀態 | M0–M3 完成；M4 local readiness/immutable handoff 已驗證、待 Colab；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
-| 本回合範圍 | 完成所有不需 Colab 或真實 Set B outcome 的 readiness、provenance、安全閘與本機驗證 |
-| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；最新 full tabular development run具乾淨 Git provenance |
+| 本回合範圍 | 修正首次 Colab CPU prepare 暴露的 hosted-runtime dependency conflict，重建 immutable handoff；不接觸 Set B |
+| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；最新 full tabular development run具乾淨 Git provenance；Colab notebook 已改為專案辨識名稱 |
 | 尚待完成 | Colab quick/full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
-| 下一個最小動作 | 將 checksummed source bundle/receipt 放到 Drive，依 notebook 先跑 Colab CPU `prepare`，再在 L4 跑 `quick` 與 `full` |
+| 下一個最小動作 | 以新 checksummed source bundle/receipt 與 notebook 開啟全新 Colab CPU runtime 重跑 `prepare`；通過後再在 L4 跑 `quick` 與 `full` |
 | 結果狀態 | 正式結果待填；目前產物僅為 development/smoke evidence，不得更新公開結果表 |
 
 ## 目標與安全邊界
@@ -64,7 +64,7 @@ CareRisk 48H 使用 PhysioNet/Computing in Cardiology Challenge 2012 的 ICU 入
 - [x] TCN 使用 normalized value、mask、`log1p(delta)` 與小型 dilated residual blocks（code 完成）。
 - [x] 兩模型各控制在約 250k parameters 內，使用 weighted BCE、early stopping、gradient clipping（runtime test 待 Colab torch）。
 - [x] 完成 quick/full mode、Drive checkpoint、resume、config hash 與固定環境 lock。
-- [ ] `notebooks/01_train_colab.ipynb` 可由空 runtime 一鍵執行。
+- [ ] `notebooks/CareRisk48H_Deep_Experiments_Colab.ipynb` 可由空 runtime 一鍵執行。
 
 ### M5 — 校準、凍結與一次性 Set B 評估
 
@@ -206,6 +206,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-03 | Colab source 改採 cloneable Git bundle + SHA-256 receipt | Drive 只保存 immutable source handoff 與可恢復 data/checkpoints/artifacts；避免 notebook autosave 或漏追蹤 source 破壞 Git provenance |
 | 2026-08-03 | Config hash 排除 checkout 絕對路徑，resume fingerprint 綁定 config/data/split/source/family/seed | 讓本機與 Colab 的研究設定 hash 一致，並拒絕錯誤資料、split、source 或 family 的 checkpoint |
 | 2026-08-03 | Freeze manifest 升級 schema v2，Set B 成功後另寫 persistent final lock | Set B outcome 載入前重算 frozen artifacts，強制完整 provenance/Set A dry-run evidence，並可稽核唯一一次成功 access |
+| 2026-08-04 | Colab lock 配合 hosted runtime 固定 `pandas==2.2.2`、`numba==0.65.1` | 首次 clean CPU prepare 的 `pip check` 證實新版 pins 與 Colab 內建 `google-colab`、`pytensor` 衝突；保留嚴格環境檢查並在相依來源修正 |
 
 ## 驗證證據
 
@@ -240,13 +241,17 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-03 | 全域 | `PYTHONNOUSERSITE=1 pre-commit run --all-files` | 第一輪 Ruff formatter 改寫 5 個本次/新追蹤檔案，故未視為通過；提交格式化後第二輪全 hooks 通過 |
 | 2026-08-03 | build | `pip wheel . --no-deps --wheel-dir artifacts/wheelhouse` + ZIP member gate | 最終重建通過；wheel 68,989 bytes、SHA-256 `1e9ead...98ee`，必要 model、Colab handoff、freeze/final-gate modules 均存在 |
 | 2026-08-03 | M4 Windows handoff | Unicode-path Git bundle red→green regression | 首次實際 bundle verify 在中文 repo path 出現 background `UnicodeDecodeError`；固定 Git subprocess UTF-8 decoding 後，含中文 repo/output path 的 clone/receipt test 無 warning 通過 |
+| 2026-08-04 | M4 clean Colab CPU | 首次 `prepare` 執行至 notebook environment gate | 如預期被 `pip check` 阻擋；`pandas 2.3.3` 違反 `google-colab==1.0.0` 的 `pandas==2.2.2`，`numba 0.66.0` 違反 `pytensor 2.38.3` 的 `numba<=0.65.1`；未開始 Set A 準備、未接觸 Set B |
+| 2026-08-04 | M4 dependency TDD | `.venv\\Scripts\\python.exe -m pytest tests\\test_colab_notebook.py -q` | RED：notebook metadata 仍為舊名且 Colab pins 不相容；GREEN：3 tests passed，固定新名稱與 hosted-runtime-compatible pins |
+| 2026-08-04 | M4 compatibility verification | full pytest、targeted handoff tests、notebook 6 code-cell AST、Ruff、Mypy、`pip check`、pre-commit all-files | 通過；74 tests passed、1 Torch module skipped per protocol；6 code cells syntax valid（排除 IPython magic）；Ruff、Mypy 34 source files、local dependency check 與全部 hooks 通過 |
+| 2026-08-04 | build | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse` | 通過；wheel 68,999 bytes、SHA-256 `76a4397324601e8e11ba5742cf20366be065baa94468518756c33bea0e1d914f` |
 
 ## Session handoff
 
-- **最後更新：** 2026-08-03
-- **完成內容：** 修正 source export 漏掉全部 model modules 的 blocker；鎖定 seeds 與 portable config hash；resume 綁定 config/data/split/source/family/seed 並記錄 timing/checkpoint hashes；notebook 改為 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與單一 checksummed result ZIP。schema-v2 freeze/final lock 已以 synthetic tests 加固。最新 full tabular development run `20260803T153347Z-tabular-full` 具 clean Git 與完整 hashes。
-- **本機驗證：** 73 tests collected；full pytest、Ruff、Mypy 34 source files、pip check、pre-commit all-files、wheel/build source-member gate 通過。Torch runtime test 依協議未在本機安裝/執行，留待 Colab quick。
+- **最後更新：** 2026-08-04
+- **完成內容：** 修正 source export 漏掉全部 model modules 的 blocker；鎖定 seeds 與 portable config hash；resume 綁定 config/data/split/source/family/seed 並記錄 timing/checkpoint hashes；notebook 改為 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與單一 checksummed result ZIP。首次 Colab CPU prepare 揭露的 hosted-runtime dependency conflict 已在 lock 來源修正，notebook 亦改為 `CareRisk48H_Deep_Experiments_Colab.ipynb`。schema-v2 freeze/final lock 已以 synthetic tests 加固。
+- **本機驗證：** dependency regression targeted tests 已完成 red→green；74 tests passed、1 Torch module skipped per protocol；targeted handoff tests、notebook code-cell syntax、Ruff、Mypy 34 source files、pip check、pre-commit all-files 均通過。新 bundle clone gate 待本回合重建後執行。
 - **Commits：** `b171b90` include model source；`172f1bc` harden Colab handoff；`c4b2c18` formatting；`ec35454` harden freeze/final gate；`00c4ce0` readiness handoff；`67a17f8` Unicode-safe Git bundle；本段文件更新另見最新 commit。
-- **尚未進行：** Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
-- **下一步：** 將 `artifacts/colab-handoff/` 的 `.bundle` 與 receipt JSON 複製到 Drive `CareRisk48H-handoff`；開啟 notebook 副本，依 CPU prepare→L4 quick→L4 full 執行，把 full ZIP 與 `.sha256` 帶回本 task。
+- **尚未進行：** 修正版 Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
+- **下一步：** 完成本回合驗證並建立新 immutable handoff；使用者以新 bundle/receipt/notebook 開全新 CPU runtime 重跑 prepare，通過後依 L4 quick→L4 full 執行，把 full ZIP 與 `.sha256` 帶回本 task。
 - **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。
