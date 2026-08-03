@@ -7,11 +7,11 @@
 | 欄位 | 內容 |
 | --- | --- |
 | 當前 milestone | M4 — clean Colab runtime quick/full 驗證；通過後進入 M5 final candidate refit/freeze |
-| 狀態 | M0–M3 完成；M4 clean Colab CPU prepare 已通過、待 L4 quick/full；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
-| 本回合範圍 | 登錄 clean Colab CPU prepare 成功證據，進入 L4 quick smoke；不接觸 Set B |
-| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；hosted-runtime pins 與一般安裝/import gate 已由 clean Colab CPU prepare 驗證通過 |
+| 狀態 | M0–M3 完成；M4 clean Colab CPU prepare 已通過，首次 L4 quick 於訓練前被 RAPIDS/Numba 相容 gate 擋下，修正版待重跑；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
+| 本回合範圍 | 修正 L4 預裝 RAPIDS 與 CPU PyTensor 的共同 Numba 相容版本，重建 immutable handoff；不接觸 Set B |
+| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；CPU prepare 已通過；Numba 已鎖定 CPU PyTensor、L4 RAPIDS、Python 3.12 與 NumPy 2.2 的共同相容版本 |
 | 尚待完成 | Colab quick/full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
-| 下一個最小動作 | 將同一 notebook 設為 `STAGE='train'`、`MODE='quick'`、`EXPECTED_GPU='L4'`，切換 L4 後全部執行並回收 quick smoke ZIP/checksum |
+| 下一個最小動作 | 以新 bundle/receipt/notebook 開啟全新 L4 runtime，設定 `STAGE='train'`、`MODE='quick'`、`EXPECTED_GPU='L4'` 後全部執行並回收 quick ZIP/checksum |
 | 結果狀態 | 正式結果待填；目前產物僅為 development/smoke evidence，不得更新公開結果表 |
 
 ## 目標與安全邊界
@@ -209,6 +209,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | Colab lock 配合 hosted runtime 固定 `pandas==2.2.2`、`numba==0.65.1` | 首次 clean CPU prepare 的 `pip check` 證實新版 pins 與 Colab 內建 `google-colab`、`pytensor` 衝突；保留嚴格環境檢查並在相依來源修正 |
 | 2026-08-04 | Colab lock 加入 `jedi==0.19.2` | 第二次 CPU prepare 的精確 `pip check` 顯示 hosted `ipython 7.34.0` 唯一缺少 `jedi`；官方 metadata 要求 `jedi>=0.16`，選用支援 Python 3.12 的固定版本並保留嚴格 gate |
 | 2026-08-04 | Colab 專案套件改用一般安裝並立即 import | 第三次 CPU prepare 證明 editable install 可讓 distribution metadata 與 `pip check` 通過，卻未讓目前 kernel 重新處理 `.pth`；改為 `%pip install -q . --no-deps`，同一格立即 import 精確失敗模組，資料下載前 fail fast |
+| 2026-08-04 | Colab Numba 鎖定改採 CPU 與 L4 hosted runtime 的 constraint 交集 `0.61.2` | CPU `pytensor 2.38.3` 要求 `>=0.58,<=0.65.1`，L4 `cudf/cuml 26.2` 要求 `>=0.60,<0.62`；Numba 官方 0.61.2 支援 Python 3.12 與 NumPy 2.2。保留嚴格全環境 `pip check`，不引入會增加 CUDA/PyTorch 風險的額外虛擬環境 |
 
 ## 驗證證據
 
@@ -258,13 +259,18 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | build after import fix | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse-57f960e` | 通過；wheel 68,999 bytes、SHA-256 `46eb948d7ed727a60570a7c7778dcc5fccb161c3b19837a63c87ee1f2c63bc19` |
 | 2026-08-04 | M4 import-fix handoff candidate gate | `create_source_bundle(...)`、`git bundle verify`、receipt branch clean clone、import/install/pin assertions | 通過；source `57f960eaf7e426ad0ad78653e0bc4c5c058c5a41` bundle 129,670 bytes、SHA-256 `7a2cee42c1416aa85283e7f46008900219bf3d5e253568f5880f3efc1dad2ba4`；clean clone 內一般安裝、立即 import gate 與三個 hosted-runtime pins 均驗證 |
 | 2026-08-04 | M4 clean Colab CPU prepare | 使用最終 source `e0d2d652a7f9e3df3d0bd963f0bb206aada68360`，使用者執行 CPU `STAGE='prepare'` 全部執行並提供完成截圖 | 通過；所有顯示 cell 為成功，訓練在 prepare 階段正確跳過且未誤產生 result package；未接觸 Set B |
+| 2026-08-04 | M4 first L4 quick attempt | source `e0d2d652a7f9e3df3d0bd963f0bb206aada68360`，L4 `STAGE='train'`、`MODE='quick'` 全部執行 | 在訓練前被嚴格 `pip check` 擋下：`cudf-cu12/cuml-cu12 26.2` 要求 `numba>=0.60,<0.62`，舊 pin 為 `0.65.1`；未產生 quick run/package，未接觸 Set B |
+| 2026-08-04 | M4 CPU/L4 dependency TDD | `.venv\\Scripts\\python.exe -m pytest tests\\test_colab_notebook.py -q` | RED：舊 Numba pin 違反 L4 RAPIDS constraint；GREEN：4 tests passed，`0.61.2` 同時滿足 CPU PyTensor、L4 RAPIDS 與 NumPy 2.2 支援下限 |
+| 2026-08-04 | M4 cross-runtime compatibility verification | Numba 官方 support matrix、CPython 3.12 manylinux wheel download、full pytest、Ruff、Mypy、`pip check`、pre-commit all-files | 通過；官方 0.61.2 支援 Python 3.10–3.13 與 NumPy 2.2；實際取得 cp312 manylinux wheel；75 tests passed、1 Torch module skipped per protocol，其餘 gates 全通過 |
+| 2026-08-04 | build after CPU/L4 lock | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse-df3a28c` | 通過；wheel 68,999 bytes、SHA-256 `322bcdf77d78124475719d9e9f2e81e6b0ab18e8eb255975823adece2ed70a5d` |
+| 2026-08-04 | M4 CPU/L4 handoff candidate gate | `create_source_bundle(...)`、`git bundle verify`、receipt branch clean clone 與 Numba pin assertion | 通過；source `df3a28ca2e9599c2a9f65f0bd5edb45103d87aef` bundle 134,234 bytes、SHA-256 `87347bbe3bb51e8b4c157dd5fb398da23aebc8dc4800ed1cd7875badd1c5d5a5`；clean clone 內固定 `numba==0.61.2` |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** clean Colab CPU prepare 已使用 source `e0d2d652a7f9e3df3d0bd963f0bb206aada68360` 通過；hosted-runtime lock、一般安裝、同-kernel import、Set A prepare 與 prepare/train/package 分流均成功。notebook 名稱為 `CareRisk48H_Deep_Experiments_Colab.ipynb`；schema-v2 freeze/final lock 維持不變。
-- **本機驗證：** same-kernel import regression 已完成 red→green；75 tests passed、1 Torch module skipped per protocol；12 targeted tests、6 code-cell AST、Ruff、CI Mypy 34 source files、pip check、pre-commit all-files、wheel build 與 bundle branch clean-clone/import gate 均通過。
-- **Commits：** `57f960e` make the Colab package immediately importable；`e0d2d65` record the importability gate；本次 CPU 成功證據另見最新 commit。
-- **尚未進行：** L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
-- **下一步：** 使用者在同一 notebook 設定 L4 quick 並全部執行，將 quick ZIP 與 `.sha256` 帶回本 task；quick 只作 smoke，通過後才執行 L4 full。
+- **完成內容：** clean Colab CPU prepare 已使用 source `e0d2d652a7f9e3df3d0bd963f0bb206aada68360` 通過；首次 L4 quick 在訓練前精確暴露 RAPIDS/Numba 衝突。Numba 改鎖 `0.61.2`，同時符合 CPU PyTensor、L4 RAPIDS、Python 3.12 與 NumPy 2.2；schema-v2 freeze/final lock 維持不變。
+- **本機驗證：** CPU/L4 dependency regression 已完成 red→green；75 tests passed、1 Torch module skipped per protocol；Ruff、CI Mypy 34 source files、pip check、pre-commit all-files、CPython 3.12 manylinux wheel、wheel build 與 bundle clean-clone pin gate 均通過。
+- **Commits：** `df3a28c` lock a CPU and L4 compatible Numba；本段文件更新另見最新 commit。
+- **尚未進行：** 修正版 L4 quick、L4 full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
+- **下一步：** 使用者以本回合最終 bundle/receipt/notebook 取代 Drive 舊檔，開全新 L4 runtime 執行 quick，將 ZIP 與 `.sha256` 帶回本 task；quick 只作 smoke，通過後才執行 L4 full。
 - **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。
