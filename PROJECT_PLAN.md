@@ -8,8 +8,8 @@
 | --- | --- |
 | 當前 milestone | M4 — clean Colab runtime quick/full 驗證；通過後進入 M5 final candidate refit/freeze |
 | 狀態 | M0–M3 完成；M4 local readiness/immutable handoff 已驗證、待 Colab；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
-| 本回合範圍 | 修正首次 Colab CPU prepare 暴露的 hosted-runtime dependency conflict，重建 immutable handoff；不接觸 Set B |
-| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；最新 full tabular development run具乾淨 Git provenance；Colab notebook 已改為專案辨識名稱 |
+| 本回合範圍 | 修正第二次 Colab CPU prepare 精確暴露的 hosted IPython 缺少 `jedi`，重建 immutable handoff；不接觸 Set B |
+| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；Colab hosted-runtime pins 已涵蓋 pandas、numba 與 jedi；notebook 已改為專案辨識名稱 |
 | 尚待完成 | Colab quick/full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
 | 下一個最小動作 | 以新 checksummed source bundle/receipt 與 notebook 開啟全新 Colab CPU runtime 重跑 `prepare`；通過後再在 L4 跑 `quick` 與 `full` |
 | 結果狀態 | 正式結果待填；目前產物僅為 development/smoke evidence，不得更新公開結果表 |
@@ -207,6 +207,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-03 | Config hash 排除 checkout 絕對路徑，resume fingerprint 綁定 config/data/split/source/family/seed | 讓本機與 Colab 的研究設定 hash 一致，並拒絕錯誤資料、split、source 或 family 的 checkpoint |
 | 2026-08-03 | Freeze manifest 升級 schema v2，Set B 成功後另寫 persistent final lock | Set B outcome 載入前重算 frozen artifacts，強制完整 provenance/Set A dry-run evidence，並可稽核唯一一次成功 access |
 | 2026-08-04 | Colab lock 配合 hosted runtime 固定 `pandas==2.2.2`、`numba==0.65.1` | 首次 clean CPU prepare 的 `pip check` 證實新版 pins 與 Colab 內建 `google-colab`、`pytensor` 衝突；保留嚴格環境檢查並在相依來源修正 |
+| 2026-08-04 | Colab lock 加入 `jedi==0.19.2` | 第二次 CPU prepare 的精確 `pip check` 顯示 hosted `ipython 7.34.0` 唯一缺少 `jedi`；官方 metadata 要求 `jedi>=0.16`，選用支援 Python 3.12 的固定版本並保留嚴格 gate |
 
 ## 驗證證據
 
@@ -246,13 +247,16 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | M4 compatibility verification | full pytest、targeted handoff tests、notebook 6 code-cell AST、Ruff、Mypy、`pip check`、pre-commit all-files | 通過；74 tests passed、1 Torch module skipped per protocol；6 code cells syntax valid（排除 IPython magic）；Ruff、Mypy 34 source files、local dependency check 與全部 hooks 通過 |
 | 2026-08-04 | build | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse` | 通過；wheel 68,999 bytes、SHA-256 `76a4397324601e8e11ba5742cf20366be065baa94468518756c33bea0e1d914f` |
 | 2026-08-04 | M4 immutable handoff gate | `create_source_bundle(...)`、`git bundle verify`、clean clone 與 source-member assertions | 通過；source `747e9facfca103c725e9db69073249acc253c145` bundle 126,724 bytes、SHA-256 `884cde0d...9fb81`；clone SHA/cleanliness、新 notebook 路徑及 Colab pins 均驗證 |
+| 2026-08-04 | M4 clean Colab CPU retry | source `77f8b1ac2286f023c4b005330a71b9d6e28396c3` environment gate 與手動 captured `pip check` | 失敗原因已精確定位：`ipython 7.34.0 requires jedi, which is not installed`；先前 pandas/numba 衝突已消失；未開始 Set A 準備、未接觸 Set B |
+| 2026-08-04 | M4 jedi TDD/verification | targeted red→green、full pytest、Ruff、Mypy、local `pip check`、pre-commit all-files | RED：缺少 `jedi` pin；GREEN：3 targeted tests passed；完整驗證 74 tests passed、1 Torch module skipped per protocol，其餘 gates 全通過 |
+| 2026-08-04 | build after jedi lock | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse` | 通過；wheel 68,999 bytes、SHA-256 `2e07fa5128197f465c37bdc3d3da2b2daaefe9616f8176ec1840d8edae1819a3` |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** 修正 source export 漏掉全部 model modules 的 blocker；鎖定 seeds 與 portable config hash；resume 綁定 config/data/split/source/family/seed 並記錄 timing/checkpoint hashes；notebook 改為 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與單一 checksummed result ZIP。首次 Colab CPU prepare 揭露的 hosted-runtime dependency conflict 已在 lock 來源修正，notebook 亦改為 `CareRisk48H_Deep_Experiments_Colab.ipynb`。schema-v2 freeze/final lock 已以 synthetic tests 加固。
-- **本機驗證：** dependency regression targeted tests 已完成 red→green；74 tests passed、1 Torch module skipped per protocol；targeted handoff tests、notebook code-cell syntax、Ruff、Mypy 34 source files、pip check、pre-commit all-files、wheel build 與新 bundle clean-clone gate 均通過。
+- **完成內容：** notebook 已固定 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與 checksummed result ZIP；hosted-runtime lock 已依兩次真實 Colab evidence 固定 pandas、numba、jedi，並保留嚴格 `pip check`。notebook 名稱為 `CareRisk48H_Deep_Experiments_Colab.ipynb`；schema-v2 freeze/final lock 維持不變。
+- **本機驗證：** jedi dependency regression 已完成 red→green；74 tests passed、1 Torch module skipped per protocol；Ruff、Mypy 34 source files、pip check、pre-commit all-files 與 wheel build 均通過。最終 bundle clean-clone gate 待本回合重建。
 - **Commits：** `b171b90` include model source；`172f1bc` harden Colab handoff；`c4b2c18` formatting；`ec35454` harden freeze/final gate；`00c4ce0` readiness handoff；`67a17f8` Unicode-safe Git bundle；本段文件更新另見最新 commit。
-- **尚未進行：** 修正版 Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
+- **尚未進行：** jedi 修正版 Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
 - **下一步：** 使用者以本回合最終 bundle/receipt/notebook 取代 Drive 舊檔，開全新 CPU runtime 重跑 prepare；通過後依 L4 quick→L4 full 執行，把 full ZIP 與 `.sha256` 帶回本 task。
 - **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。

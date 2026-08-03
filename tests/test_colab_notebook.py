@@ -34,6 +34,7 @@ def test_colab_requirements_match_the_hosted_runtime_contract() -> None:
         for name, version in [line.split("==", maxsplit=1)]
     }
 
+    assert pins["jedi"] == "0.19.2"
     assert pins["pandas"] == "2.2.2"
     assert pins["numba"] == "0.65.1"
 
