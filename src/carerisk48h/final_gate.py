@@ -13,6 +13,7 @@ import pandas as pd
 from carerisk48h.artifacts import write_json_atomic
 from carerisk48h.data.downloader import sha256_file
 from carerisk48h.data.parser import load_outcomes
+from carerisk48h.freezing import validate_freeze_manifest
 
 
 def _utc_now() -> str:
@@ -26,6 +27,19 @@ def _load_ledger(path: Path) -> dict[str, Any]:
     if not isinstance(payload.get("attempts"), list):
         raise ValueError("invalid Set B audit ledger")
     return payload
+
+
+def _write_final_lock(ledger_file: Path, ledger: dict[str, Any], attempt: dict[str, Any]) -> None:
+    write_json_atomic(
+        ledger_file.with_suffix(".final-lock.json"),
+        {
+            "schema_version": 1,
+            "status": "locked_after_one_success",
+            "locked_at_utc": _utc_now(),
+            "successful_attempt": attempt,
+            "ledger_sha256": sha256_file(ledger_file),
+        },
+    )
 
 
 def load_set_b_outcomes_once(
@@ -48,7 +62,13 @@ def load_set_b_outcomes_once(
         raise RuntimeError("another final-evaluation access is in progress") from exc
     try:
         ledger = _load_ledger(ledger_file)
-        if any(item.get("status") == "success" for item in ledger["attempts"]):
+        successes = [item for item in ledger["attempts"] if item.get("status") == "success"]
+        final_lock = ledger_file.with_suffix(".final-lock.json")
+        if final_lock.exists() and not successes:
+            raise PermissionError("final lock exists without a matching successful ledger entry")
+        if successes:
+            if not final_lock.exists():
+                _write_final_lock(ledger_file, ledger, successes[0])
             raise PermissionError("Set B outcomes have already been accessed successfully")
         attempt: dict[str, Any] = {
             "attempted_at_utc": _utc_now(),
@@ -70,10 +90,12 @@ def load_set_b_outcomes_once(
             write_json_atomic(ledger_file, ledger)
             raise FileNotFoundError("freeze manifest is required before Set B access")
         freeze = json.loads(freeze_file.read_text(encoding="utf-8"))
-        if freeze.get("status") != "frozen" or not freeze.get("artifact_hashes"):
-            attempt["reason"] = "freeze manifest is incomplete"
+        try:
+            validate_freeze_manifest(freeze, manifest_path=freeze_file, verify_artifacts=True)
+        except Exception as exc:
+            attempt["reason"] = f"freeze validation failed: {type(exc).__name__}"
             write_json_atomic(ledger_file, ledger)
-            raise PermissionError("a complete frozen manifest is required")
+            raise
         try:
             outcomes = load_outcomes(outcome_file)
         except Exception as exc:
@@ -91,6 +113,7 @@ def load_set_b_outcomes_once(
             }
         )
         write_json_atomic(ledger_file, ledger)
+        _write_final_lock(ledger_file, ledger, attempt)
         return outcomes
     finally:
         lock_path.unlink(missing_ok=True)
