@@ -239,13 +239,14 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-03 | 全域 | `pytest -q -ra` / `ruff check .` / `mypy` / `pip check` | 通過；73 tests collected（Torch-dependent module 在本機無 Torch，依協議留待 Colab）、Ruff passed、Mypy 34 source files、無 broken requirements |
 | 2026-08-03 | 全域 | `PYTHONNOUSERSITE=1 pre-commit run --all-files` | 第一輪 Ruff formatter 改寫 5 個本次/新追蹤檔案，故未視為通過；提交格式化後第二輪全 hooks 通過 |
 | 2026-08-03 | build | `pip wheel . --no-deps --wheel-dir artifacts/wheelhouse` + ZIP member gate | 通過；wheel 67,485 bytes、SHA-256 `b1d404...378f`，必要 model 與 Colab handoff modules 均存在 |
+| 2026-08-03 | M4 Windows handoff | Unicode-path Git bundle red→green regression | 首次實際 bundle verify 在中文 repo path 出現 background `UnicodeDecodeError`；固定 Git subprocess UTF-8 decoding 後，含中文 repo/output path 的 clone/receipt test 無 warning 通過 |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-03
 - **完成內容：** 修正 source export 漏掉全部 model modules 的 blocker；鎖定 seeds 與 portable config hash；resume 綁定 config/data/split/source/family/seed 並記錄 timing/checkpoint hashes；notebook 改為 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與單一 checksummed result ZIP。schema-v2 freeze/final lock 已以 synthetic tests 加固。最新 full tabular development run `20260803T153347Z-tabular-full` 具 clean Git 與完整 hashes。
 - **本機驗證：** 73 tests collected；full pytest、Ruff、Mypy 34 source files、pip check、pre-commit all-files、wheel/build source-member gate 通過。Torch runtime test 依協議未在本機安裝/執行，留待 Colab quick。
-- **Commits：** `b171b90` include model source；`172f1bc` harden Colab handoff；`c4b2c18` formatting；`ec35454` harden freeze/final gate；本段文件更新另見最新 commit。
+- **Commits：** `b171b90` include model source；`172f1bc` harden Colab handoff；`c4b2c18` formatting；`ec35454` harden freeze/final gate；`00c4ce0` readiness handoff；`67a17f8` Unicode-safe Git bundle；本段文件更新另見最新 commit。
 - **尚未進行：** Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
 - **下一步：** 將 `artifacts/colab-handoff/` 的 `.bundle` 與 receipt JSON 複製到 Drive `CareRisk48H-handoff`；開啟 notebook 副本，依 CPU prepare→L4 quick→L4 full 執行，把 full ZIP 與 `.sha256` 帶回本 task。
 - **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。
