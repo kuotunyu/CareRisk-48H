@@ -19,6 +19,8 @@ def test_colab_notebook_has_safety_and_resume_contract() -> None:
     assert "--verify-only" in source
     assert "generate_data_quality.py" in source
     assert "package_deep_results" in source
+    assert "EXPECTED_GPU = 'L4'" in source
+    assert "requested L4-first policy" in source
 
 
 def test_clean_git_source_contains_every_package_module() -> None:
