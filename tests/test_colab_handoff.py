@@ -14,8 +14,9 @@ from carerisk48h.data.downloader import sha256_file
 SEEDS = (17, 42, 2026)
 
 
-def test_source_bundle_is_cloneable_and_receipted(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
+def test_source_bundle_is_cloneable_and_receipted(tmp_path: Path, capfd) -> None:
+    repo = tmp_path / "長照-repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
     (repo / "tracked.txt").write_text("source\n", encoding="utf-8")
@@ -36,7 +37,8 @@ def test_source_bundle_is_cloneable_and_receipted(tmp_path: Path) -> None:
         capture_output=True,
     )
 
-    bundle, receipt_path = create_source_bundle(repo, tmp_path / "handoff")
+    bundle, receipt_path = create_source_bundle(repo, tmp_path / "交接")
+    assert "UnicodeDecodeError" not in capfd.readouterr().err
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["bundle_sha256"] == sha256_file(bundle)
     clone = tmp_path / "clone"

@@ -25,6 +25,8 @@ def _git(root: Path, *arguments: str) -> str:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     ).stdout.strip()
 
 
@@ -63,6 +65,8 @@ def create_source_bundle(repo_root: str | Path, output_dir: str | Path) -> tuple
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     subprocess.run(
         ["git", "bundle", "verify", str(partial)],
@@ -70,6 +74,8 @@ def create_source_bundle(repo_root: str | Path, output_dir: str | Path) -> tuple
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     os.replace(partial, bundle)
     receipt = destination / "carerisk48h-source-receipt.json"
