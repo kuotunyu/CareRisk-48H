@@ -7,11 +7,11 @@
 | 欄位 | 內容 |
 | --- | --- |
 | 當前 milestone | M4 — clean Colab runtime quick/full 驗證；通過後進入 M5 final candidate refit/freeze |
-| 狀態 | M0–M3 完成；M4 local readiness/immutable handoff 已驗證、待 Colab；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
-| 本回合範圍 | 修正第三次 Colab CPU prepare 暴露的 editable install 同 kernel 無法 import，重建 immutable handoff；不接觸 Set B |
-| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；hosted-runtime pins 已涵蓋 pandas、numba、jedi；notebook 改用一般安裝並在下載前立即驗證 `carerisk48h.artifacts` import |
+| 狀態 | M0–M3 完成；M4 clean Colab CPU prepare 已通過、待 L4 quick/full；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
+| 本回合範圍 | 登錄 clean Colab CPU prepare 成功證據，進入 L4 quick smoke；不接觸 Set B |
+| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；hosted-runtime pins 與一般安裝/import gate 已由 clean Colab CPU prepare 驗證通過 |
 | 尚待完成 | Colab quick/full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
-| 下一個最小動作 | 以新 checksummed source bundle/receipt 與 notebook 開啟全新 Colab CPU runtime 重跑 `prepare`；通過後再在 L4 跑 `quick` 與 `full` |
+| 下一個最小動作 | 將同一 notebook 設為 `STAGE='train'`、`MODE='quick'`、`EXPECTED_GPU='L4'`，切換 L4 後全部執行並回收 quick smoke ZIP/checksum |
 | 結果狀態 | 正式結果待填；目前產物僅為 development/smoke evidence，不得更新公開結果表 |
 
 ## 目標與安全邊界
@@ -257,13 +257,14 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | M4 full verification after import fix | full pytest、targeted Colab/handoff/config、notebook 6 code-cell AST、Ruff、CI Mypy、`pip check`、pre-commit all-files | 通過；75 tests passed、1 Torch module skipped per protocol；12 targeted tests、Ruff、Mypy 34 source files、local dependency check 與全部 hooks 通過；額外非 CI 範圍 `mypy src scripts app` 發現 dry-run script 2 個既有型別問題，未改研究邏輯 |
 | 2026-08-04 | build after import fix | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse-57f960e` | 通過；wheel 68,999 bytes、SHA-256 `46eb948d7ed727a60570a7c7778dcc5fccb161c3b19837a63c87ee1f2c63bc19` |
 | 2026-08-04 | M4 import-fix handoff candidate gate | `create_source_bundle(...)`、`git bundle verify`、receipt branch clean clone、import/install/pin assertions | 通過；source `57f960eaf7e426ad0ad78653e0bc4c5c058c5a41` bundle 129,670 bytes、SHA-256 `7a2cee42c1416aa85283e7f46008900219bf3d5e253568f5880f3efc1dad2ba4`；clean clone 內一般安裝、立即 import gate 與三個 hosted-runtime pins 均驗證 |
+| 2026-08-04 | M4 clean Colab CPU prepare | 使用最終 source `e0d2d652a7f9e3df3d0bd963f0bb206aada68360`，使用者執行 CPU `STAGE='prepare'` 全部執行並提供完成截圖 | 通過；所有顯示 cell 為成功，訓練在 prepare 階段正確跳過且未誤產生 result package；未接觸 Set B |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** notebook 已固定 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與 checksummed result ZIP；hosted-runtime lock 固定 pandas、numba、jedi，並保留嚴格 `pip check`。專案套件已改為一般安裝，且同一格立即驗證 `carerisk48h.artifacts` import。notebook 名稱為 `CareRisk48H_Deep_Experiments_Colab.ipynb`；schema-v2 freeze/final lock 維持不變。
+- **完成內容：** clean Colab CPU prepare 已使用 source `e0d2d652a7f9e3df3d0bd963f0bb206aada68360` 通過；hosted-runtime lock、一般安裝、同-kernel import、Set A prepare 與 prepare/train/package 分流均成功。notebook 名稱為 `CareRisk48H_Deep_Experiments_Colab.ipynb`；schema-v2 freeze/final lock 維持不變。
 - **本機驗證：** same-kernel import regression 已完成 red→green；75 tests passed、1 Torch module skipped per protocol；12 targeted tests、6 code-cell AST、Ruff、CI Mypy 34 source files、pip check、pre-commit all-files、wheel build 與 bundle branch clean-clone/import gate 均通過。
-- **Commits：** `57f960e` make the Colab package immediately importable；本段文件更新另見最新 commit。
-- **尚未進行：** import 修正版 Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
-- **下一步：** 使用者以本回合最終 bundle/receipt/notebook 取代 Drive 舊檔，開全新 CPU runtime 重跑 prepare；通過後依 L4 quick→L4 full 執行，把 full ZIP 與 `.sha256` 帶回本 task。
+- **Commits：** `57f960e` make the Colab package immediately importable；`e0d2d65` record the importability gate；本次 CPU 成功證據另見最新 commit。
+- **尚未進行：** L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
+- **下一步：** 使用者在同一 notebook 設定 L4 quick 並全部執行，將 quick ZIP 與 `.sha256` 帶回本 task；quick 只作 smoke，通過後才執行 L4 full。
 - **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。
