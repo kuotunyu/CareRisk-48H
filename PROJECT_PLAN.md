@@ -7,9 +7,9 @@
 | 欄位 | 內容 |
 | --- | --- |
 | 當前 milestone | M4 — clean Colab runtime quick/full 驗證；通過後進入 M5 final candidate refit/freeze |
-| 狀態 | M0–M3 完成；M4 clean Colab CPU prepare 已通過，首次 L4 quick 於訓練前被 RAPIDS/Numba 相容 gate 擋下，修正版待重跑；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
-| 本回合範圍 | 修正 L4 預裝 RAPIDS 與 CPU PyTensor 的共同 Numba 相容版本，重建 immutable handoff；不接觸 Set B |
-| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；CPU prepare 已通過；Numba 已鎖定 CPU PyTensor、L4 RAPIDS、Python 3.12 與 NumPy 2.2 的共同相容版本 |
+| 狀態 | M0–M3 完成；M4 clean Colab CPU prepare 已通過，第二次 L4 quick 完成訓練但 runtime symlink 使 run 誤標 dirty、打包被 provenance gate 擋下；修正版待重跑；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
+| 本回合範圍 | 修正 Colab Drive runtime symlink 的 Git dirtiness 與跨 source checkpoint collision，重建 immutable handoff；不接觸 Set B |
+| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；CPU/L4 dependency gate 已通過；runtime mount names 現保持 Git clean，checkpoint 依 mode/source SHA 分區 |
 | 尚待完成 | Colab quick/full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
 | 下一個最小動作 | 以新 bundle/receipt/notebook 開啟全新 L4 runtime，設定 `STAGE='train'`、`MODE='quick'`、`EXPECTED_GPU='L4'` 後全部執行並回收 quick ZIP/checksum |
 | 結果狀態 | 正式結果待填；目前產物僅為 development/smoke evidence，不得更新公開結果表 |
@@ -210,6 +210,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | Colab lock 加入 `jedi==0.19.2` | 第二次 CPU prepare 的精確 `pip check` 顯示 hosted `ipython 7.34.0` 唯一缺少 `jedi`；官方 metadata 要求 `jedi>=0.16`，選用支援 Python 3.12 的固定版本並保留嚴格 gate |
 | 2026-08-04 | Colab 專案套件改用一般安裝並立即 import | 第三次 CPU prepare 證明 editable install 可讓 distribution metadata 與 `pip check` 通過，卻未讓目前 kernel 重新處理 `.pth`；改為 `%pip install -q . --no-deps`，同一格立即 import 精確失敗模組，資料下載前 fail fast |
 | 2026-08-04 | Colab Numba 鎖定改採 CPU 與 L4 hosted runtime 的 constraint 交集 `0.61.2` | CPU `pytensor 2.38.3` 要求 `>=0.58,<=0.65.1`，L4 `cudf/cuml 26.2` 要求 `>=0.60,<0.62`；Numba 官方 0.61.2 支援 Python 3.12 與 NumPy 2.2。保留嚴格全環境 `pip check`，不引入會增加 CUDA/PyTorch 風險的額外虛擬環境 |
+| 2026-08-04 | Colab runtime mount names 以 root file-or-directory pattern 忽略，checkpoint 加入 source SHA namespace | Git 將 symlink 視為 file，舊 trailing-slash ignore 只匹配 directory，導致正確 commit 的 run 被誤標 dirty；root pattern 同時涵蓋 symlink/dir，且只忽略固定 generated roots。source SHA namespace 避免修正版誤載舊 source checkpoint，保留 resume fingerprint 嚴格性 |
 
 ## 驗證證據
 
@@ -264,13 +265,18 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | M4 cross-runtime compatibility verification | Numba 官方 support matrix、CPython 3.12 manylinux wheel download、full pytest、Ruff、Mypy、`pip check`、pre-commit all-files | 通過；官方 0.61.2 支援 Python 3.10–3.13 與 NumPy 2.2；實際取得 cp312 manylinux wheel；75 tests passed、1 Torch module skipped per protocol，其餘 gates 全通過 |
 | 2026-08-04 | build after CPU/L4 lock | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse-df3a28c` | 通過；wheel 68,999 bytes、SHA-256 `322bcdf77d78124475719d9e9f2e81e6b0ab18e8eb255975823adece2ed70a5d` |
 | 2026-08-04 | M4 CPU/L4 handoff candidate gate | `create_source_bundle(...)`、`git bundle verify`、receipt branch clean clone 與 Numba pin assertion | 通過；source `df3a28ca2e9599c2a9f65f0bd5edb45103d87aef` bundle 134,234 bytes、SHA-256 `87347bbe3bb51e8b4c157dd5fb398da23aebc8dc4800ed1cd7875badd1c5d5a5`；clean clone 內固定 `numba==0.61.2` |
+| 2026-08-04 | M4 second L4 quick attempt | source `872d8579d52bb0650e9c93cd2abb25fb60743a89`，L4 quick training 與 result packaging | GRU-D/TCN quick 均完成三 seeds、各有三個 checkpoint，`evaluation_status=smoke_test`；打包正確拒絕 `dirty=True`。唯讀 Drive 診斷確認兩 run commit 均精確等於 expected SHA，根因為 runtime symlink；未產生 ZIP、未接觸 Set B |
+| 2026-08-04 | M4 runtime-wiring TDD | `pytest tests/test_colab_handoff.py tests/test_colab_notebook.py -q` | RED：runtime mount placeholders 使 Git dirty、checkpoint namespace API 不存在、notebook 未接線；GREEN：9 targeted tests passed，symlink names clean、source-namespaced path 與 notebook wiring 均驗證 |
+| 2026-08-04 | M4 runtime-wiring full verification | full pytest、Ruff、Mypy、`pip check`、pre-commit all-files、notebook 6 code-cell AST | 第一輪 pre-commit formatter 改寫新 helper，故未視為通過；重跑 targeted 後第二輪全部通過。最終 77 tests passed、1 Torch module skipped per protocol；Ruff、Mypy 34 files、依賴、hooks 與 AST 均通過 |
+| 2026-08-04 | build after runtime-wiring fix | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse-e14b3d1` | 通過；wheel 69,095 bytes、SHA-256 `d9fb869d2aa70dc6c2d9e7210ae1cacb23d250a9117b0af57ab4f0ad3f7f2023` |
+| 2026-08-04 | M4 runtime-wiring handoff candidate gate | bundle verify、branch clean clone、建立 runtime mount placeholders 後 Git clean、checkpoint namespace assertion | 通過；source `e14b3d1441a511112341f4e4b50dfe5d05bdc6ac` bundle 135,985 bytes、SHA-256 `95aafc69a18deb3d1b7388bd6e160237731c495ef6762aee7826707fdb649302`；clone 在 runtime wiring 後仍 clean |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** clean Colab CPU prepare 已使用 source `e0d2d652a7f9e3df3d0bd963f0bb206aada68360` 通過；首次 L4 quick 在訓練前精確暴露 RAPIDS/Numba 衝突。Numba 改鎖 `0.61.2`，同時符合 CPU PyTensor、L4 RAPIDS、Python 3.12 與 NumPy 2.2；schema-v2 freeze/final lock 維持不變。
-- **本機驗證：** CPU/L4 dependency regression 已完成 red→green；75 tests passed、1 Torch module skipped per protocol；Ruff、CI Mypy 34 source files、pip check、pre-commit all-files、CPython 3.12 manylinux wheel、wheel build 與 bundle clean-clone pin gate 均通過。
-- **Commits：** `df3a28c` lock a CPU and L4 compatible Numba；本段文件更新另見最新 commit。
-- **尚未進行：** 修正版 L4 quick、L4 full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
-- **下一步：** 使用者以本回合最終 bundle/receipt/notebook 取代 Drive 舊檔，開全新 L4 runtime 執行 quick，將 ZIP 與 `.sha256` 帶回本 task；quick 只作 smoke，通過後才執行 L4 full。
+- **完成內容：** clean Colab CPU prepare 已通過；L4 dependency gate 已通過；第二次 L4 quick 已證明兩模型可完成三 seeds，但 runtime symlink 使 metadata 誤標 dirty 並被打包 gate 正確拒絕。修正版將 generated roots 對 Git 保持 clean，並將 checkpoint 依 source SHA 分區；既有 dirty runs 不改寫、不當成功結果。
+- **本機驗證：** runtime-wiring/provenance regression 已完成 red→green；77 tests passed、1 Torch module skipped per protocol；9 targeted tests、6 code-cell AST、Ruff、CI Mypy 34 source files、pip check、第二輪 pre-commit、wheel build 與 bundle runtime-wiring clean-clone gate 均通過。
+- **Commits：** `e14b3d1` keep Colab runtime wiring provenance-clean；本段文件更新另見最新 commit。
+- **尚未進行：** provenance-clean L4 quick、L4 full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
+- **下一步：** 使用者以本回合最終 bundle/receipt/notebook 取代 Drive 舊檔，開全新 L4 runtime 執行 quick；新 source namespace 會避開舊 dirty checkpoints。將 ZIP 與 `.sha256` 帶回本 task，通過後才執行 L4 full。
 - **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。
