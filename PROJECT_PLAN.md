@@ -7,10 +7,10 @@
 | 欄位 | 內容 |
 | --- | --- |
 | 當前 milestone | M5 — final candidate 已凍結；停在不可逆 Set B 授權門前 |
-| 狀態 | M0–M4 與 M6 完成；Colab L4 quick/full、預註冊選模、train+validation refit、calibration-only Platt/threshold、Set A 2,000-bootstrap simulated dry-run 與 schema-v2 freeze 全部通過；選定 LightGBM；Set B 成功 access 次數為 0 |
-| 本回合範圍 | 回收並驗證 L4 full GRU-D/TCN 結果包，依固定規則選模，完成 final refit、calibration、Set A dry-run 與 freeze；不接觸 Set B |
-| 已完成 | 乾淨 Colab CPU prepare、provenance-clean L4 quick/full、固定三 seeds 的 GRU-D/TCN、結果包逐檔 hash 與 resume/provenance 驗證、無裁量選定 LightGBM、3,400 筆 train+validation refit、600 筆 calibration-only Platt/threshold、Set A dry-run、freeze manifest |
-| 尚待完成 | 使用者審核 freeze 後的唯一一次 Set B final evaluation，以及成功後的正式結果、圖表、cards、發布與 CPU inference gates |
+| 狀態 | M0–M4 與 M6 完成；Colab L4 quick/full、預註冊選模、train+validation refit、calibration-only Platt/threshold、Set A 2,000-bootstrap simulated dry-run、schema-v2 freeze、一次性 final evaluator 與 pre-Set B release-readiness gates 全部通過；選定 LightGBM；Set B 成功 access 次數為 0 |
+| 本回合範圍 | 在不接觸 Set B 的前提下補齊 one-time final orchestrator、ledger fail-closed 行為、正式結果 provenance gate、4,000 筆/2,000-bootstrap synthetic shadow、build/clean export/Docker/frozen CPU inference readiness |
+| 已完成 | 乾淨 Colab CPU prepare、provenance-clean L4 quick/full、固定三 seeds 的 GRU-D/TCN、結果包逐檔 hash 與 resume/provenance 驗證、無裁量選定 LightGBM、3,400 筆 train+validation refit、600 筆 calibration-only Platt/threshold、Set A dry-run、freeze manifest、audited final evaluator、安全下載閉環與 pre-Set B shadow/release gates |
+| 尚待完成 | 使用者審核 freeze 後下載 input-only Set B、唯一一次 Set B final evaluation，以及成功後以合格 metrics 自動更新正式結果/cards 並重跑 final build/export/Docker/CPU inference gates |
 | 下一個最小動作 | 使用者審核 `artifacts/final-candidate-c993493/freeze_manifest.json`；只有明確回覆「我確認 freeze manifest，授權一次 Set B final evaluation」才可進入 final gate |
 | 結果狀態 | Frozen LightGBM 已鎖定；Set B 正式結果待填，目前 validation/calibration 數值不得當作 test performance 或更新 README 正式結果 |
 
@@ -215,6 +215,9 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | 接受 source `13d83ac...` 的 L4 full GRU-D/TCN 結果包 | ZIP sidecar、內部 32 個 member hashes、config/data/split/source/environment、checkpoint 與 resume provenance 全部相符；quick 仍只作 smoke evidence |
 | 2026-08-04 | 依預註冊規則選定 LightGBM | LightGBM validation AUPRC/Brier/ECE 為 `0.586296/0.088763/0.039042`；GRU-D 為 `0.553398/0.143252/0.145417`，TCN 為 `0.547089/0.143873/0.209511`。兩個 deep family 皆未達 +0.01 AUPRC 且 Brier/ECE 惡化，因此無裁量選較簡單 tabular candidate |
 | 2026-08-04 | 凍結 3-seed LightGBM ensemble + Platt + threshold `0.2974276505509685` | 模型/preprocessing 只 fit Set A train+validation 3,400 筆；calibrator/threshold 只 fit calibration 600 筆；Set A 2,000-bootstrap dry-run 通過後建立 freeze，Set B success count 保持 0 |
+| 2026-08-04 | Set B final evaluator 採 preflight-first、ledger-first、fail-closed 流程 | 凍結 artifact/input manifest/4,000 record/features/predictions 全部先驗證；開始 outcome download/read 前持久化 `in_progress`，成功建立唯一 final lock，任何 failed/in-progress attempt 均禁止靜默重跑 |
+| 2026-08-04 | 一般 PhysioNet downloader 永不接受 Outcomes-b 授權 | 舊 `--confirm-final` 可繞過 ledger；移除 CLI 旁路且 API 即使收到 `confirm_final=True` 仍 fail closed，Outcomes-b 只能由 audited final evaluator 在同一 attempt 內取得 |
+| 2026-08-04 | README 正式結果 consumer 要求完整 cohort 與 provenance | 只接受 Set B `n=4,000`、2,000 次 stratified percentile bootstrap/seed 2026、固定三 seeds、clean evaluation Git、freeze/data/split/input/outcome hashes、subgroups 與 ledger/final-lock hashes；development/synthetic 或不完整 payload 不得寫入正式結果 |
 
 ## 驗證證據
 
@@ -287,13 +290,19 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | M5 freeze gate | `create_freeze_manifest(... confirm_freeze=True)` 後 `validate_freeze_manifest(... verify_artifacts=True)` | 通過；`freeze_manifest.json` 8,380 bytes，SHA-256 `22de6c8317c202372d2281bab5a4998ecc0b3a566b85cf2355d6ef80ba23db80`，22 個 artifacts 逐檔驗證，`set_b_final_evaluation_successes=0` |
 | 2026-08-04 | freeze handoff full verification | `.venv\Scripts\python.exe -m pytest -q -ra`、Ruff、Mypy `src`、`pip check`、`pre-commit run --all-files`、`git diff --check` | 通過；80 tests passed、1 Torch module 依本機 CPU protocol skipped；Ruff passed、Mypy 35 source files、無 broken requirements、全部 hooks 通過 |
 | 2026-08-04 | freeze handoff build gate | `.venv\Scripts\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\wheelhouse-freeze` + required-member gate | 通過；wheel 71,996 bytes，SHA-256 `929b622e14fbf7678e087e16dcaa378aeae79e53e4e212a2887d63989d0195a2`，含 final-refit/freezing/final-gate/Colab handoff modules |
+| 2026-08-04 | one-time final workflow TDD | `tests/test_final_gate.py`、`tests/test_final_evaluation.py`、`tests/test_readme_updater.py` | RED 分別證實 ledger 未在 parse 前落盤、failed retry、missing outcome download、缺少 orchestrator、錯誤 cohort/缺 provenance 可寫 README；GREEN 後 27 個 combined targeted tests 通過 |
+| 2026-08-04 | frozen-candidate synthetic shadow | 正式 candidate 的臨時副本、4,000 個 synthetic PhysioNet-format records、2,000 次 stratified bootstrap/seed 2026 | 通過；71.817 s、10 個 subgroup reports、7 個 hashed outputs、README validator 通過；臨時 ledger/final lock 已隨暫存目錄消失，正式 freeze hash 不變且正式 ledger/final lock 仍不存在 |
+| 2026-08-04 | Set B downloader-bypass TDD | `pytest tests/test_downloader.py -q`，再跑 downloader/final-gate/final-evaluator targeted | RED：`confirm_final=True` 實際開始一般下載且 CLI 暴露 bypass；GREEN：5 downloader tests、14 個相關 targeted tests 通過，一般 downloader 無法取得 Outcomes-b |
+| 2026-08-04 | pre-Set B final-workflow full verification | `.venv\Scripts\python.exe -m pytest -q`、Ruff check/format、Mypy `src`、`pip check`、`pre-commit run --all-files`、`git diff --check` | 通過；104 tests passed；Ruff 83 files、Mypy 36 source files、無 broken requirements、全部 hooks 與 whitespace gate 通過 |
+| 2026-08-04 | pre-Set B wheel/clean-export gates | HEAD `5f94e44` wheel required-member gate；`git archive` forbidden-content gate後於匯出來源重建 wheel/import | 通過；repo wheel 76,392 bytes，SHA-256 `547f7d4d947a8d3b07fb2e7e2532e576c0da9415a05087df995d62d4e5d68309`；clean archive 153,746 bytes/127 members/SHA-256 `79115f59c741fd3ac1b40182d6aab9d8cf17df5ae58ac7d0445c07f51799b15b`，未含 `.env`、raw/processed data、artifacts/checkpoints；export wheel 76,865 bytes/SHA-256 `316c87de05de3182a789e94b2f646d39df25f2a701428005804d034863677f7b` |
+| 2026-08-04 | pre-Set B Docker/CPU gates | image `carerisk48h:pre-set-b-5f94e44` 離線 `pip check`、final module import、2-CPU synthetic guarded benchmark；frozen candidate direct single-record benchmark | 通過；image ID `sha256:1544136e85f4cf0610b6c510824306e0300ae542f1f60dd87f3aa6c0582b76c9`、327,010,637 bytes；container p95 14.222 ms/peak RSS 211.46 MB；frozen 3-model+Platt p95 6.379 ms，bundle hash `6dc4ba...df83`、freeze hash `22de6c...db80` |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** L4 full GRU-D/TCN 與可驗證結果包已完成；預註冊選模無裁量選定 LightGBM；3-seed train+validation final refit、calibration-only Platt/threshold、Set A 2,000-bootstrap dry-run 與 schema-v2 freeze 全部通過。Freeze manifest 包含 22 個可重驗 artifacts。
-- **本機驗證：** Colab ZIP/sidecar/internal hashes、兩個 deep run provenance/resume/checkpoints、固定選模規則、final candidate 9 個 metadata hashes、600 筆 serialized calibration prediction parity、Set A dry-run 與 freeze 22 個 artifact re-hash 均通過。最終 full suite 80 tests passed、1 Torch module 依 protocol skipped；Ruff、Mypy 35 source files、pip check、pre-commit、wheel/required-member gate 全部通過。
-- **Commits：** `39db5f7` allow consecutive Colab stages in one runtime；`13d83ac` record clean L4 quick and rerun fix；`c993493` add frozen tabular refit pipeline；本段進度文件更新另見最新 commit。
-- **尚未進行：** 使用者明確確認後的唯一一次 Set B final evaluation，以及成功後自動更新正式 README 結果、plots/reports、PROJECT_PLAN/MODEL_CARD/DATA_CARD、build/export/Docker/CPU inference gates。
+- **完成內容：** L4 full GRU-D/TCN 與可驗證結果包、預註冊 LightGBM 選模、3-seed train+validation final refit、calibration-only Platt/threshold、Set A 2,000-bootstrap dry-run、schema-v2 freeze、one-time final evaluator、正式 README provenance gate、一般 downloader bypass 封鎖與 pre-Set B release readiness 全部完成。Freeze manifest 包含 22 個可重驗 artifacts。
+- **本機驗證：** 正式 candidate 副本已完成 4,000 synthetic records/2,000-bootstrap shadow；正式 candidate 未變且 access count=0。最新 full suite 104 tests passed；Ruff 83 files、Mypy 36 source files、pip check、pre-commit、wheel、clean export、Docker offline smoke 與 frozen CPU inference 全部通過。
+- **Commits：** `13d83ac` record clean L4 quick and rerun fix；`c993493` add frozen tabular refit pipeline；`8d3223a` freeze final candidate；`f4cb989` add one-time Set B final evaluator；`6489cf7` require complete final-result provenance；`5f94e44` close Set B downloader bypass；本段進度文件更新另見最新 commit。
+- **尚未進行：** input-only Set B 下載、唯一一次 Set B final evaluation，以及成功後由合格 metrics 自動更新正式 README/cards 並重跑 final build/export/Docker/CPU inference gates。使用者睡眠期間的廣泛授權不取代預先約定的精確不可逆授權句。
 - **下一步：** 使用者審核 `artifacts/final-candidate-c993493/freeze_manifest.json`；若確認，只需回覆「我確認 freeze manifest，授權一次 Set B final evaluation」。
-- **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，成功 access 次數為 0。Quick package 固定 `smoke_test`，Set A dry-run 固定 `set_a_reused_development_dry_run`，均不得當作正式 test 結果。
+- **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋、下載或接觸真實 Set B outcomes，成功 access 次數為 0。Quick package 固定 `smoke_test`，Set A dry-run 與 synthetic shadow 均不得當作正式 test 結果。Pre-Set B build/export/Docker/CPU 證據是 readiness evidence，final evaluation 成功後仍須以正式 outputs 重跑發布 gates。
