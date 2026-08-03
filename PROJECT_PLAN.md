@@ -8,8 +8,8 @@
 | --- | --- |
 | 當前 milestone | M4 — clean Colab runtime quick/full 驗證；通過後進入 M5 final candidate refit/freeze |
 | 狀態 | M0–M3 完成；M4 local readiness/immutable handoff 已驗證、待 Colab；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
-| 本回合範圍 | 修正第二次 Colab CPU prepare 精確暴露的 hosted IPython 缺少 `jedi`，重建 immutable handoff；不接觸 Set B |
-| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；Colab hosted-runtime pins 已涵蓋 pandas、numba 與 jedi；notebook 已改為專案辨識名稱 |
+| 本回合範圍 | 修正第三次 Colab CPU prepare 暴露的 editable install 同 kernel 無法 import，重建 immutable handoff；不接觸 Set B |
+| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；hosted-runtime pins 已涵蓋 pandas、numba、jedi；notebook 改用一般安裝並在下載前立即驗證 `carerisk48h.artifacts` import |
 | 尚待完成 | Colab quick/full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
 | 下一個最小動作 | 以新 checksummed source bundle/receipt 與 notebook 開啟全新 Colab CPU runtime 重跑 `prepare`；通過後再在 L4 跑 `quick` 與 `full` |
 | 結果狀態 | 正式結果待填；目前產物僅為 development/smoke evidence，不得更新公開結果表 |
@@ -208,6 +208,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-03 | Freeze manifest 升級 schema v2，Set B 成功後另寫 persistent final lock | Set B outcome 載入前重算 frozen artifacts，強制完整 provenance/Set A dry-run evidence，並可稽核唯一一次成功 access |
 | 2026-08-04 | Colab lock 配合 hosted runtime 固定 `pandas==2.2.2`、`numba==0.65.1` | 首次 clean CPU prepare 的 `pip check` 證實新版 pins 與 Colab 內建 `google-colab`、`pytensor` 衝突；保留嚴格環境檢查並在相依來源修正 |
 | 2026-08-04 | Colab lock 加入 `jedi==0.19.2` | 第二次 CPU prepare 的精確 `pip check` 顯示 hosted `ipython 7.34.0` 唯一缺少 `jedi`；官方 metadata 要求 `jedi>=0.16`，選用支援 Python 3.12 的固定版本並保留嚴格 gate |
+| 2026-08-04 | Colab 專案套件改用一般安裝並立即 import | 第三次 CPU prepare 證明 editable install 可讓 distribution metadata 與 `pip check` 通過，卻未讓目前 kernel 重新處理 `.pth`；改為 `%pip install -q . --no-deps`，同一格立即 import 精確失敗模組，資料下載前 fail fast |
 
 ## 驗證證據
 
@@ -251,13 +252,18 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | M4 jedi TDD/verification | targeted red→green、full pytest、Ruff、Mypy、local `pip check`、pre-commit all-files | RED：缺少 `jedi` pin；GREEN：3 targeted tests passed；完整驗證 74 tests passed、1 Torch module skipped per protocol，其餘 gates 全通過 |
 | 2026-08-04 | build after jedi lock | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse` | 通過；wheel 68,999 bytes、SHA-256 `2e07fa5128197f465c37bdc3d3da2b2daaefe9616f8176ec1840d8edae1819a3` |
 | 2026-08-04 | M4 jedi handoff gate | `create_source_bundle(...)`、`git bundle verify`、clean clone 與 exact pin assertions | 通過；source `6a8de02d359fd942b3386fd835799833e969aaff` bundle 128,537 bytes、SHA-256 `b7cebdb2...b3713`；clone 內 `jedi==0.19.2`、pandas/numba pins 與 notebook 均驗證 |
+| 2026-08-04 | M4 clean Colab CPU third attempt | source `6ea2031913a1657476577a2a57d00969fffed8bd` 的標準環境 gate 後執行 Set A prepare | 失敗原因已精確定位：editable install 後目前 kernel `ModuleNotFoundError: No module named 'carerisk48h'`；未開始正式 deep run，未接觸 Set B |
+| 2026-08-04 | M4 same-kernel import TDD | `.venv\\Scripts\\python.exe -m pytest tests\\test_colab_notebook.py -q` 與標準安裝後同 Python 行程 import probe | RED：舊 notebook 使用 `-e` 且無 import gate；GREEN：4 tests passed；一般安裝後立即從獨立 target 載入 `carerisk48h.artifacts.stable_hash` 成功 |
+| 2026-08-04 | M4 full verification after import fix | full pytest、targeted Colab/handoff/config、notebook 6 code-cell AST、Ruff、CI Mypy、`pip check`、pre-commit all-files | 通過；75 tests passed、1 Torch module skipped per protocol；12 targeted tests、Ruff、Mypy 34 source files、local dependency check 與全部 hooks 通過；額外非 CI 範圍 `mypy src scripts app` 發現 dry-run script 2 個既有型別問題，未改研究邏輯 |
+| 2026-08-04 | build after import fix | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse-57f960e` | 通過；wheel 68,999 bytes、SHA-256 `46eb948d7ed727a60570a7c7778dcc5fccb161c3b19837a63c87ee1f2c63bc19` |
+| 2026-08-04 | M4 import-fix handoff candidate gate | `create_source_bundle(...)`、`git bundle verify`、receipt branch clean clone、import/install/pin assertions | 通過；source `57f960eaf7e426ad0ad78653e0bc4c5c058c5a41` bundle 129,670 bytes、SHA-256 `7a2cee42c1416aa85283e7f46008900219bf3d5e253568f5880f3efc1dad2ba4`；clean clone 內一般安裝、立即 import gate 與三個 hosted-runtime pins 均驗證 |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** notebook 已固定 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與 checksummed result ZIP；hosted-runtime lock 已依兩次真實 Colab evidence 固定 pandas、numba、jedi，並保留嚴格 `pip check`。notebook 名稱為 `CareRisk48H_Deep_Experiments_Colab.ipynb`；schema-v2 freeze/final lock 維持不變。
-- **本機驗證：** jedi dependency regression 已完成 red→green；74 tests passed、1 Torch module skipped per protocol；Ruff、Mypy 34 source files、pip check、pre-commit all-files、wheel build 與 bundle clean-clone/exact-pin gate 均通過。
-- **Commits：** `b171b90` include model source；`172f1bc` harden Colab handoff；`c4b2c18` formatting；`ec35454` harden freeze/final gate；`00c4ce0` readiness handoff；`67a17f8` Unicode-safe Git bundle；本段文件更新另見最新 commit。
-- **尚未進行：** jedi 修正版 Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
+- **完成內容：** notebook 已固定 CPU prepare→L4 quick/full、Drive persistence、immutable Git bundle 與 checksummed result ZIP；hosted-runtime lock 固定 pandas、numba、jedi，並保留嚴格 `pip check`。專案套件已改為一般安裝，且同一格立即驗證 `carerisk48h.artifacts` import。notebook 名稱為 `CareRisk48H_Deep_Experiments_Colab.ipynb`；schema-v2 freeze/final lock 維持不變。
+- **本機驗證：** same-kernel import regression 已完成 red→green；75 tests passed、1 Torch module skipped per protocol；12 targeted tests、6 code-cell AST、Ruff、CI Mypy 34 source files、pip check、pre-commit all-files、wheel build 與 bundle branch clean-clone/import gate 均通過。
+- **Commits：** `57f960e` make the Colab package immediately importable；本段文件更新另見最新 commit。
+- **尚未進行：** import 修正版 Colab CPU prepare、L4 quick/full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
 - **下一步：** 使用者以本回合最終 bundle/receipt/notebook 取代 Drive 舊檔，開全新 CPU runtime 重跑 prepare；通過後依 L4 quick→L4 full 執行，把 full ZIP 與 `.sha256` 帶回本 task。
 - **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。
