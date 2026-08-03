@@ -39,6 +39,21 @@ def test_colab_requirements_match_the_hosted_runtime_contract() -> None:
     assert pins["numba"] == "0.65.1"
 
 
+def test_colab_installs_an_importable_package_in_the_current_kernel() -> None:
+    notebook = json.loads(NOTEBOOK_PATH.read_text(encoding="utf-8"))
+    code_cells = [
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+        if cell.get("cell_type") == "code"
+    ]
+    install_cell = next(cell for cell in code_cells if "requirements-colab.txt" in cell)
+
+    assert "%pip install -q . --no-deps" in install_cell
+    assert "%pip install -q -e . --no-deps" not in install_cell
+    assert "from carerisk48h.artifacts import stable_hash" in install_cell
+    assert "assert callable(stable_hash)" in install_cell
+
+
 def test_clean_git_source_contains_every_package_module() -> None:
     package_files = sorted(Path("src/carerisk48h").rglob("*.py"))
     tracked = set(
