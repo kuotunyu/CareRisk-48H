@@ -2,7 +2,7 @@
 
 ## Model details
 
-CareRisk 48H 是以 ICU 入院最初 48 小時的不規則、多缺失生理時序研究住院死亡風險的模型比較框架。候選包含 class-weighted logistic regression、LightGBM、compact GRU-D 與 small TCN。最終 family 尚未凍結，正式結果目前為「待填」。
+CareRisk 48H 是以 ICU 入院最初 48 小時的不規則、多缺失生理時序研究住院死亡風險的模型比較框架。候選包含 class-weighted logistic regression、LightGBM、compact GRU-D 與 small TCN。依預註冊規則已選定並凍結 3-seed LightGBM ensemble；正式 Set B 結果目前仍為「待填」。
 
 程式碼採 Apache-2.0。PhysioNet 資料及其衍生 artifacts 另受 ODC-By 1.0 約束。
 
@@ -15,14 +15,15 @@ CareRisk 48H 是以 ICU 入院最初 48 小時的不規則、多缺失生理時�
 
 ## Inputs and outputs
 
-輸入為 5 個 static descriptors 與 37 個 dynamic variables，轉成 48 hourly bins 的 value/mask/delta。輸出若通過 schema、missingness 與 OOD guard，才包含 raw 與 calibrated probability、固定 threshold 及非因果 contributors；否則精確機率被隱藏並要求人工複核。
+輸入為 5 個 static descriptors 與 37 個 dynamic variables，轉成 48 hourly bins 的 value/mask/delta。凍結 candidate 是一次性 batch evaluation artifact，不是可部署的臨床推論 bundle。安全 demo 使用獨立的 synthetic-only guarded bundle；只有通過 schema、missingness 與 OOD guard 才顯示 raw/calibrated probability、固定 threshold 及非因果 contributors，否則隱藏精確機率並要求人工複核。
 
 ## Training and evaluation protocol
 
 - Set A：mortality×ICUType stratified 70/15/15 train/validation/calibration，seed 2026。
 - 模型 seeds：17、42、2026。
 - Deep 只有在 validation AUPRC 比最佳 tabular 高至少 0.01，且 Brier/ECE 均不惡化時才升級。
-- 選模後以 train+validation refit；calibrator 與 ≥90% specificity threshold 只 fit calibration。
+- GRU-D 與 TCN 均未同時通過 deep promotion checks，因此依規則選定較簡單的 LightGBM；沒有因結果調整 metric、seed、split 或選模門檻。
+- LightGBM 三個 seeds 已用 Set A train+validation 3,400 筆 refit；Platt calibrator 與 threshold `0.2974276505509685` 只 fit calibration 600 筆。
 - Set B outcome 只允許 frozen model 的一次成功 final evaluation；目前尚未執行。
 
 ## Metrics
@@ -35,7 +36,7 @@ Primary metric 為 AUPRC，並報 AUROC、Brier、10-bin ECE、sensitivity/speci
 
 ## Explainability and safety
 
-LightGBM 使用 TreeSHAP；deep 使用 variable-wise occlusion sensitivity。兩者描述模型行為，不代表因果效應。Guard 依 Set A train 的第 1 percentile coverage/count 與 IsolationForest score 定義，低品質/OOD 輸入不顯示精確機率。
+LightGBM 使用 TreeSHAP；deep 使用 variable-wise occlusion sensitivity。兩者描述模型行為，不代表因果效應。研究規格中的 guard 以 train-only 第 1 percentile coverage/count 與 IsolationForest score 定義；目前可執行 dashboard 預設使用 synthetic-only guard，凍結 batch evaluator 不應被當成即時臨床服務。
 
 ## Limitations and ethical considerations
 
