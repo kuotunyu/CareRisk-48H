@@ -6,13 +6,13 @@
 
 | 欄位 | 內容 |
 | --- | --- |
-| 當前 milestone | M4 — clean Colab runtime quick/full 驗證；通過後進入 M5 final candidate refit/freeze |
-| 狀態 | M0–M3 完成；M4 clean Colab CPU prepare 與 provenance-clean L4 quick 已通過；quick 後同 runtime 啟動 full 時發現 source checkout 重跑 CWD blocker，本機 TDD 修正版已完成、待以新 immutable handoff 執行 full；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
-| 本回合範圍 | 記錄 provenance-clean L4 quick，修正同一 Colab runtime 連續 quick→full 時的 source checkout CWD blocker，重建 immutable handoff；不接觸 Set B |
-| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；CPU/L4 dependency gate 已通過；L4 quick 已產生可驗證 smoke ZIP/checksum；runtime mount names 保持 Git clean，checkpoint 依 mode/source SHA 分區 |
-| 尚待完成 | Colab full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
-| 下一個最小動作 | 以 CWD 修正版 bundle/receipt/notebook 取代 Drive handoff 三檔，保持 L4 並設定 `STAGE='train'`、`MODE='full'`、`EXPECTED_GPU='L4'` 後全部執行；已通過的 quick 不需重跑 |
-| 結果狀態 | 正式結果待填；目前產物僅為 development/smoke evidence，不得更新公開結果表 |
+| 當前 milestone | M5 — final candidate 已凍結；停在不可逆 Set B 授權門前 |
+| 狀態 | M0–M4 與 M6 完成；Colab L4 quick/full、預註冊選模、train+validation refit、calibration-only Platt/threshold、Set A 2,000-bootstrap simulated dry-run 與 schema-v2 freeze 全部通過；選定 LightGBM；Set B 成功 access 次數為 0 |
+| 本回合範圍 | 回收並驗證 L4 full GRU-D/TCN 結果包，依固定規則選模，完成 final refit、calibration、Set A dry-run 與 freeze；不接觸 Set B |
+| 已完成 | 乾淨 Colab CPU prepare、provenance-clean L4 quick/full、固定三 seeds 的 GRU-D/TCN、結果包逐檔 hash 與 resume/provenance 驗證、無裁量選定 LightGBM、3,400 筆 train+validation refit、600 筆 calibration-only Platt/threshold、Set A dry-run、freeze manifest |
+| 尚待完成 | 使用者審核 freeze 後的唯一一次 Set B final evaluation，以及成功後的正式結果、圖表、cards、發布與 CPU inference gates |
+| 下一個最小動作 | 使用者審核 `artifacts/final-candidate-c993493/freeze_manifest.json`；只有明確回覆「我確認 freeze manifest，授權一次 Set B final evaluation」才可進入 final gate |
+| 結果狀態 | Frozen LightGBM 已鎖定；Set B 正式結果待填，目前 validation/calibration 數值不得當作 test performance 或更新 README 正式結果 |
 
 ## 目標與安全邊界
 
@@ -22,7 +22,7 @@ CareRisk 48H 使用 PhysioNet/Computing in Cardiology Challenge 2012 的 ICU 入
 - 資料來自 ICU 成人族群；不得暗示結果可直接遷移至長照、居家照護或其他醫療場域。
 - 不需要人工標註；唯一標籤為官方 `In-hospital_death`。
 - 原始及處理後資料不提交版本控制，不發布資料副本。
-- 本機工作預設 CPU，不自行使用 RTX 4090；正式 deep training 預設在 Colab CPU/T4。
+- 本機工作預設 CPU，不自行使用 RTX 4090；正式 deep workflow 使用 Colab CPU prepare 與 L4 training，只在有記錄的 OOM/runtime/speed 證據時才升 A100。
 - 未經使用者另行要求，不設定 remote、不推送 GitHub/Hugging Face、不啟動常駐服務。
 - 所有未實際執行的結果一律寫「待填」。
 
@@ -62,18 +62,18 @@ CareRisk 48H 使用 PhysioNet/Computing in Cardiology Challenge 2012 的 ICU 入
 
 - [x] GRU-D 使用 value、mask、delta 與 train-derived decay statistics（code 與 numpy preprocessing tests 完成）。
 - [x] TCN 使用 normalized value、mask、`log1p(delta)` 與小型 dilated residual blocks（code 完成）。
-- [x] 兩模型各控制在約 250k parameters 內，使用 weighted BCE、early stopping、gradient clipping（runtime test 待 Colab torch）。
+- [x] 兩模型各控制在約 250k parameters 內，使用 weighted BCE、early stopping、gradient clipping；Colab L4 quick/full runtime 已通過。
 - [x] 完成 quick/full mode、Drive checkpoint、resume、config hash 與固定環境 lock。
-- [ ] `notebooks/CareRisk48H_Deep_Experiments_Colab.ipynb` 可由空 runtime 一鍵執行。
+- [x] `notebooks/CareRisk48H_Deep_Experiments_Colab.ipynb` 已由 clean CPU prepare、L4 quick 與 L4 full 實際驗證。
 
 ### M5 — 校準、凍結與一次性 Set B 評估
 
-- [ ] 依預先規則選模，建立 freeze manifest 與 artifact hashes。
-- [x] Tabular Platt、isotonic 與 deep temperature calibrator 均完成 serialization tests；final family 尚未 fit 正式 calibrator。
-- [x] Threshold 演算法及 Set A tabular dry-run 已驗證 specificity ≥ 90%；final threshold 尚未鎖定。
-- [ ] 先以 Set A 模擬完整 evaluation，再經明確確認載入 `Outcomes-b.txt`。
+- [x] 依預先規則選定 LightGBM，建立並逐檔驗證 schema-v2 freeze manifest 與 22 個 artifact hashes。
+- [x] 正式 LightGBM 使用 Platt calibrator，且僅 fit Set A calibration 600 筆；serialization prediction parity 通過。
+- [x] Final threshold `0.2974276505509685` 僅以 Set A calibration 鎖定，calibration specificity `0.90715667311412`。
+- [x] 已以 Set A 模擬完整 evaluation 並執行 2,000 次 stratified bootstrap；現停在使用者明確確認門前。
 - [x] Set B outcome access gate/ledger 完成測試，正常流程程式上只允許一次成功 final evaluation；真實 access 次數仍為 0。
-- [x] Set A-only dry-run 已產生 bootstrap CI、reliability、PR/ROC、decision curve、錯誤與 subgroup reports；final 2,000 bootstrap 待 Set B。
+- [x] Set A-only dry-run 已產生 2,000-bootstrap CI、reliability、PR/ROC、decision curve、錯誤與 subgroup reports；Set B final 2,000 bootstrap 待明確授權。
 
 ### M6 — 安全 demo 與發布工程
 
@@ -170,9 +170,9 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Logistic | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | development 已執行；正式待填 |
 | LightGBM | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | development 已執行；正式待填 |
-| GRU-D | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | 待 Colab |
-| TCN | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | 待 Colab |
-| Frozen model | Set B final | 待填 | 待填 | 待填 | 待填 | 待填 | 未執行 |
+| GRU-D | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | development full 已執行；未畫為正式 test 結果 |
+| TCN | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | development full 已執行；未畫為正式 test 結果 |
+| Frozen LightGBM | Set B final | 待填 | 待填 | 待填 | 待填 | 待填 | 已凍結；尚未授權/執行 |
 
 正式結果只能由 `scripts/update_readme_results.py` 讀取合格的 full-run `metrics.json` 更新。
 
@@ -212,6 +212,9 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | Colab Numba 鎖定改採 CPU 與 L4 hosted runtime 的 constraint 交集 `0.61.2` | CPU `pytensor 2.38.3` 要求 `>=0.58,<=0.65.1`，L4 `cudf/cuml 26.2` 要求 `>=0.60,<0.62`；Numba 官方 0.61.2 支援 Python 3.12 與 NumPy 2.2。保留嚴格全環境 `pip check`，不引入會增加 CUDA/PyTorch 風險的額外虛擬環境 |
 | 2026-08-04 | Colab runtime mount names 以 root file-or-directory pattern 忽略，checkpoint 加入 source SHA namespace | Git 將 symlink 視為 file，舊 trailing-slash ignore 只匹配 directory，導致正確 commit 的 run 被誤標 dirty；root pattern 同時涵蓋 symlink/dir，且只忽略固定 generated roots。source SHA namespace 避免修正版誤載舊 source checkpoint，保留 resume fingerprint 嚴格性 |
 | 2026-08-04 | Colab source checkout 重跑前先切換至固定 checkout 的父目錄 | quick 結束時 kernel CWD 位於 source checkout；同 runtime 執行 full 若先刪除此目錄，後續 Git process 會從失效 CWD 啟動並 exit 128。先切至 `/content` 後再刪除與 clone，可保留 immutable fresh checkout 並支援 quick→full 連續階段 |
+| 2026-08-04 | 接受 source `13d83ac...` 的 L4 full GRU-D/TCN 結果包 | ZIP sidecar、內部 32 個 member hashes、config/data/split/source/environment、checkpoint 與 resume provenance 全部相符；quick 仍只作 smoke evidence |
+| 2026-08-04 | 依預註冊規則選定 LightGBM | LightGBM validation AUPRC/Brier/ECE 為 `0.586296/0.088763/0.039042`；GRU-D 為 `0.553398/0.143252/0.145417`，TCN 為 `0.547089/0.143873/0.209511`。兩個 deep family 皆未達 +0.01 AUPRC 且 Brier/ECE 惡化，因此無裁量選較簡單 tabular candidate |
+| 2026-08-04 | 凍結 3-seed LightGBM ensemble + Platt + threshold `0.2974276505509685` | 模型/preprocessing 只 fit Set A train+validation 3,400 筆；calibrator/threshold 只 fit calibration 600 筆；Set A 2,000-bootstrap dry-run 通過後建立 freeze，Set B success count 保持 0 |
 
 ## 驗證證據
 
@@ -275,13 +278,22 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | M4 first full launch after clean quick | 同一 L4 runtime 將 `MODE='full'` 後全部執行 | 在任何 full training 前失敗；source setup 刪除當前 CWD 後 `git clone` exit 128。Drive already mounted 為提示而非根因；未產生 full run、未接觸 Set B |
 | 2026-08-04 | M4 consecutive-stage TDD | `pytest tests/test_colab_notebook.py::test_source_setup_can_run_twice_in_the_same_runtime -q`；再跑 `pytest tests/test_colab_notebook.py tests/test_colab_handoff.py -q` | RED：第一次真實 bundle clone 成功，第二次刪除 active checkout 失敗；GREEN：切至 checkout parent 後同一 setup cell 連續兩次真實 clone 通過，10 targeted tests passed |
 | 2026-08-04 | M4 consecutive-stage full verification | `pytest -q -ra`、`ruff check .`、CI `mypy`、`pip check`、`pre-commit run --all-files`、notebook 6 code-cell AST、`git diff --check` | 通過；78 tests passed、1 Torch module skipped per local-CPU protocol；Ruff、Mypy 34 source files、依賴、全部 hooks、notebook syntax 與 whitespace gate 均通過 |
+| 2026-08-04 | M4 L4 full | source `13d83ac62ff22d0dc5ad900115cf4611edd90e6e`，runs `20260803T182046Z-grud-full` / `20260803T182503Z-tcn-full` | 通過；package 3,623,291 bytes，SHA-256 `53ad896695245409beff505b9e0d890db62c62aa154e0fa4545c9430905bc614`；GRU-D 199.729 s、TCN 30.929 s，三 seeds 皆完成，`set_b_accessed=false` |
+| 2026-08-04 | M4 result-package gate | outer sidecar、ZIP path/duplicate gate、`package_manifest.json` 內部 hash、`_validate_deep_run(...)` 對兩 runs 重驗 | 通過；config `6f0722...08cb`、data `0311dc...7b72`、split `77a2f0...d631`、environment lock `57b231...8e8` 均一致；resume/checkpoint/source provenance 通過 |
+| 2026-08-04 | M5 preregistered selection | 對 Logistic、LightGBM、GRU-D、TCN 執行固定 `select_candidate` | 通過；LightGBM AUPRC `0.5862958639` 高於 deep，且兩 deep 的 +0.01/Brier/ECE 三項 checks 全 false；選定 LightGBM，`set_b_accessed=false` |
+| 2026-08-04 | M5 final-refit TDD | `pytest tests/test_final_refit.py tests/test_calibration.py tests/test_freezing.py -q`，再跑 full suite/Ruff/Mypy/pip check/pre-commit | RED：缺少 final refit module；GREEN：9 targeted passed；後續完整驗證 80 tests passed、1 Torch module skipped，Ruff、Mypy 35 source files、依賴與 hooks 均通過 |
+| 2026-08-04 | M5 Set A simulated evaluation | `dry_run_tabular_calibration.py --bootstrap-samples 2000` 於隔離 development copy | 通過；`evaluation_status=set_a_reused_development_dry_run`，stratified percentile bootstrap 2,000、seed 2026，reliability/PR/ROC/decision/error/subgroup artifacts 齊全，`set_b_accessed=false` |
+| 2026-08-04 | M5 final candidate parity | 鎖定 `.venv` 重算 9 個 candidate hashes、3,400/600 fit ID hashes、重載 3 models 並重算 600 筆 calibration predictions | 通過；serialized raw/calibrated probabilities 以 `atol=1e-12` 相符；threshold `0.2974276505509685`、specificity `0.90715667311412`，Set B 未接觸 |
+| 2026-08-04 | M5 freeze gate | `create_freeze_manifest(... confirm_freeze=True)` 後 `validate_freeze_manifest(... verify_artifacts=True)` | 通過；`freeze_manifest.json` 8,380 bytes，SHA-256 `22de6c8317c202372d2281bab5a4998ecc0b3a566b85cf2355d6ef80ba23db80`，22 個 artifacts 逐檔驗證，`set_b_final_evaluation_successes=0` |
+| 2026-08-04 | freeze handoff full verification | `.venv\Scripts\python.exe -m pytest -q -ra`、Ruff、Mypy `src`、`pip check`、`pre-commit run --all-files`、`git diff --check` | 通過；80 tests passed、1 Torch module 依本機 CPU protocol skipped；Ruff passed、Mypy 35 source files、無 broken requirements、全部 hooks 通過 |
+| 2026-08-04 | freeze handoff build gate | `.venv\Scripts\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\wheelhouse-freeze` + required-member gate | 通過；wheel 71,996 bytes，SHA-256 `929b622e14fbf7678e087e16dcaa378aeae79e53e4e212a2887d63989d0195a2`，含 final-refit/freezing/final-gate/Colab handoff modules |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** clean Colab CPU prepare、L4 dependency gate 與 provenance-clean L4 quick 均已通過；source `8a89173...` quick ZIP/checksum 已成功產生。quick 後同一 runtime 首次 full launch 在訓練前因 active source CWD 被刪除而 exit 128；本機已以 red→green 修正 source checkout 重跑流程，已通過同一 setup cell 連續兩次真實 bundle clone。
-- **本機驗證：** consecutive-stage regression 及 Colab/handoff targeted tests 10 passed；full suite 78 tests passed、1 Torch module skipped per protocol；Ruff、CI Mypy 34 source files、pip check、第二輪 targeted pre-commit 均通過。刻意擴大至非 CI 範圍的 `mypy src scripts app` 仍只回報 dry-run script 2 個既有型別問題，與本修正無關。
-- **Commits：** `39db5f7` allow consecutive Colab stages in one runtime；本段文件更新另見最新 commit。
-- **尚未進行：** L4 full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
-- **下一步：** 使用者以本回合最終 CWD 修正版 bundle/receipt/notebook 取代 Drive handoff 三檔，保留 `CareRisk48H-runtime`，在 L4 直接執行 `MODE='full'`；已通過的 quick 不需重跑。完成後將 full ZIP 與 `.sha256` 帶回本 task。
-- **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。
+- **完成內容：** L4 full GRU-D/TCN 與可驗證結果包已完成；預註冊選模無裁量選定 LightGBM；3-seed train+validation final refit、calibration-only Platt/threshold、Set A 2,000-bootstrap dry-run 與 schema-v2 freeze 全部通過。Freeze manifest 包含 22 個可重驗 artifacts。
+- **本機驗證：** Colab ZIP/sidecar/internal hashes、兩個 deep run provenance/resume/checkpoints、固定選模規則、final candidate 9 個 metadata hashes、600 筆 serialized calibration prediction parity、Set A dry-run 與 freeze 22 個 artifact re-hash 均通過。最終 full suite 80 tests passed、1 Torch module 依 protocol skipped；Ruff、Mypy 35 source files、pip check、pre-commit、wheel/required-member gate 全部通過。
+- **Commits：** `39db5f7` allow consecutive Colab stages in one runtime；`13d83ac` record clean L4 quick and rerun fix；`c993493` add frozen tabular refit pipeline；本段進度文件更新另見最新 commit。
+- **尚未進行：** 使用者明確確認後的唯一一次 Set B final evaluation，以及成功後自動更新正式 README 結果、plots/reports、PROJECT_PLAN/MODEL_CARD/DATA_CARD、build/export/Docker/CPU inference gates。
+- **下一步：** 使用者審核 `artifacts/final-candidate-c993493/freeze_manifest.json`；若確認，只需回覆「我確認 freeze manifest，授權一次 Set B final evaluation」。
+- **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，成功 access 次數為 0。Quick package 固定 `smoke_test`，Set A dry-run 固定 `set_a_reused_development_dry_run`，均不得當作正式 test 結果。
