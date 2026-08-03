@@ -238,7 +238,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-03 | M5 safety | freeze/final-gate red→green tests | schema-v2 required provenance、artifact re-hash-before-outcome、zero-success freeze、one-success ledger 與 persistent final-lock 均通過 synthetic fixture；真實 Set B access count 維持 0 |
 | 2026-08-03 | 全域 | `pytest -q -ra` / `ruff check .` / `mypy` / `pip check` | 通過；73 tests collected（Torch-dependent module 在本機無 Torch，依協議留待 Colab）、Ruff passed、Mypy 34 source files、無 broken requirements |
 | 2026-08-03 | 全域 | `PYTHONNOUSERSITE=1 pre-commit run --all-files` | 第一輪 Ruff formatter 改寫 5 個本次/新追蹤檔案，故未視為通過；提交格式化後第二輪全 hooks 通過 |
-| 2026-08-03 | build | `pip wheel . --no-deps --wheel-dir artifacts/wheelhouse` + ZIP member gate | 通過；wheel 67,485 bytes、SHA-256 `b1d404...378f`，必要 model 與 Colab handoff modules 均存在 |
+| 2026-08-03 | build | `pip wheel . --no-deps --wheel-dir artifacts/wheelhouse` + ZIP member gate | 最終重建通過；wheel 68,989 bytes、SHA-256 `1e9ead...98ee`，必要 model、Colab handoff、freeze/final-gate modules 均存在 |
 | 2026-08-03 | M4 Windows handoff | Unicode-path Git bundle red→green regression | 首次實際 bundle verify 在中文 repo path 出現 background `UnicodeDecodeError`；固定 Git subprocess UTF-8 decoding 後，含中文 repo/output path 的 clone/receipt test 無 warning 通過 |
 
 ## Session handoff
