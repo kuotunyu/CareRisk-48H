@@ -7,11 +7,11 @@
 | 欄位 | 內容 |
 | --- | --- |
 | 當前 milestone | M4 — clean Colab runtime quick/full 驗證；通過後進入 M5 final candidate refit/freeze |
-| 狀態 | M0–M3 完成；M4 clean Colab CPU prepare 已通過，第二次 L4 quick 完成訓練但 runtime symlink 使 run 誤標 dirty、打包被 provenance gate 擋下；修正版待重跑；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
-| 本回合範圍 | 修正 Colab Drive runtime symlink 的 Git dirtiness 與跨 source checkpoint collision，重建 immutable handoff；不接觸 Set B |
-| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；CPU/L4 dependency gate 已通過；runtime mount names 現保持 Git clean，checkpoint 依 mode/source SHA 分區 |
-| 尚待完成 | Colab quick/full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
-| 下一個最小動作 | 以新 bundle/receipt/notebook 開啟全新 L4 runtime，設定 `STAGE='train'`、`MODE='quick'`、`EXPECTED_GPU='L4'` 後全部執行並回收 quick ZIP/checksum |
+| 狀態 | M0–M3 完成；M4 clean Colab CPU prepare 與 provenance-clean L4 quick 已通過；quick 後同 runtime 啟動 full 時發現 source checkout 重跑 CWD blocker，本機 TDD 修正版已完成、待以新 immutable handoff 執行 full；M5 safety gate 已加固、正式 refit/calibration/freeze 未執行；M6 工程完成 |
+| 本回合範圍 | 記錄 provenance-clean L4 quick，修正同一 Colab runtime 連續 quick→full 時的 source checkout CWD blocker，重建 immutable handoff；不接觸 Set B |
+| 已完成 | 乾淨 source export、固定 seeds/config fingerprint、resume provenance、Colab result package、schema-v2 freeze/final lock；CPU/L4 dependency gate 已通過；L4 quick 已產生可驗證 smoke ZIP/checksum；runtime mount names 保持 Git clean，checkpoint 依 mode/source SHA 分區 |
+| 尚待完成 | Colab full GRU-D/TCN、依門檻選模、train+validation refit、正式 calibration/threshold/Set A dry-run/freeze、一次性 Set B final evaluation |
+| 下一個最小動作 | 以 CWD 修正版 bundle/receipt/notebook 取代 Drive handoff 三檔，保持 L4 並設定 `STAGE='train'`、`MODE='full'`、`EXPECTED_GPU='L4'` 後全部執行；已通過的 quick 不需重跑 |
 | 結果狀態 | 正式結果待填；目前產物僅為 development/smoke evidence，不得更新公開結果表 |
 
 ## 目標與安全邊界
@@ -211,6 +211,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | Colab 專案套件改用一般安裝並立即 import | 第三次 CPU prepare 證明 editable install 可讓 distribution metadata 與 `pip check` 通過，卻未讓目前 kernel 重新處理 `.pth`；改為 `%pip install -q . --no-deps`，同一格立即 import 精確失敗模組，資料下載前 fail fast |
 | 2026-08-04 | Colab Numba 鎖定改採 CPU 與 L4 hosted runtime 的 constraint 交集 `0.61.2` | CPU `pytensor 2.38.3` 要求 `>=0.58,<=0.65.1`，L4 `cudf/cuml 26.2` 要求 `>=0.60,<0.62`；Numba 官方 0.61.2 支援 Python 3.12 與 NumPy 2.2。保留嚴格全環境 `pip check`，不引入會增加 CUDA/PyTorch 風險的額外虛擬環境 |
 | 2026-08-04 | Colab runtime mount names 以 root file-or-directory pattern 忽略，checkpoint 加入 source SHA namespace | Git 將 symlink 視為 file，舊 trailing-slash ignore 只匹配 directory，導致正確 commit 的 run 被誤標 dirty；root pattern 同時涵蓋 symlink/dir，且只忽略固定 generated roots。source SHA namespace 避免修正版誤載舊 source checkpoint，保留 resume fingerprint 嚴格性 |
+| 2026-08-04 | Colab source checkout 重跑前先切換至固定 checkout 的父目錄 | quick 結束時 kernel CWD 位於 source checkout；同 runtime 執行 full 若先刪除此目錄，後續 Git process 會從失效 CWD 啟動並 exit 128。先切至 `/content` 後再刪除與 clone，可保留 immutable fresh checkout 並支援 quick→full 連續階段 |
 
 ## 驗證證據
 
@@ -270,13 +271,17 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | M4 runtime-wiring full verification | full pytest、Ruff、Mypy、`pip check`、pre-commit all-files、notebook 6 code-cell AST | 第一輪 pre-commit formatter 改寫新 helper，故未視為通過；重跑 targeted 後第二輪全部通過。最終 77 tests passed、1 Torch module skipped per protocol；Ruff、Mypy 34 files、依賴、hooks 與 AST 均通過 |
 | 2026-08-04 | build after runtime-wiring fix | `.venv\\Scripts\\python.exe -m pip wheel . --no-deps --wheel-dir artifacts\\wheelhouse-e14b3d1` | 通過；wheel 69,095 bytes、SHA-256 `d9fb869d2aa70dc6c2d9e7210ae1cacb23d250a9117b0af57ab4f0ad3f7f2023` |
 | 2026-08-04 | M4 runtime-wiring handoff candidate gate | bundle verify、branch clean clone、建立 runtime mount placeholders 後 Git clean、checkpoint namespace assertion | 通過；source `e14b3d1441a511112341f4e4b50dfe5d05bdc6ac` bundle 135,985 bytes、SHA-256 `95aafc69a18deb3d1b7388bd6e160237731c495ef6762aee7826707fdb649302`；clone 在 runtime wiring 後仍 clean |
+| 2026-08-04 | M4 provenance-clean L4 quick | source `8a89173d3a6b9ffe96e1c4c521d7aa89b68487e8`，L4 `STAGE='train'`、`MODE='quick'` | 通過；result package `carerisk48h-colab-quick-20260803T175915Z-8a89173d3a6b.zip`，3,555,405 bytes，SHA-256 `06f414c215ba2624f3292e06c00b95b707bc37b6b72c11dd5f7d0cd6bd88daa2`，並產生 `.sha256` sidecar；固定為 `smoke_test`，未接觸 Set B |
+| 2026-08-04 | M4 first full launch after clean quick | 同一 L4 runtime 將 `MODE='full'` 後全部執行 | 在任何 full training 前失敗；source setup 刪除當前 CWD 後 `git clone` exit 128。Drive already mounted 為提示而非根因；未產生 full run、未接觸 Set B |
+| 2026-08-04 | M4 consecutive-stage TDD | `pytest tests/test_colab_notebook.py::test_source_setup_can_run_twice_in_the_same_runtime -q`；再跑 `pytest tests/test_colab_notebook.py tests/test_colab_handoff.py -q` | RED：第一次真實 bundle clone 成功，第二次刪除 active checkout 失敗；GREEN：切至 checkout parent 後同一 setup cell 連續兩次真實 clone 通過，10 targeted tests passed |
+| 2026-08-04 | M4 consecutive-stage full verification | `pytest -q -ra`、`ruff check .`、CI `mypy`、`pip check`、`pre-commit run --all-files`、notebook 6 code-cell AST、`git diff --check` | 通過；78 tests passed、1 Torch module skipped per local-CPU protocol；Ruff、Mypy 34 source files、依賴、全部 hooks、notebook syntax 與 whitespace gate 均通過 |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** clean Colab CPU prepare 已通過；L4 dependency gate 已通過；第二次 L4 quick 已證明兩模型可完成三 seeds，但 runtime symlink 使 metadata 誤標 dirty 並被打包 gate 正確拒絕。修正版將 generated roots 對 Git 保持 clean，並將 checkpoint 依 source SHA 分區；既有 dirty runs 不改寫、不當成功結果。
-- **本機驗證：** runtime-wiring/provenance regression 已完成 red→green；77 tests passed、1 Torch module skipped per protocol；9 targeted tests、6 code-cell AST、Ruff、CI Mypy 34 source files、pip check、第二輪 pre-commit、wheel build 與 bundle runtime-wiring clean-clone gate 均通過。
-- **Commits：** `e14b3d1` keep Colab runtime wiring provenance-clean；本段文件更新另見最新 commit。
-- **尚未進行：** provenance-clean L4 quick、L4 full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
-- **下一步：** 使用者以本回合最終 bundle/receipt/notebook 取代 Drive 舊檔，開全新 L4 runtime 執行 quick；新 source namespace 會避開舊 dirty checkpoints。將 ZIP 與 `.sha256` 帶回本 task，通過後才執行 L4 full。
+- **完成內容：** clean Colab CPU prepare、L4 dependency gate 與 provenance-clean L4 quick 均已通過；source `8a89173...` quick ZIP/checksum 已成功產生。quick 後同一 runtime 首次 full launch 在訓練前因 active source CWD 被刪除而 exit 128；本機已以 red→green 修正 source checkout 重跑流程，已通過同一 setup cell 連續兩次真實 bundle clone。
+- **本機驗證：** consecutive-stage regression 及 Colab/handoff targeted tests 10 passed；full suite 78 tests passed、1 Torch module skipped per protocol；Ruff、CI Mypy 34 source files、pip check、第二輪 targeted pre-commit 均通過。刻意擴大至非 CI 範圍的 `mypy src scripts app` 仍只回報 dry-run script 2 個既有型別問題，與本修正無關。
+- **Commits：** `39db5f7` allow consecutive Colab stages in one runtime；本段文件更新另見最新 commit。
+- **尚未進行：** L4 full GRU-D/TCN、預註冊選模、train+validation final refit、正式 calibration/threshold、final Set A simulated evaluation、freeze manifest、使用者確認後唯一一次 Set B final evaluation。
+- **下一步：** 使用者以本回合最終 CWD 修正版 bundle/receipt/notebook 取代 Drive handoff 三檔，保留 `CareRisk48H-runtime`，在 L4 直接執行 `MODE='full'`；已通過的 quick 不需重跑。完成後將 full ZIP 與 `.sha256` 帶回本 task。
 - **注意：** 未讀取、顯示、修改或提交 `.env`；無 Git remote；本機 GPU 未使用；未搜尋或接觸真實 Set B outcome path，真實 Set B success ledger/final lock 均不存在，成功 access 次數為 0。Quick package 固定 `smoke_test`，不得更新 README。
