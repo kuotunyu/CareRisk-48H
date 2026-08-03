@@ -25,6 +25,8 @@ def test_colab_notebook_has_safety_and_resume_contract() -> None:
     assert "--verify-only" in source
     assert "generate_data_quality.py" in source
     assert "package_deep_results" in source
+    assert "deep_checkpoint_directory" in source
+    assert "checkpoint_dir=checkpoint_dir" in source
     assert "EXPECTED_GPU = 'L4'" in source
     assert "requested L4-first policy" in source
 

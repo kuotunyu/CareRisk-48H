@@ -18,6 +18,17 @@ from carerisk48h.data.downloader import sha256_file
 _FAMILIES = ("grud", "tcn")
 
 
+def deep_checkpoint_directory(root: str | Path, *, mode: str, source_git_sha: str) -> Path:
+    """Keep resumable checkpoints isolated by mode and immutable source revision."""
+    if mode not in {"quick", "full"}:
+        raise ValueError("mode must be quick or full")
+    if len(source_git_sha) != 40 or any(
+        character not in "0123456789abcdef" for character in source_git_sha
+    ):
+        raise ValueError("source_git_sha must be a lowercase 40-character Git SHA")
+    return Path(root) / mode / source_git_sha[:12]
+
+
 def _git(root: Path, *arguments: str) -> str:
     return subprocess.run(
         ["git", *arguments],

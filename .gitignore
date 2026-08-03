@@ -17,10 +17,9 @@ build/
 dist/
 
 # Data and generated artifacts
-data/raw/
-data/processed/
-artifacts/
-checkpoints/
+/data
+/artifacts
+/checkpoints
 /models/
 results/
 reports/generated/

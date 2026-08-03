@@ -7,11 +7,50 @@ from pathlib import Path
 
 import pytest
 
-from carerisk48h.artifacts import deep_resume_fingerprint, stable_hash
+from carerisk48h.artifacts import deep_resume_fingerprint, git_state, stable_hash
 from carerisk48h.colab_handoff import create_source_bundle, package_deep_results
 from carerisk48h.data.downloader import sha256_file
 
 SEEDS = (17, 42, 2026)
+
+
+def test_runtime_mount_names_do_not_dirty_git_source(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    (repo / ".gitignore").write_text(
+        Path(".gitignore").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    subprocess.run(["git", "add", ".gitignore"], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    for name in ("data", "artifacts", "checkpoints"):
+        (repo / name).write_text("runtime-link-placeholder\n", encoding="utf-8")
+
+    assert git_state(repo)["dirty"] is False
+
+
+def test_checkpoint_directory_is_namespaced_by_source_revision(tmp_path: Path) -> None:
+    from carerisk48h.colab_handoff import deep_checkpoint_directory
+
+    source_sha = "c" * 40
+
+    assert deep_checkpoint_directory(tmp_path, mode="quick", source_git_sha=source_sha) == (
+        tmp_path / "quick" / ("c" * 12)
+    )
 
 
 @pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
