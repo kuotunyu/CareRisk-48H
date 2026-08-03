@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime
+from math import isfinite
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,15 @@ def _is_hash(value: Any, *, length: int = 64) -> bool:
     return len(normalized) == length and all(
         character in "0123456789abcdef" for character in normalized
     )
+
+
+def _finite_unit_interval(value: Any, *, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(float(value)):
+        raise ValueError(f"formal result {field} must be finite")
+    normalized = float(value)
+    if not 0.0 <= normalized <= 1.0:
+        raise ValueError(f"formal result {field} must be between zero and one")
+    return normalized
 
 
 def _format_interval(item: dict[str, Any]) -> str:
@@ -59,12 +70,58 @@ def validate_final_metrics(payload: dict[str, Any]) -> None:
         raise ValueError("final metrics payload is incomplete")
     if metrics.get("n") != 4_000:
         raise ValueError("formal Set B results require exactly 4,000 records")
-    if not {"auprc", "auroc", "brier", "ece"}.issubset(payload.get("confidence_intervals", {})):
+    bounded_metrics = {
+        name: _finite_unit_interval(metrics[name], field=f"metric {name}")
+        for name in (
+            "auprc",
+            "auroc",
+            "brier",
+            "ece",
+            "sensitivity",
+            "specificity",
+            "threshold",
+        )
+    }
+    intervals = payload.get("confidence_intervals", {})
+    if not {"auprc", "auroc", "brier", "ece"}.issubset(intervals):
         raise ValueError("final confidence intervals are incomplete")
+    for name in ("auprc", "auroc", "brier", "ece"):
+        interval = intervals[name]
+        if not isinstance(interval, dict) or not {"estimate", "lower", "upper"}.issubset(interval):
+            raise ValueError("final confidence intervals are incomplete")
+        try:
+            estimate = _finite_unit_interval(interval["estimate"], field=f"{name} CI estimate")
+            lower = _finite_unit_interval(interval["lower"], field=f"{name} CI lower bound")
+            upper = _finite_unit_interval(interval["upper"], field=f"{name} CI upper bound")
+        except ValueError as exc:
+            raise ValueError("final confidence intervals are incomplete or non-finite") from exc
+        if lower > estimate or estimate > upper or abs(estimate - bounded_metrics[name]) > 1e-12:
+            raise ValueError("final confidence intervals are inconsistent with metrics")
+
+    family = payload.get("model_family")
+    expected_calibrator = {
+        "logistic": "platt",
+        "lightgbm": "platt",
+        "grud": "temperature",
+        "tcn": "temperature",
+    }.get(family)
+    calibrator = payload.get("calibrator")
+    if (
+        expected_calibrator is None
+        or not isinstance(calibrator, dict)
+        or calibrator.get("method") != expected_calibrator
+    ):
+        raise ValueError("formal results calibrator does not match the model family")
+    top_level_threshold = _finite_unit_interval(payload.get("threshold"), field="threshold")
+    if abs(top_level_threshold - bounded_metrics["threshold"]) > 1e-12:
+        raise ValueError("formal result threshold is inconsistent with metrics")
     provenance_fields = {
         "run_id",
         "created_at_utc",
+        "model_family",
         "model_seeds",
+        "calibrator",
+        "threshold",
         "candidate_source_git_sha",
         "evaluation_source_git_sha",
         "freeze_manifest_sha256",

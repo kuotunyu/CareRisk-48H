@@ -16,9 +16,21 @@ def _module():
 
 
 def _valid_payload() -> dict:
+    metrics = {
+        "n": 4000,
+        "auprc": 0.5,
+        "auroc": 0.8,
+        "brier": 0.1,
+        "ece": 0.03,
+        "sensitivity": 0.6,
+        "specificity": 0.9,
+        "threshold": 0.2,
+    }
     intervals = {
-        name: {"estimate": 0.5, "lower": 0.4, "upper": 0.6}
-        for name in ("auprc", "auroc", "brier", "ece")
+        "auprc": {"estimate": 0.5, "lower": 0.4, "upper": 0.6},
+        "auroc": {"estimate": 0.8, "lower": 0.7, "upper": 0.9},
+        "brier": {"estimate": 0.1, "lower": 0.08, "upper": 0.12},
+        "ece": {"estimate": 0.03, "lower": 0.02, "upper": 0.05},
     }
     return {
         "run_id": "20260804T000000Z-lightgbm-set-b-final",
@@ -35,6 +47,7 @@ def _valid_payload() -> dict:
         "model_family": "lightgbm",
         "model_seeds": [17, 42, 2026],
         "calibrator": {"method": "platt"},
+        "threshold": 0.2,
         "candidate_source_git_sha": "a" * 40,
         "evaluation_source_git_sha": "b" * 40,
         "evaluation_source_git_dirty": False,
@@ -51,16 +64,7 @@ def _valid_payload() -> dict:
             "set_b_access_ledger.final-lock.json": "4" * 64,
         },
         "subgroups": [{"subgroup": "gender", "level": "0"}],
-        "metrics": {
-            "n": 4000,
-            "auprc": 0.5,
-            "auroc": 0.8,
-            "brier": 0.1,
-            "ece": 0.03,
-            "sensitivity": 0.6,
-            "specificity": 0.9,
-            "threshold": 0.2,
-        },
+        "metrics": metrics,
         "confidence_intervals": intervals,
     }
 
@@ -89,6 +93,56 @@ def test_updater_rejects_nonofficial_set_b_cohort_size(tmp_path) -> None:
     payload = _valid_payload()
     payload["metrics"]["n"] = 80
     with pytest.raises(ValueError, match="4,000"):
+        updater.update_readme(readme, payload)
+
+
+def test_updater_rejects_incomplete_final_confidence_interval(tmp_path) -> None:
+    updater = _module()
+    readme = tmp_path / "README.md"
+    readme.write_text("x\n<!-- RESULTS_START -->old<!-- RESULTS_END -->\ny", encoding="utf-8")
+    payload = _valid_payload()
+    payload["confidence_intervals"]["auprc"]["lower"] = None
+    with pytest.raises(ValueError, match="confidence intervals"):
+        updater.update_readme(readme, payload)
+
+
+def test_updater_rejects_confidence_interval_estimate_mismatch(tmp_path) -> None:
+    updater = _module()
+    readme = tmp_path / "README.md"
+    readme.write_text("x\n<!-- RESULTS_START -->old<!-- RESULTS_END -->\ny", encoding="utf-8")
+    payload = _valid_payload()
+    payload["confidence_intervals"]["auroc"]["estimate"] = 0.7
+    with pytest.raises(ValueError, match="confidence intervals"):
+        updater.update_readme(readme, payload)
+
+
+def test_updater_rejects_threshold_mismatch(tmp_path) -> None:
+    updater = _module()
+    readme = tmp_path / "README.md"
+    readme.write_text("x\n<!-- RESULTS_START -->old<!-- RESULTS_END -->\ny", encoding="utf-8")
+    payload = _valid_payload()
+    payload["threshold"] = 0.3
+    with pytest.raises(ValueError, match="threshold"):
+        updater.update_readme(readme, payload)
+
+
+def test_updater_rejects_wrong_calibrator_for_model_family(tmp_path) -> None:
+    updater = _module()
+    readme = tmp_path / "README.md"
+    readme.write_text("x\n<!-- RESULTS_START -->old<!-- RESULTS_END -->\ny", encoding="utf-8")
+    payload = _valid_payload()
+    payload["calibrator"] = {"method": "temperature"}
+    with pytest.raises(ValueError, match="calibrator"):
+        updater.update_readme(readme, payload)
+
+
+def test_updater_rejects_nonfinite_formal_metric(tmp_path) -> None:
+    updater = _module()
+    readme = tmp_path / "README.md"
+    readme.write_text("x\n<!-- RESULTS_START -->old<!-- RESULTS_END -->\ny", encoding="utf-8")
+    payload = _valid_payload()
+    payload["metrics"]["auprc"] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
         updater.update_readme(readme, payload)
 
 
