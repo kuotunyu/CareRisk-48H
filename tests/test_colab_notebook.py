@@ -4,6 +4,9 @@ import json
 import subprocess
 from pathlib import Path
 
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
+
 NOTEBOOK_PATH = Path("notebooks/CareRisk48H_Deep_Experiments_Colab.ipynb")
 
 
@@ -26,7 +29,7 @@ def test_colab_notebook_has_safety_and_resume_contract() -> None:
     assert "requested L4-first policy" in source
 
 
-def test_colab_requirements_match_the_hosted_runtime_contract() -> None:
+def test_colab_requirements_match_cpu_and_l4_runtime_contracts() -> None:
     pins = {
         name.casefold(): version
         for line in Path("requirements-colab.txt").read_text(encoding="utf-8").splitlines()
@@ -36,7 +39,10 @@ def test_colab_requirements_match_the_hosted_runtime_contract() -> None:
 
     assert pins["jedi"] == "0.19.2"
     assert pins["pandas"] == "2.2.2"
-    assert pins["numba"] == "0.65.1"
+    numba = Version(pins["numba"])
+    assert numba in SpecifierSet(">=0.58,<=0.65.1")  # CPU pytensor 2.38.3
+    assert numba in SpecifierSet(">=0.60,<0.62")  # L4 cudf/cuml 26.2
+    assert numba in SpecifierSet(">=0.61.2,<0.62")  # NumPy 2.2 support
 
 
 def test_colab_installs_an_importable_package_in_the_current_kernel() -> None:

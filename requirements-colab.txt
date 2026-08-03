@@ -3,7 +3,7 @@ jedi==0.19.2
 joblib==1.5.3
 lightgbm==4.6.0
 matplotlib==3.10.8
-numba==0.65.1
+numba==0.61.2
 numpy==2.2.6
 pandas==2.2.2
 PyYAML==6.0.3
