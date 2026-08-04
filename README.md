@@ -87,7 +87,7 @@ python benchmark.py --warmup 10 --iterations 100
 
 預設 dashboard 只使用 deterministic synthetic fixture/bundle，顯示 48 小時趨勢、缺失、raw/calibrated risk、threshold、contributors 與聲明。若 coverage/count 低於 Set A train 第 1 percentile、核心 vital groups 少於三組，或 IsolationForest score 低於 train 第 1 percentile，精確機率會被隱藏並顯示「資料品質不足，需要人工複核」。Synthetic bundle 分數不是本研究結果。
 
-目前 synthetic guarded CPU smoke benchmark 已執行，但只有 frozen production-shaped bundle 的 benchmark 才能作為發布證據；正式值由 ignored `reports/generated/` 管理。
+Post-final CPU gates 已執行：完全離線 Docker 的 synthetic guarded bundle 以 2 CPU、10 warm-up/100 measured iterations 得到 p95 `18.08 ms`、peak RSS `269.85 MB`；frozen 3-model LightGBM+Platt batch candidate 以單一 CPU thread、相同迭代數得到 p95 `24.89 ms`、peak RSS `140.66 MB`。兩者皆低於本專案 1 秒 soft target，但這只是本機效能證據，不是臨床 SLA、臨床效度或部署核准。
 
 ## 限制與 ICU→長照遷移差距
 
