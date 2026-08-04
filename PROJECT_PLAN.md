@@ -6,12 +6,12 @@
 
 | 欄位 | 內容 |
 | --- | --- |
-| 當前 milestone | Complete — M0–M6 與 post-final closeout 全部完成 |
-| 狀態 | 使用者精確授權後，frozen 3-seed LightGBM 已完成唯一一次 4,000 筆 Set B final evaluation、2,000-bootstrap CI、11 個 subgroup reports、ledger/final lock、strict provenance validation 與全部 post-final release gates；成功 access 次數恰為 1 |
-| 本回合範圍 | 驗證 input-only Set B、執行唯一一次 audited final evaluation、由合格 metrics 自動更新正式結果/cards，並重跑 post-final tests/build/clean export/Docker/CPU inference gates |
-| 已完成 | Freeze 22 artifacts 重驗、4,000 筆 Set B input preflight、唯一一次 outcome access、正式 metrics/CI、PR/ROC/reliability/decision curve、error/subgroup reports、七個 output hashes、persistent final lock、README 自動更新、cards、full tests、wheel、clean export、Docker 與 CPU inference gates |
+| 當前 milestone | Complete — M0–M6、post-final closeout 與 GitHub source publication 全部完成 |
+| 狀態 | 使用者精確授權後，frozen 3-seed LightGBM 已完成唯一一次 4,000 筆 Set B final evaluation與全部 post-final gates；另依使用者明確選擇建立 Public GitHub repository，僅發布受版本控制的 source/docs，不含資料、outcomes、模型或 artifacts |
+| 本回合範圍 | 建立 `kuotunyu/CareRisk-48H` Public repository、設定正體中文 About/description/topics、驗證 contributor 與 tracked-file 邊界並推送 `main`；不建立 tag、Release 或部署 |
+| 已完成 | 研究閉環、正式結果與 release gates；GitHub 身分、唯一 commit author、無 co-author、109 個 tracked files 的公開安全 gate、Public repository 與正體中文 metadata |
 | 尚待完成 | 無；保留 raw data、outcomes、models、predictions、reports 與 ledger/final lock 於 ignored 本機 artifacts，不發布、不重跑 final evaluation |
-| 下一個最小動作 | 使用者只需審閱正式結果與限制；若無新授權，不設定 remote、不推送、不部署、不建立 tag/release |
+| 下一個最小動作 | 使用者只需審閱 GitHub 頁面與正式結果；若無新授權，不建立 tag/Release、不部署，也不重跑 Set B |
 | 結果狀態 | Frozen LightGBM Set B final 已完成；AUPRC `0.555`（95% CI `0.516–0.594`），結果僅供研究與教育，不構成臨床或長照效度 |
 
 ## 目標與安全邊界
@@ -23,7 +23,7 @@ CareRisk 48H 使用 PhysioNet/Computing in Cardiology Challenge 2012 的 ICU 入
 - 不需要人工標註；唯一標籤為官方 `In-hospital_death`。
 - 原始及處理後資料不提交版本控制，不發布資料副本。
 - 本機工作預設 CPU，不自行使用 RTX 4090；正式 deep workflow 使用 Colab CPU prepare 與 L4 training，只在有記錄的 OOM/runtime/speed 證據時才升 A100。
-- 未經使用者另行要求，不設定 remote、不推送 GitHub/Hugging Face、不啟動常駐服務。
+- 本次僅依使用者明確授權建立並推送 Public GitHub source repository；未經另行要求，不推送 Hugging Face、不建立 tag/Release、不部署或啟動常駐服務。
 - 所有未實際執行的結果一律寫「待填」。
 
 ## Milestones 與驗收條件
@@ -221,6 +221,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | 正式結果 consumer 對 metric/CI/threshold/calibrator 一致性 fail closed | AUPRC/AUROC/Brier/ECE 與完整 CI 必須有限、介於 0–1、區間有序且 estimate 相符；top-level threshold 必須等於 metrics threshold，LightGBM 必須配 Platt。缺值、NaN 或互相矛盾的 payload 不得把 `待填` 或不可信數值寫入 README |
 | 2026-08-04 | 不為消除 LightGBM feature-name wrapper warning 改寫已凍結模型 | 三個 frozen estimators 以 dataframe fit、正式 pipeline 以相同欄位順序的 ndarray predict，故 sklearn wrapper 產生非數值性 warning；serialization parity、4,000 筆 shadow 與 artifact hashes 均通過。Freeze 後不以外觀警告為由突變模型或 preprocessing |
 | 2026-08-04 | 接受使用者精確授權並完成唯一一次 Set B final evaluation | Freeze 22/22、clean Git、input-only manifest、4,000 records、欄位與 prediction validity 全部在 outcome access 前通過；ledger 先落盤，成功後建立 final lock，固定使用 2,000 stratified percentile bootstrap/seed 2026，不做任何重跑或 post-hoc 調整 |
+| 2026-08-04 | 建立 Public GitHub repository `kuotunyu/CareRisk-48H` | 使用者明確選擇 Public；只發布 tracked source/docs，About 與 description 以正體中文為主，topics 含 `zh-tw`，不發布 ignored 資料、outcomes、models、reports、ledger 或 final lock |
 
 ## 驗證證據
 
@@ -310,15 +311,18 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | post-final full verification/build | full pytest、Ruff check/format、Mypy `src`、`pip check`、pre-commit all-files、`git diff --check`、repo wheel | 通過；109 tests passed；Ruff 83 files、Mypy 36 source files、依賴與 hooks 全過；wheel 76,649 bytes/SHA-256 `fd6ba4992b55be0c447dd01a0022d1d398ae1fd312b796119d9b290a62c1eaf5` |
 | 2026-08-04 | post-final clean export | HEAD `55a2b4a` 之 `git archive` forbidden-content/required-member gate、匯出來源 26 tests、wheel member與獨立 install/import smoke | 通過；archive 158,452 bytes/127 members/SHA-256 `bb70e6fd7b03325aafc41a6d557da51a0fe01d6ccbc665d47baaa165f6be4e94`；export wheel 77,121 bytes/44 members/SHA-256 `26931b7e76475584eb94ab80230086fac46ebeb135d7cf55ef37adf7419413b0` |
 | 2026-08-04 | post-final Docker/CPU inference | image `carerisk48h:post-final-55a2b4a`、離線 pip/import/README/Gradio smoke、2-CPU synthetic guarded benchmark；frozen candidate 單執行緒 benchmark | 通過；image ID `sha256:70868ee19ecb574fc63b51e0ddc2712d0228981d277415677c7a09f37b455b34`、327,054,031 bytes；Docker p95 `18.084 ms`/peak RSS `269.85 MB`；frozen candidate p95 `24.887 ms`/peak RSS `140.66 MB`，report SHA-256 `1a53b66f42fc4b1ef26c0096b3d5c71efcbe2d3c2008cb42b22356bae26dedc0` |
+| 2026-08-04 | GitHub pre-publication gate | clean worktree、commit author/trailer audit、`git ls-files` forbidden-path gate、GitHub login/repository collision check | 通過；歷史 author 只有 `kuotunyu <61350295+kuotunyu@users.noreply.github.com>`、無 `Co-authored-by`、109 個 tracked files 不含 `.env`、data/raw、data/processed、artifacts、checkpoints 或模型封裝；同名與近似 repository 均不存在 |
+| 2026-08-04 | GitHub repository/metadata | `gh repo create kuotunyu/CareRisk-48H --public` 與 About topics 設定 | 通過；repository 為 Public，description 為正體中文，topics 為 `calibration`、`clinical-machine-learning`、`lightgbm`、`physionet`、`reproducible-research`、`time-series`、`zh-tw`；未建立 tag/Release 或部署 |
 
 ## Session handoff
 
 - **最後更新：** 2026-08-04
-- **完成內容：** L4 full GRU-D/TCN、預註冊選定 LightGBM、3-seed train+validation refit、calibration-only Platt/threshold、Set A dry-run、schema-v2 freeze、使用者精確授權後的唯一一次 Set B final evaluation、2,000-bootstrap CI、11 個 subgroup reports、README/cards 正式結果與 post-final release gates 全部完成。
+- **完成內容：** L4 full GRU-D/TCN、預註冊選定 LightGBM、3-seed train+validation refit、calibration-only Platt/threshold、Set A dry-run、schema-v2 freeze、使用者精確授權後的唯一一次 Set B final evaluation、2,000-bootstrap CI、11 個 subgroup reports、README/cards、post-final release gates，以及 Public GitHub source repository 全部完成。
 - **正式結果：** Set B n=4,000/deaths=568；AUPRC `0.554961`（95% CI `0.515939–0.594186`）、AUROC `0.869600`、Brier `0.086629`、ECE `0.007836`；threshold `0.297428` 下 sensitivity/specificity `0.580986/0.908800`。僅供研究與教育。
 - **不可逆狀態：** `set_b_access_ledger.json` 恰一個 success，`set_b_access_ledger.final-lock.json` 狀態為 `locked_after_one_success`；不得重跑或覆寫。Metrics SHA-256 `808525afad2ec550e8059c4ba37c2f5aaf8af748873a5a590dff7f1aeaaf47af`。
-- **本機驗證：** 109 tests、Ruff 83 files、Mypy 36 source files、pip check、pre-commit、wheel、127-member clean export、Docker offline smoke、Gradio create 與 frozen CPU inference 全部通過；本機 GPU 未使用。
+- **本機驗證：** 109 tests、Ruff 83 files、Mypy 36 source files、pip check、pre-commit、wheel、127-member clean export、Docker offline smoke、Gradio create 與 frozen CPU inference 全部通過；GitHub 公開前另確認 109 個 tracked files 無禁止內容、唯一 author 為 `kuotunyu` 且無 co-author；本機 GPU 未使用。
 - **Commits：** `13d83ac` clean L4 full handoff；`c993493` final refit；`8d3223a` freeze；`f4cb989` one-time evaluator；`6489cf7` formal provenance；`5f94e44` downloader bypass closure；`8867997` pre-Set B readiness；`166b1ed` strict metrics；`4f9d769` model card freeze sync；`cd68e0e` strict final readiness；`55a2b4a` one-time Set B formal results；最終 closeout evidence另見最新 commit。
 - **輸出位置：** `artifacts/final-candidate-c993493/set_b_final/`（metrics、predictions、errors、subgroups、四聯圖與 preflight）；ledger/final lock 位於 candidate root；clean export 位於 `artifacts/post-final-55a2b4a/clean-export/`。
-- **下一步：** 研究閉環已完成，無需再操作 Colab 或重跑 Set B。若無新授權，只需審閱結果；不設定 remote、不 push、不 tag/release、不部署。
+- **GitHub：** Public repository 為 `https://github.com/kuotunyu/CareRisk-48H`；`origin` 使用 HTTPS，default branch 為 `main`。README、description 與 About 以正體中文為主；不含 ignored 研究資料與 artifacts。
+- **下一步：** 研究閉環與 source publication 已完成，無需再操作 Colab 或重跑 Set B。若無新授權，只需審閱 GitHub 頁面與結果；不建立 tag/Release、不部署。
 - **注意：** 原始資料、outcomes、models、predictions、reports 與 locks 均維持 ignored，不提交。Set A dry-run、synthetic shadow 與 demo synthetic probabilities 不當作正式 test 結果；本模型不是臨床工具，也不得宣稱可遷移至長照。
