@@ -3,9 +3,11 @@ message: "If you use CareRisk 48H, cite this software and the PhysioNet Challeng
 title: "CareRisk 48H"
 type: software
 version: 0.1.0
-date-released: 2026-07-19
+date-released: 2026-08-04
 authors:
-  - name: "CareRisk 48H contributors"
+  - name: "kuotunyu"
+repository-code: "https://github.com/kuotunyu/CareRisk-48H"
+url: "https://github.com/kuotunyu/CareRisk-48H"
 license: Apache-2.0
 preferred-citation:
   type: article

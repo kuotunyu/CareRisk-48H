@@ -23,6 +23,8 @@ PhysioNet 將資料分成數個官方集合；Set A／Set B 是資料分組名�
 | lightgbm | 最終測試資料（Set B） | 0.555 (0.516–0.594) | 0.870 (0.855–0.884) | 0.087 (0.083–0.090) | 0.008 (0.007–0.019) | 0.581 @ 0.909 specificity | 0.297 |
 <!-- RESULTS_END -->
 
+完整精度、bootstrap 設定與安全 provenance hashes 見 [Machine-readable final-result receipt](docs/final-result-receipt.json)。
+
 這些數值不構成 clinical validity、部署核准或跨場域可遷移證據。
 
 ## 結果一眼看懂
