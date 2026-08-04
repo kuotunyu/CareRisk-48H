@@ -83,7 +83,10 @@ def test_updater_accepts_only_complete_final_payload(tmp_path) -> None:
     readme.write_text("x\n<!-- RESULTS_START -->old<!-- RESULTS_END -->\ny", encoding="utf-8")
     payload = _valid_payload()
     updater.update_readme(readme, payload)
-    assert "lightgbm" in readme.read_text(encoding="utf-8")
+    updated = readme.read_text(encoding="utf-8")
+    assert "lightgbm" in updated
+    assert "最終測試資料（Set B）" in updated
+    assert "| Set B final |" not in updated
 
 
 def test_updater_rejects_nonofficial_set_b_cohort_size(tmp_path) -> None:
@@ -183,6 +186,12 @@ def test_public_readme_is_concise_and_diagrammed() -> None:
     assert text.count("<!-- RESULTS_START -->") == 1
     assert text.count("<!-- RESULTS_END -->") == 1
     assert text.count("```mermaid") == 2
+    assert "開發資料（Set A）" in text
+    assert "最終測試資料（Set B）" in text
+    assert "## 結果一眼看懂" in text
+    assert "docs/assets/final-evaluation-overview.png" in text
     assert "PROJECT_PLAN.md" not in text
     assert "🫀" not in text
     assert "本地 Git 不設定 remote" not in text
+    asset = Path("docs/assets/final-evaluation-overview.png")
+    assert asset.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")

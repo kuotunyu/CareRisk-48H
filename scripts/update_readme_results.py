@@ -199,7 +199,7 @@ def update_readme(readme: Path, payload: dict[str, Any]) -> None:
             ),
             "| --- | --- | --- | --- | --- | --- | --- | --- |",
             (
-                f"| {payload['model_family']} | Set B final | "
+                f"| {payload['model_family']} | 最終測試資料（Set B） | "
                 f"{_format_interval(intervals['auprc'])} | "
                 f"{_format_interval(intervals['auroc'])} | "
                 f"{_format_interval(intervals['brier'])} | "
