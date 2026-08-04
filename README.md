@@ -12,7 +12,7 @@ license: apache-2.0
 
 # CareRisk 48H
 
-> **研究與教育用途，非臨床診斷或照護決策工具。** 本專案尚未完成 frozen Set B final evaluation，不可暗示能直接部署至照護現場。
+> **研究與教育用途，非臨床診斷或照護決策工具。** 本專案已依 freeze protocol 完成唯一一次 Set B final evaluation；這不構成臨床效度、部署核准或跨場域可遷移證據。
 
 CareRisk 48H 用 ICU 入院最初 48 小時不規則、多缺失的生理時序預測住院死亡風險。專案重點不是單一 leaderboard 分數，而是可重現 split、防洩漏、類別不平衡下的 AUPRC、校準、90% specificity operating point、bootstrap uncertainty、錯誤/subgroup 分析與 fail-closed demo。
 
@@ -63,19 +63,19 @@ python scripts/train_tabular.py --config configs/full.yaml
 
 ## 結果與校準
 
-Primary metric 是 AUPRC；並報 AUROC、Brier、10-bin ECE、sensitivity/specificity、threshold、PPV/NPV。Final Set B 使用 2,000 次 outcome-stratified bootstrap percentile 95% CI。所有未完成的正式結果維持「待填」，development/synthetic run 不得寫入下表。
+Primary metric 是 AUPRC；並報 AUROC、Brier、10-bin ECE、sensitivity/specificity、threshold、PPV/NPV。Final Set B 使用 2,000 次 outcome-stratified bootstrap percentile 95% CI。下表由通過 freeze、一次成功 ledger/final lock 與完整 provenance gate 的 `metrics.json` 自動更新；development/synthetic run 不得寫入。
 
 <!-- RESULTS_START -->
 | Frozen model | Split | AUPRC (95% CI) | AUROC (95% CI) | Brier (95% CI) | ECE (95% CI) | Sensitivity @ ≥90% specificity | Threshold |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 待填 | Set B final | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 |
+| lightgbm | Set B final | 0.555 (0.516–0.594) | 0.870 (0.855–0.884) | 0.087 (0.083–0.090) | 0.008 (0.007–0.019) | 0.581 @ 0.909 specificity | 0.297 |
 <!-- RESULTS_END -->
 
 Tabular model 使用 Platt calibration，deep ensemble 使用 temperature scaling。選定 family/hyperparameters 後以 train+validation refit；calibrator 與 threshold 只 fit calibration。Threshold 是 calibrated calibration predictions 中 specificity ≥0.90 時 sensitivity 最高者；同分取較高 threshold。
 
 ## 錯誤與 subgroup 分析
 
-Evaluation 產生 reliability、PR、ROC、decision curve、high-confidence false-positive/false-negative table。Subgroup 預先限定 gender、ICUType 與 age bands `<45 / 45–64 / 65–79 / ≥80`，每組顯示 n、death count 與 CI；任一 class <20 標 `unstable`。這是描述性錯誤分析，不是公平性或因果結論。
+Evaluation 已產生 reliability、PR、ROC、decision curve、high-confidence false-positive/false-negative table。Subgroup 預先限定 gender、ICUType 與 age bands `<45 / 45–64 / 65–79 / ≥80`，每組顯示 n、death count 與 CI；任一 class <20 標 `unstable`。正式 Set B 有 5 筆 gender missing，該小組依規則標為 unstable。這些都是描述性錯誤分析，不是公平性或因果結論。本機 ignored outputs 位於 `artifacts/final-candidate-c993493/set_b_final/`。
 
 ## 安全 demo
 
@@ -106,8 +106,8 @@ python benchmark.py --warmup 10 --iterations 100
 2. **15–35 秒：** 展示 HR、呼吸、體溫、血壓與 SaO2 趨勢；空白不是補成正常，而由 mask/delta 明確保留。
 3. **35–55 秒：** 執行 synthetic fixture，說明 raw risk、calibrated probability、固定 90% specificity threshold 與非因果 contributors。
 4. **55–75 秒：** 刪除多數 vital measurements，再執行；guard 隱藏機率並要求人工複核。
-5. **75–90 秒：** 顯示 calibration/error/subgroup 報告入口，重申沒有 Set B final 結果時所有正式數字都是「待填」，且不可直接用於 ICU 或長照決策。
+5. **75–90 秒：** 顯示正式 calibration/error/subgroup 報告入口，說明 Set B 只評估一次，並重申結果不可直接用於 ICU 或長照決策。
 
 ## 開發與發布狀態
 
-本地 Git 不設定 remote；GitHub/Hugging Face 檔案已準備但不會自動發布。CI 僅用 CPU、合成資料與 mocked downloader。`scripts/update_readme_results.py` 只接受一次成功、frozen、2,000-bootstrap 的 Set B final metrics，拒絕 smoke/development artifacts。
+本地 Git 不設定 remote；GitHub/Hugging Face 檔案已準備但不會自動發布。CI 僅用 CPU、合成資料與 mocked downloader。`scripts/update_readme_results.py` 只接受一次成功、frozen、2,000-bootstrap 的 Set B final metrics，拒絕 smoke/development artifacts。本次正式 evaluation access ledger 恰有一次成功且已建立不可覆寫的 final lock。

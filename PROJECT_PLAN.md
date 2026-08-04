@@ -6,13 +6,13 @@
 
 | 欄位 | 內容 |
 | --- | --- |
-| 當前 milestone | M5 — final candidate 已凍結；停在不可逆 Set B 授權門前 |
-| 狀態 | M0–M4 與 M6 完成；Colab L4 quick/full、預註冊選模、train+validation refit、calibration-only Platt/threshold、Set A 2,000-bootstrap simulated dry-run、schema-v2 freeze、一次性 final evaluator 與 pre-Set B release-readiness gates 全部通過；選定 LightGBM；Set B 成功 access 次數為 0 |
-| 本回合範圍 | 在不接觸 Set B 的前提下補齊 one-time final orchestrator、ledger fail-closed 行為、正式結果 strict provenance/CI/threshold/calibrator gate、4,000 筆/2,000-bootstrap synthetic shadow、build/clean export/Docker/frozen CPU inference readiness |
-| 已完成 | 乾淨 Colab CPU prepare、provenance-clean L4 quick/full、固定三 seeds 的 GRU-D/TCN、結果包逐檔 hash 與 resume/provenance 驗證、無裁量選定 LightGBM、3,400 筆 train+validation refit、600 筆 calibration-only Platt/threshold、Set A dry-run、freeze manifest、audited final evaluator、安全下載閉環、MODEL_CARD freeze 同步與 pre-Set B shadow/release gates |
-| 尚待完成 | 使用者審核 freeze 後下載 input-only Set B、唯一一次 Set B final evaluation，以及成功後以合格 metrics 自動更新正式結果/cards 並重跑 final build/export/Docker/CPU inference gates |
-| 下一個最小動作 | 使用者審核 `artifacts/final-candidate-c993493/freeze_manifest.json`；只有明確回覆「我確認 freeze manifest，授權一次 Set B final evaluation」才可進入 final gate |
-| 結果狀態 | Frozen LightGBM 已鎖定；Set B 正式結果待填，目前 validation/calibration 數值不得當作 test performance 或更新 README 正式結果 |
+| 當前 milestone | Post-final closeout — 唯一一次 Set B final evaluation 已成功，正在完成發布驗證與交接 |
+| 狀態 | M0–M6 研究閉環已完成；使用者精確授權後，frozen 3-seed LightGBM 已完成唯一一次 4,000 筆 Set B final evaluation、2,000-bootstrap CI、11 個 subgroup reports、ledger/final lock 與 strict provenance validation；成功 access 次數恰為 1 |
+| 本回合範圍 | 驗證 input-only Set B、執行唯一一次 audited final evaluation、由合格 metrics 自動更新正式結果/cards，並重跑 post-final tests/build/clean export/Docker/CPU inference gates |
+| 已完成 | Freeze 22 artifacts 重驗、4,000 筆 Set B input preflight、唯一一次 outcome access、正式 metrics/CI、PR/ROC/reliability/decision curve、error/subgroup reports、七個 output hashes、persistent final lock、README 自動更新與 cards 同步 |
+| 尚待完成 | Post-final full tests、Ruff、Mypy、pre-commit、wheel、clean export、Docker/CPU inference gates與最終 local commits |
+| 下一個最小動作 | 執行 post-final release gates，將實際證據與 artifact hashes寫回 session handoff後結案 |
+| 結果狀態 | Frozen LightGBM Set B final 已完成；AUPRC `0.555`（95% CI `0.516–0.594`），結果僅供研究與教育，不構成臨床或長照效度 |
 
 ## 目標與安全邊界
 
@@ -71,9 +71,9 @@ CareRisk 48H 使用 PhysioNet/Computing in Cardiology Challenge 2012 的 ICU 入
 - [x] 依預先規則選定 LightGBM，建立並逐檔驗證 schema-v2 freeze manifest 與 22 個 artifact hashes。
 - [x] 正式 LightGBM 使用 Platt calibrator，且僅 fit Set A calibration 600 筆；serialization prediction parity 通過。
 - [x] Final threshold `0.2974276505509685` 僅以 Set A calibration 鎖定，calibration specificity `0.90715667311412`。
-- [x] 已以 Set A 模擬完整 evaluation 並執行 2,000 次 stratified bootstrap；現停在使用者明確確認門前。
-- [x] Set B outcome access gate/ledger 完成測試，正常流程程式上只允許一次成功 final evaluation；真實 access 次數仍為 0。
-- [x] Set A-only dry-run 已產生 2,000-bootstrap CI、reliability、PR/ROC、decision curve、錯誤與 subgroup reports；Set B final 2,000 bootstrap 待明確授權。
+- [x] 已以 Set A 模擬完整 evaluation 並執行 2,000 次 stratified bootstrap；freeze 後另完成唯一一次正式 Set B evaluation。
+- [x] Set B outcome access gate/ledger 完成測試且實際流程成功一次；persistent final lock 已建立，成功 access 次數恰為 1。
+- [x] Set A-only dry-run 與正式 Set B 均已產生 2,000-bootstrap CI、reliability、PR/ROC、decision curve、錯誤與 subgroup reports。
 
 ### M6 — 安全 demo 與發布工程
 
@@ -172,7 +172,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | LightGBM | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | development 已執行；正式待填 |
 | GRU-D | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | development full 已執行；未畫為正式 test 結果 |
 | TCN | Validation | 待填 | 待填 | 待填 | 待填 | 待填 | development full 已執行；未畫為正式 test 結果 |
-| Frozen LightGBM | Set B final | 待填 | 待填 | 待填 | 待填 | 待填 | 已凍結；尚未授權/執行 |
+| Frozen LightGBM | Set B final | 0.555 (0.516–0.594) | 0.870 (0.855–0.884) | 0.087 (0.083–0.090) | 0.008 (0.007–0.019) | 0.581 @ 0.909 specificity | 已凍結；唯一一次 final evaluation 完成 |
 
 正式結果只能由 `scripts/update_readme_results.py` 讀取合格的 full-run `metrics.json` 更新。
 
@@ -220,6 +220,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | README 正式結果 consumer 要求完整 cohort 與 provenance | 只接受 Set B `n=4,000`、2,000 次 stratified percentile bootstrap/seed 2026、固定三 seeds、clean evaluation Git、freeze/data/split/input/outcome hashes、subgroups 與 ledger/final-lock hashes；development/synthetic 或不完整 payload 不得寫入正式結果 |
 | 2026-08-04 | 正式結果 consumer 對 metric/CI/threshold/calibrator 一致性 fail closed | AUPRC/AUROC/Brier/ECE 與完整 CI 必須有限、介於 0–1、區間有序且 estimate 相符；top-level threshold 必須等於 metrics threshold，LightGBM 必須配 Platt。缺值、NaN 或互相矛盾的 payload 不得把 `待填` 或不可信數值寫入 README |
 | 2026-08-04 | 不為消除 LightGBM feature-name wrapper warning 改寫已凍結模型 | 三個 frozen estimators 以 dataframe fit、正式 pipeline 以相同欄位順序的 ndarray predict，故 sklearn wrapper 產生非數值性 warning；serialization parity、4,000 筆 shadow 與 artifact hashes 均通過。Freeze 後不以外觀警告為由突變模型或 preprocessing |
+| 2026-08-04 | 接受使用者精確授權並完成唯一一次 Set B final evaluation | Freeze 22/22、clean Git、input-only manifest、4,000 records、欄位與 prediction validity 全部在 outcome access 前通過；ledger 先落盤，成功後建立 final lock，固定使用 2,000 stratified percentile bootstrap/seed 2026，不做任何重跑或 post-hoc 調整 |
 
 ## 驗證證據
 
@@ -302,6 +303,9 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | strict-validator full verification | `.venv\Scripts\python.exe -m pytest -q`、Ruff check/format、Mypy `src`、`pip check`、`pre-commit run --all-files`、`git diff --check` | 通過；109 tests passed；Ruff 83 files、Mypy 36 source files、無 broken requirements、全部 hooks 與 whitespace gate 通過；僅有已定位的 LightGBM feature-name warnings |
 | 2026-08-04 | frozen-candidate synthetic shadow v2 | 正式 candidate 的臨時副本、4,000 個 synthetic PhysioNet-format records、2,000 次 stratified bootstrap/seed 2026，再通過 strict final-metrics validator | 通過；81.541 s、10 個 subgroup reports、7 個 hashed outputs；正式 candidate 逐檔不變，正式 ledger/final lock 仍不存在，Set B success count=0 |
 | 2026-08-04 | latest clean-export gate | HEAD `4f9d769` 的 127-member archive forbidden-content gate；由匯出來源重建 wheel 並執行 `tests/test_readme_updater.py` | 通過；archive 156,335 bytes、SHA-256 `062b2fdb7edf53abe102bce82b9ef9d48a3acf1a6e3da758a9e79fbd93c5dd0c`；export wheel 76,865 bytes、SHA-256 `21778a9add8463a2cefd782d8a29541aa634a4ff0b7310dfb707dd265cdc48c3`；23 tests passed。Docker runtime code 未變，故沿用既有 image gate |
+| 2026-08-04 | Set B input-only download/preflight | `download_physionet.py --set b --without-outcomes`、manifest verification、4,000-record parse、frozen feature/prediction preflight | 通過；archive 6,652,690 bytes/SHA-256 `b1637a2a423a8e76f8f087896cfc5fdf28f88519e1f4e874fbda69b2a64dac30`；manifest SHA-256 `8d6c77a2db1935ab0f4b50ebb9bc3a386d216f67fa2bbc96b10c608e0262d339`；record IDs hash `66adf2...6f7e`；preflight結束時 access count=0 |
+| 2026-08-04 | 唯一一次 Set B final evaluation | clean HEAD `cd68e0e...8835`、candidate `c993493...3579`、4,000 records、2,000 stratified percentile bootstrap/seed 2026 | 通過；run `20260804T025633Z-lightgbm-set-b-final`，ledger 成功恰一次並建立 `locked_after_one_success` final lock；AUPRC `0.554961`、AUROC `0.869600`、Brier `0.086629`、ECE `0.007836`、sensitivity/specificity `0.580986/0.908800` |
+| 2026-08-04 | Set B final package integrity | strict README validator、freeze re-hash、outcome/ledger/lock hash、七個 artifact hashes、11 個預定 subgroup outputs與四聯圖目視檢查 | 通過；metrics JSON 27,646 bytes/SHA-256 `808525afad2ec550e8059c4ba37c2f5aaf8af748873a5a590dff7f1aeaaf47af`；PR/ROC/reliability/decision curve、errors、subgroups、predictions、preflight、ledger/lock 全部存在且 hash 相符 |
 
 ## Session handoff
 

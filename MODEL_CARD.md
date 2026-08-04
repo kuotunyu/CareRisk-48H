@@ -2,7 +2,7 @@
 
 ## Model details
 
-CareRisk 48H 是以 ICU 入院最初 48 小時的不規則、多缺失生理時序研究住院死亡風險的模型比較框架。候選包含 class-weighted logistic regression、LightGBM、compact GRU-D 與 small TCN。依預註冊規則已選定並凍結 3-seed LightGBM ensemble；正式 Set B 結果目前仍為「待填」。
+CareRisk 48H 是以 ICU 入院最初 48 小時的不規則、多缺失生理時序研究住院死亡風險的模型比較框架。候選包含 class-weighted logistic regression、LightGBM、compact GRU-D 與 small TCN。依預註冊規則已選定並凍結 3-seed LightGBM ensemble，並於凍結後完成唯一一次 Set B final evaluation。
 
 程式碼採 Apache-2.0。PhysioNet 資料及其衍生 artifacts 另受 ODC-By 1.0 約束。
 
@@ -24,14 +24,14 @@ CareRisk 48H 是以 ICU 入院最初 48 小時的不規則、多缺失生理時�
 - Deep 只有在 validation AUPRC 比最佳 tabular 高至少 0.01，且 Brier/ECE 均不惡化時才升級。
 - GRU-D 與 TCN 均未同時通過 deep promotion checks，因此依規則選定較簡單的 LightGBM；沒有因結果調整 metric、seed、split 或選模門檻。
 - LightGBM 三個 seeds 已用 Set A train+validation 3,400 筆 refit；Platt calibrator 與 threshold `0.2974276505509685` 只 fit calibration 600 筆。
-- Set B outcome 只允許 frozen model 的一次成功 final evaluation；目前尚未執行。
+- Set B outcome 只允許 frozen model 的一次成功 final evaluation；本次 ledger 恰有一次成功且 final lock 已建立，不得重跑或覆寫。
 
 ## Metrics
 
 Primary metric 為 AUPRC，並報 AUROC、Brier、10-bin ECE、sensitivity/specificity、threshold、PPV/NPV 與 2,000 次 stratified bootstrap 95% CI。Gender、ICUType、age band 分組會顯示 n、death count、CI 與 unstable 標記；不據此宣稱公平性。
 
 <!-- RESULTS_START -->
-正式 frozen Set B 結果：待填。
+正式 frozen Set B（n=4,000；death=568）結果：AUPRC `0.555`（95% CI `0.516–0.594`）、AUROC `0.870`（`0.855–0.884`）、Brier `0.0866`（`0.0829–0.0904`）、10-bin ECE `0.00784`（`0.00699–0.0193`）。在 frozen threshold `0.2974276505509685` 下，sensitivity `0.581`、specificity `0.909`、PPV `0.513`、NPV `0.929`。CI 使用固定 seed 2026 的 2,000 次 stratified percentile bootstrap。
 <!-- RESULTS_END -->
 
 ## Explainability and safety
@@ -44,5 +44,6 @@ LightGBM 使用 TreeSHAP；deep 使用 variable-wise occlusion sensitivity。兩
 - Missingness 可能編碼照護流程、資源與 clinician behavior。
 - 2012 年資料存在時間、設備、族群與 practice shift。
 - Subgroup 樣本量與資料欄位不足以支持公平性結論。
+- Set B 的 gender missing subgroup 只有 5 筆且無死亡事件，依預定規則標為 unstable，不應作比較性解讀。
 - Demo 預設 bundle 完全由合成資料建立，其分數不是研究結果。
 - 任何臨床使用前都需要治理核准、外部/前瞻性驗證、human factors、監測與失效處置；本專案未提供這些部署證據。
