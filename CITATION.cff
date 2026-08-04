@@ -9,22 +9,51 @@ authors:
 repository-code: "https://github.com/kuotunyu/CareRisk-48H"
 url: "https://github.com/kuotunyu/CareRisk-48H"
 license: Apache-2.0
-preferred-citation:
-  type: article
-  authors:
-    - family-names: Silva
-      given-names: Ikaro
-    - family-names: Moody
-      given-names: George
-    - family-names: Scott
-      given-names: Daniel J.
-    - family-names: Celi
-      given-names: Leo Anthony
-    - family-names: Mark
-      given-names: Roger G.
-  title: "Predicting in-hospital mortality of ICU patients: The PhysioNet/Computing in Cardiology Challenge 2012"
-  journal: "Computing in Cardiology"
-  year: 2012
-  volume: 39
-  start: 245
-  end: 248
+references:
+  - type: article
+    authors:
+      - family-names: Goldberger
+        given-names: Ary L.
+      - family-names: Amaral
+        given-names: Luis A. N.
+      - family-names: Glass
+        given-names: Leon
+      - family-names: Hausdorff
+        given-names: Jeffrey M.
+      - family-names: Ivanov
+        given-names: Plamen Ch.
+      - family-names: Mark
+        given-names: Roger G.
+      - family-names: Mietus
+        given-names: Joseph E.
+      - family-names: Moody
+        given-names: George B.
+      - family-names: Peng
+        given-names: Chung-Kang
+      - family-names: Stanley
+        given-names: H. Eugene
+    title: "PhysioBank, PhysioToolkit, and PhysioNet: Components of a New Research Resource for Complex Physiologic Signals"
+    journal: "Circulation"
+    year: 2000
+    volume: 101
+    issue: 23
+    start: e215
+    end: e220
+  - type: article
+    authors:
+      - family-names: Silva
+        given-names: Ikaro
+      - family-names: Moody
+        given-names: George
+      - family-names: Scott
+        given-names: Daniel J.
+      - family-names: Celi
+        given-names: Leo Anthony
+      - family-names: Mark
+        given-names: Roger G.
+    title: "Predicting in-hospital mortality of ICU patients: The PhysioNet/Computing in Cardiology Challenge 2012"
+    journal: "Computing in Cardiology"
+    year: 2012
+    volume: 39
+    start: 245
+    end: 248

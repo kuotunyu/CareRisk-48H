@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
-from carerisk48h.constants import VARIABLE_INDEX
+from carerisk48h.constants import PARAMETER_ALIASES, TIME_SERIES_VARIABLES, VARIABLE_INDEX
 from carerisk48h.schema import validate_inference_payload
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _payload() -> dict[str, object]:
@@ -45,3 +50,10 @@ def test_inference_payload_rejects_non_numeric_and_csv_injection() -> None:
     payload["measurements"] = [{"time": "00:30", "parameter": "HR\nIn-hospital_death", "value": 1}]
     with pytest.raises(ValueError, match="plain string"):
         validate_inference_payload(payload)
+
+
+def test_public_inference_schema_matches_runtime_parameter_contract() -> None:
+    schema = json.loads((ROOT / "configs" / "inference_schema.json").read_text(encoding="utf-8"))
+    parameter = schema["properties"]["measurements"]["items"]["properties"]["parameter"]
+
+    assert parameter["enum"] == [*TIME_SERIES_VARIABLES, *PARAMETER_ALIASES]

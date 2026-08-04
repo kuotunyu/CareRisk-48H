@@ -1,5 +1,7 @@
 # CareRisk 48H
 
+版本：[v0.1.0 source release](https://github.com/kuotunyu/CareRisk-48H/releases/tag/v0.1.0) · CI：[Python 3.10–3.12](https://github.com/kuotunyu/CareRisk-48H/actions/workflows/ci.yml) · 介面規格：[Inference JSON Schema](configs/inference_schema.json)
+
 > 僅供研究與教育，不是臨床診斷、治療或照護決策工具。
 
 CareRisk 48H 使用 [PhysioNet Challenge 2012](https://physionet.org/content/challenge-2012/1.0.0/) ICU 入院前 48 小時資料研究住院死亡風險。重點是可重現 split、防洩漏、calibration、預註冊選模與一次性 final evaluation，而非只追求單一分數。

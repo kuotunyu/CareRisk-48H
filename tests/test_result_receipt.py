@@ -235,6 +235,13 @@ def test_citation_identifies_the_sole_release_author() -> None:
     assert str(citation["date-released"]) == "2026-08-04"
     assert citation["authors"] == [{"name": "kuotunyu"}]
     assert citation["repository-code"] == "https://github.com/kuotunyu/CareRisk-48H"
+    assert "preferred-citation" not in citation
+    assert {reference["title"] for reference in citation["references"]} == {
+        "PhysioBank, PhysioToolkit, and PhysioNet: Components of a New Research "
+        "Resource for Complex Physiologic Signals",
+        "Predicting in-hospital mortality of ICU patients: The PhysioNet/Computing "
+        "in Cardiology Challenge 2012",
+    }
 
 
 def test_ci_exercises_every_declared_python_minor() -> None:
@@ -243,6 +250,38 @@ def test_ci_exercises_every_declared_python_minor() -> None:
     )
     job = workflow["jobs"]["test"]
 
+    assert workflow["permissions"] == {"contents": "read"}
     assert job["strategy"]["matrix"]["python-version"] == ["3.10", "3.11", "3.12"]
-    setup = next(step for step in job["steps"] if step.get("uses") == "actions/setup-python@v5")
+    assert any(step.get("uses") == "actions/checkout@v7" for step in job["steps"])
+    setup = next(step for step in job["steps"] if step.get("uses") == "actions/setup-python@v7")
     assert setup["with"]["python-version"] == "${{ matrix.python-version }}"
+
+
+def test_release_metadata_is_discoverable_and_modern() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    repository = "https://github.com/kuotunyu/CareRisk-48H"
+    release = f"{repository}/releases/tag/v0.1.0"
+    workflow = f"{repository}/actions/workflows/ci.yml"
+
+    assert "setuptools>=77.0.3" in pyproject
+    assert 'license = "Apache-2.0"' in pyproject
+    assert 'license-files = ["LICENSE", "NOTICE"]' in pyproject
+    assert f'Homepage = "{repository}"' in pyproject
+    assert f'Repository = "{repository}"' in pyproject
+    assert f'Release = "{release}"' in pyproject
+    assert f"]({release})" in readme
+    assert f"]({workflow})" in readme
+    assert "[Inference JSON Schema](configs/inference_schema.json)" in readme
+
+
+def test_local_only_synthetic_fixture_is_not_tracked() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "app/fixtures/synthetic_patient.json"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert tracked == ""
