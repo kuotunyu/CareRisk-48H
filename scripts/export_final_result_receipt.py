@@ -9,10 +9,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Any
 
-try:
-    from scripts.update_readme_results import validate_final_metrics
-except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from update_readme_results import validate_final_metrics
+from carerisk48h.formal_results import validate_final_metrics
 
 AGGREGATE_METRICS = (
     "auprc",
@@ -54,7 +51,7 @@ def _validate_public_aggregates(payload: dict[str, Any]) -> None:
         interval = intervals.get(name)
         if (
             isinstance(value, bool)
-            or not isinstance(value, (int, float))
+            or not isinstance(value, int | float)
             or not isfinite(float(value))
             or not 0.0 <= float(value) <= 1.0
             or not isinstance(interval, dict)

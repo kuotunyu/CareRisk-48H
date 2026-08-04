@@ -1,0 +1,162 @@
+"""Validate frozen one-time final evaluation payloads."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from math import isfinite
+from numbers import Real
+from typing import Any
+
+
+def _is_hash(value: Any, *, length: int = 64) -> bool:
+    normalized = str(value)
+    return len(normalized) == length and all(
+        character in "0123456789abcdef" for character in normalized
+    )
+
+
+def _finite_unit_interval(value: Any, *, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(float(value)):
+        raise ValueError(f"formal result {field} must be finite")
+    normalized = float(value)
+    if not 0.0 <= normalized <= 1.0:
+        raise ValueError(f"formal result {field} must be between zero and one")
+    return normalized
+
+
+def validate_final_metrics(payload: dict[str, Any]) -> None:
+    """Reject incomplete, non-final, or provenance-invalid formal metrics."""
+    if payload.get("evaluation_status") != "final":
+        raise ValueError("README updater refuses smoke_test/development metrics")
+    if payload.get("dataset") != "PhysioNet Challenge 2012 Set B":
+        raise ValueError("formal README results must come from Set B")
+    if payload.get("freeze_status") != "frozen":
+        raise ValueError("formal results require a frozen manifest")
+    if payload.get("set_b_final_evaluation_successes") != 1:
+        raise ValueError("formal results require exactly one successful Set B evaluation")
+    bootstrap = payload.get("bootstrap", {})
+    if (
+        bootstrap.get("samples") != 2_000
+        or bootstrap.get("method") != "stratified percentile"
+        or bootstrap.get("seed") != 2026
+    ):
+        raise ValueError("formal results require 2,000 stratified percentile bootstrap samples")
+    required = {
+        "n",
+        "auprc",
+        "auroc",
+        "brier",
+        "ece",
+        "sensitivity",
+        "specificity",
+        "threshold",
+    }
+    metrics = payload.get("metrics", {})
+    if not required.issubset(metrics):
+        raise ValueError("final metrics payload is incomplete")
+    if metrics.get("n") != 4_000:
+        raise ValueError("formal Set B results require exactly 4,000 records")
+    bounded_metrics = {
+        name: _finite_unit_interval(metrics[name], field=f"metric {name}")
+        for name in (
+            "auprc",
+            "auroc",
+            "brier",
+            "ece",
+            "sensitivity",
+            "specificity",
+            "threshold",
+        )
+    }
+    intervals = payload.get("confidence_intervals", {})
+    if not {"auprc", "auroc", "brier", "ece"}.issubset(intervals):
+        raise ValueError("final confidence intervals are incomplete")
+    for name in ("auprc", "auroc", "brier", "ece"):
+        interval = intervals[name]
+        if not isinstance(interval, dict) or not {"estimate", "lower", "upper"}.issubset(interval):
+            raise ValueError("final confidence intervals are incomplete")
+        try:
+            estimate = _finite_unit_interval(interval["estimate"], field=f"{name} CI estimate")
+            lower = _finite_unit_interval(interval["lower"], field=f"{name} CI lower bound")
+            upper = _finite_unit_interval(interval["upper"], field=f"{name} CI upper bound")
+        except ValueError as exc:
+            raise ValueError("final confidence intervals are incomplete or non-finite") from exc
+        if lower > estimate or estimate > upper or abs(estimate - bounded_metrics[name]) > 1e-12:
+            raise ValueError("final confidence intervals are inconsistent with metrics")
+
+    family = payload.get("model_family")
+    calibrators = {
+        "logistic": "platt",
+        "lightgbm": "platt",
+        "grud": "temperature",
+        "tcn": "temperature",
+    }
+    expected_calibrator = calibrators.get(family) if isinstance(family, str) else None
+    calibrator = payload.get("calibrator")
+    if (
+        expected_calibrator is None
+        or not isinstance(calibrator, dict)
+        or calibrator.get("method") != expected_calibrator
+    ):
+        raise ValueError("formal results calibrator does not match the model family")
+    top_level_threshold = _finite_unit_interval(payload.get("threshold"), field="threshold")
+    if abs(top_level_threshold - bounded_metrics["threshold"]) > 1e-12:
+        raise ValueError("formal result threshold is inconsistent with metrics")
+    provenance_fields = {
+        "run_id",
+        "created_at_utc",
+        "model_family",
+        "model_seeds",
+        "calibrator",
+        "threshold",
+        "candidate_source_git_sha",
+        "evaluation_source_git_sha",
+        "freeze_manifest_sha256",
+        "config_hash",
+        "data_manifest_hash",
+        "split_hash",
+        "set_b_input_manifest_sha256",
+        "set_b_record_ids_sha256",
+        "outcomes_sha256",
+        "environment",
+        "artifact_hashes",
+        "subgroups",
+    }
+    if not provenance_fields.issubset(payload):
+        raise ValueError("formal results provenance is incomplete or invalid")
+    try:
+        created_at = datetime.fromisoformat(str(payload["created_at_utc"]))
+    except ValueError as exc:
+        raise ValueError("formal results provenance is incomplete or invalid") from exc
+    hashes = (
+        "freeze_manifest_sha256",
+        "config_hash",
+        "data_manifest_hash",
+        "split_hash",
+        "set_b_input_manifest_sha256",
+        "set_b_record_ids_sha256",
+        "outcomes_sha256",
+    )
+    artifact_hashes = payload["artifact_hashes"]
+    required_audit_artifacts = {
+        "set_b_access_ledger.json",
+        "set_b_access_ledger.final-lock.json",
+    }
+    if (
+        not isinstance(payload["run_id"], str)
+        or not payload["run_id"]
+        or created_at.tzinfo is None
+        or payload["model_seeds"] != [17, 42, 2026]
+        or payload.get("evaluation_source_git_dirty") is not False
+        or not _is_hash(payload["candidate_source_git_sha"], length=40)
+        or not _is_hash(payload["evaluation_source_git_sha"], length=40)
+        or any(not _is_hash(payload[field]) for field in hashes)
+        or not isinstance(payload["environment"], dict)
+        or not payload["environment"]
+        or not isinstance(payload["subgroups"], list)
+        or not payload["subgroups"]
+        or not isinstance(artifact_hashes, dict)
+        or not required_audit_artifacts.issubset(artifact_hashes)
+        or any(not _is_hash(value) for value in artifact_hashes.values())
+    ):
+        raise ValueError("formal results provenance is incomplete or invalid")

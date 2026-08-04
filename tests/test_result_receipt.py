@@ -3,6 +3,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -90,6 +93,36 @@ def _valid_payload() -> dict:
         "metrics": metrics,
         "confidence_intervals": intervals,
     }
+
+
+def test_exporter_import_is_independent_of_repository_root(tmp_path: Path) -> None:
+    exporter = ROOT / "scripts" / "export_final_result_receipt.py"
+    code = """
+import importlib.util
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("isolated_receipt_exporter", path)
+assert spec is not None and spec.loader is not None
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+print(module.build_public_receipt.__name__)
+"""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(ROOT / "src")
+
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(exporter)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "build_public_receipt"
 
 
 def test_public_receipt_whitelists_only_aggregate_results() -> None:
