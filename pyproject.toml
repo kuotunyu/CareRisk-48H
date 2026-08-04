@@ -9,7 +9,7 @@ description = "Leakage-safe and calibrated mortality-risk research for irregular
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { text = "Apache-2.0" }
-authors = [{ name = "CareRisk 48H contributors" }]
+authors = [{ name = "kuotunyu" }]
 dependencies = [
   "joblib>=1.3,<2",
   "matplotlib>=3.7,<4",

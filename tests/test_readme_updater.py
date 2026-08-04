@@ -174,3 +174,15 @@ def test_updater_rejects_missing_final_provenance(tmp_path, field) -> None:
     payload.pop(field)
     with pytest.raises(ValueError, match="provenance"):
         updater.update_readme(readme, payload)
+
+
+def test_public_readme_is_concise_and_diagrammed() -> None:
+    text = Path("README.md").read_text(encoding="utf-8")
+
+    assert not text.startswith("---\n")
+    assert text.count("<!-- RESULTS_START -->") == 1
+    assert text.count("<!-- RESULTS_END -->") == 1
+    assert text.count("```mermaid") == 2
+    assert "PROJECT_PLAN.md" not in text
+    assert "🫀" not in text
+    assert "本地 Git 不設定 remote" not in text
