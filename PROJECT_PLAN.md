@@ -313,6 +313,7 @@ CI 僅使用 CPU、合成資料與 mocked downloader，不下載官方資料。C
 | 2026-08-04 | post-final Docker/CPU inference | image `carerisk48h:post-final-55a2b4a`、離線 pip/import/README/Gradio smoke、2-CPU synthetic guarded benchmark；frozen candidate 單執行緒 benchmark | 通過；image ID `sha256:70868ee19ecb574fc63b51e0ddc2712d0228981d277415677c7a09f37b455b34`、327,054,031 bytes；Docker p95 `18.084 ms`/peak RSS `269.85 MB`；frozen candidate p95 `24.887 ms`/peak RSS `140.66 MB`，report SHA-256 `1a53b66f42fc4b1ef26c0096b3d5c71efcbe2d3c2008cb42b22356bae26dedc0` |
 | 2026-08-04 | GitHub pre-publication gate | clean worktree、commit author/trailer audit、`git ls-files` forbidden-path gate、GitHub login/repository collision check | 通過；歷史 author 只有 `kuotunyu <61350295+kuotunyu@users.noreply.github.com>`、無 `Co-authored-by`、109 個 tracked files 不含 `.env`、data/raw、data/processed、artifacts、checkpoints 或模型封裝；同名與近似 repository 均不存在 |
 | 2026-08-04 | GitHub repository/metadata | `gh repo create kuotunyu/CareRisk-48H --public` 與 About topics 設定 | 通過；repository 為 Public，description 為正體中文，topics 為 `calibration`、`clinical-machine-learning`、`lightgbm`、`physionet`、`reproducible-research`、`time-series`、`zh-tw`；未建立 tag/Release 或部署 |
+| 2026-08-04 | GitHub push/public audit | `git push --set-upstream origin main`、local/remote HEAD parity、GitHub tree/contributors/commits/releases/tags API | 通過；default branch `main`，127 個 remote tree entries 無禁止內容；Contributors 恰 1 位 `kuotunyu`，所有 author/committer email 均為指定 noreply 信箱，Release=0、tag=0 |
 
 ## Session handoff
 
