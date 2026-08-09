@@ -23,6 +23,17 @@ dist/
 results/
 reports/generated/
 
+# Local maintainer and agent workflow
+.agents/
+.claude/
+CLAUDE.md
+PLAN.md
+PROGRESS.md
+PROJECT_PLAN.md
+interview*.md
+INTERVIEW_PREP.md
+*.private.md
+
 # Notebook and OS state
 .ipynb_checkpoints/
 .DS_Store

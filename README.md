@@ -1,23 +1,113 @@
 # CareRisk 48H
 
-版本：[v0.1.0 source release](https://github.com/kuotunyu/CareRisk-48H/releases/tag/v0.1.0) · CI：[Python 3.10–3.12](https://github.com/kuotunyu/CareRisk-48H/actions/workflows/ci.yml) · 介面規格：[Inference JSON Schema](configs/inference_schema.json)
+[![CI](https://github.com/kuotunyu/CareRisk-48H/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/CareRisk-48H/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kuotunyu/CareRisk-48H)](https://github.com/kuotunyu/CareRisk-48H/releases/tag/v0.1.0)
+![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![LightGBM](https://img.shields.io/badge/LightGBM-3.3%2B-blue?logo=lightgbm&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?logo=pytorch&logoColor=white)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> 僅供研究與教育，不是臨床診斷、治療或照護決策工具。
+本專案基於 **PhysioNet Challenge 2012** 重症加護病房 (ICU) 入院前 48 小時生理時序資料，建立住院死亡風險預測與推論安全防護系統：著重於可重現資料分割、嚴格防洩漏、Platt 機率校準、事前註冊選模與一次性最終盲測 (One-Shot Final Evaluation)，在 4,000 例獨立測試集 (Set B) 上達成 AUPRC **0.555 (0.516–0.594)** 與 AUROC **0.870 (0.855–0.884)**。
 
-CareRisk 48H 使用 [PhysioNet Challenge 2012](https://physionet.org/content/challenge-2012/1.0.0/) ICU 入院前 48 小時資料研究住院死亡風險。重點是可重現 split、防洩漏、calibration、預註冊選模與一次性 final evaluation，而非只追求單一分數。
+> **研究聲明**：本專案僅供學術研究與工程探索，非臨床診斷、治療或照護決策工具；所有分析結果均需合格醫療專業人員複核。
 
-## 資料怎麼使用
+---
 
-PhysioNet 將資料分成數個官方集合；Set A／Set B 是資料分組名稱，不是模型版本或成績等級。
+## 系統設計與關鍵特性
 
-| README 名稱 | 官方名稱 | 用途 |
-| --- | --- | --- |
-| 開發資料 | Set A（4,000 ICU stays） | 用於 training、validation、calibration、模型選擇與 freeze 前檢查。 |
-| 最終測試資料 | Set B（另 4,000 ICU stays） | 模型與 threshold 全部凍結後只評估一次；下方正式結果來自這組資料。 |
+1. **嚴格資料分割與防洩漏策略**：
+   官方資料分為 Set A (開發資料，4,000 例) 與 Set B (最終測試，4,000 例)；特徵工程僅 fit 訓練集，閾值與校準器僅 fit 校準集，嚴防任何資料穿越。
+2. **事前註冊選模與 3-Seed LightGBM Ensemble**：
+   對比 Logistic Regression、LightGBM、GRU-D 與 TCN 架構，依事前註冊規則選用泛化最佳之 3-Seed LightGBM 集成模型 (Seeds 17, 42, 2026)。
+3. **Platt 機率校準與固定操作閾值 (Fixed Operating Point)**：
+   經 Platt Calibration 校準後達成極低校準誤差 (ECE **0.008**)，並在鎖定 90.9% Specificity 下取得 58.1% 敏感度 (Operating Threshold **0.297**)。
+4. **多重推論安全防護門禁 (Inference Safety Guards)**：
+   內建 JSON Schema 檢核、禁止欄位黑名單過濾、生命徵象覆蓋度 (Vital Coverage) 與分佈外 (OOD) 偵測門控，防範未達標資料誤判。
 
-## 正式結果
+---
 
-依預註冊規則，GRU-D 與 TCN 未達到超越最佳 tabular model 的門檻，因此選用較簡單的 3-seed LightGBM ensemble，搭配 Platt calibration 與固定 threshold。最終測試資料（Set B）僅成功評估一次，confidence interval 使用 2,000 次 stratified bootstrap。
+## 系統架構與 Pipeline
+
+### 1. 研究評測與單次盲測流程
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '18px'}}}%%
+flowchart TD
+    subgraph Stage1 ["階段一：資料分割與防洩漏策略 (Partition Strategy)"]
+        direction LR
+        Raw[("PhysioNet 2012 Set A<br/>(4,000 ICU Stays 開發資料)")] --> Strat["固定切分策略<br/>(Train / Validation / Calibration)"] --> Sets[("凍結資料清單<br/>(嚴格隔離獨立校準集)")]
+    end
+
+    subgraph Stage2 ["階段二：多架構評估與選模校準 (Training & Calibration)"]
+        direction LR
+        Sets --> Models["多模型評估對照<br/>(Logistic / LightGBM / GRU-D / TCN)"] --> Refit["3-Seed LightGBM Ensemble<br/>(Train+Val Refit · Seeds 17/42/2026)"] --> Calib["Platt 機率校準<br/>(Calibration 集鎖定閾值 0.297)"]
+    end
+
+    subgraph Stage3 ["階段三：流程驗證與單次盲測 (One-Shot Final Evaluation)"]
+        direction LR
+        Calib --> Manifest[("凍結產物清單<br/>(Freeze Manifest)")] --> DryRun["Set A 乾跑流程驗證<br/>(Dry-Run Pipeline)"] --> FinalEval[("Set B 單次盲測<br/>(4,000 例 One-Shot Evaluation)")]
+    end
+
+    Stage1 --> Stage2 --> Stage3
+
+    classDef srcStyle fill:#e7f5ff,stroke:#1971c2,stroke-width:2px,color:#212529
+    classDef procStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#212529
+    classDef evalStyle fill:#e6fcf5,stroke:#0ca678,stroke-width:2px,color:#212529
+
+    class Raw,Sets,Manifest,FinalEval srcStyle
+    class Strat,Models,Refit,Calib,DryRun procStyle
+
+    style Stage1 fill:#f8f9fa,stroke:#1971c2,stroke-width:2px,color:#1971c2,stroke-dasharray: 4 4
+    style Stage2 fill:#faf5ff,stroke:#7b1fa2,stroke-width:2px,color:#7b1fa2,stroke-dasharray: 4 4
+    style Stage3 fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
+```
+
+### 2. 推論安全防護機制 (Inference Safety Guards)
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '18px'}}}%%
+flowchart TD
+    subgraph InputStage ["階段一：輸入檢核與特徵提取"]
+        direction LR
+        Input[("48 小時 ICU 病歷記錄<br/>(時序生理數據)")] --> Schema["Parser 與 Schema 檢核<br/>(黑名單欄位過濾)"] --> Feat["Tabular 特徵提取<br/>(Missingness 與時序斜率)"]
+    end
+
+    subgraph ModelStage ["階段二：模型推理與機率校準"]
+        direction LR
+        Feat --> Model["3-Seed LightGBM Ensemble<br/>(集成模型推理)"] --> Platt["Platt Calibration<br/>(校準後風險機率)"]
+    end
+
+    subgraph GuardStage ["階段三：多重安全門禁與分流輸出"]
+        direction LR
+        Platt --> Guard{"Coverage / Vitals /<br/>OOD Guard 通過？"}
+        Guard -->|"通過"| SafeOutput[("顯示 Calibrated Risk<br/>與固定操作閾值")]
+        Guard -->|"未通過"| BlockOutput(["隱藏精確機率<br/>要求人工複核"])
+    end
+
+    InputStage --> ModelStage --> GuardStage
+
+    classDef srcStyle fill:#e7f5ff,stroke:#1971c2,stroke-width:2px,color:#212529
+    classDef procStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#212529
+    classDef condStyle fill:#fff9db,stroke:#f59f00,stroke-width:2px,color:#212529
+    classDef safeStyle fill:#e6fcf5,stroke:#0ca678,stroke-width:2px,color:#212529
+    classDef blockStyle fill:#ffe3e3,stroke:#e03131,stroke-width:2px,color:#212529
+
+    class Input srcStyle
+    class Schema,Feat,Model,Platt procStyle
+    class Guard condStyle
+    class SafeOutput safeStyle
+    class BlockOutput blockStyle
+
+    style InputStage fill:#f8f9fa,stroke:#1971c2,stroke-width:2px,color:#1971c2,stroke-dasharray: 4 4
+    style ModelStage fill:#faf5ff,stroke:#7b1fa2,stroke-width:2px,color:#7b1fa2,stroke-dasharray: 4 4
+    style GuardStage fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
+```
+
+---
+
+## 評測結果與指標分析
+
+最終測試資料（Set B，4,000 例）在模型與閾值完全凍結後進行單次一擊評測，信賴區間採用 2,000 次 Stratified Bootstrap 估計：
 
 <!-- RESULTS_START -->
 | Frozen model | Split | AUPRC (95% CI) | AUROC (95% CI) | Brier (95% CI) | ECE (95% CI) | Sensitivity @ ≥90% specificity | Threshold |
@@ -25,107 +115,60 @@ PhysioNet 將資料分成數個官方集合；Set A／Set B 是資料分組名�
 | lightgbm | 最終測試資料（Set B） | 0.555 (0.516–0.594) | 0.870 (0.855–0.884) | 0.087 (0.083–0.090) | 0.008 (0.007–0.019) | 0.581 @ 0.909 specificity | 0.297 |
 <!-- RESULTS_END -->
 
-完整精度、bootstrap 設定與安全 provenance hashes 見 [Machine-readable final-result receipt](docs/final-result-receipt.json)。
+### 核心評測指標解讀
 
-這些數值不構成 clinical validity、部署核准或跨場域可遷移證據。
+| 指標名稱 | 實測數值 | 指標意義說明 |
+|---|---|---|
+| AUPRC | 0.555 (95% CI 0.516–0.594) | 核心指標，專門評估正負樣本極度不平衡情境下的預測精確度 |
+| AUROC | 0.870 (95% CI 0.855–0.884) | 衡量模型對高風險個案與低風險個案之排序區辨能力 |
+| ECE (校準誤差) | 0.008 (95% CI 0.007–0.019) | 預測機率與實際發生率之一致性，數值極低代表輸出機率極為可靠 |
+| 固定操作點 | Sensitivity 58.1% @ Specificity 90.9% | 在優先保證 ≥90% 特異度的前提下，成功識別約 58% 死亡高風險個案 |
 
-## 結果一眼看懂
+![最終測試資料評測總覽圖](docs/assets/final-evaluation-overview.png)
 
-| 指標 | 正式結果 | 如何閱讀 |
-| --- | --- | --- |
-| AUPRC | 0.555（95% CI 0.516–0.594） | 主要指標，適合 outcome 不平衡的資料；越高越好。 |
-| AUROC | 0.870（95% CI 0.855–0.884） | 衡量模型把高風險個案排在前面的能力；越高越好。 |
-| ECE | 0.008（95% CI 0.007–0.019） | 預測機率與實際比例的 calibration error；越接近 0 越好。 |
-| 固定 operating point | Sensitivity 58.1%、specificity 90.9% | 在優先維持至少 90% specificity 的前提下，辨識約 58% 的死亡個案。 |
-
-![最終測試資料的 Precision–Recall、ROC、Reliability 與 Decision curve](docs/assets/final-evaluation-overview.png)
-
-圖中左上為 Precision–Recall、右上為 ROC、左下為 Reliability、右下為 Decision curve。Decision curve 只呈現不同 threshold 下的描述性 net benefit，不等於 clinical utility validation。
-
-## 研究流程
-
-```mermaid
-flowchart TD
-    A["開發資料（Set A）<br/>4,000 ICU stays"] --> B["固定 split<br/>train / validation / calibration"]
-    B --> C["Logistic / LightGBM<br/>GRU-D / TCN"]
-    C --> D{"預註冊選模"}
-    D --> E["LightGBM<br/>train + validation refit"]
-    E --> F["Platt calibration 與 threshold<br/>只 fit calibration"]
-    F --> G["freeze manifest"]
-    G --> H["開發資料 dry-run<br/>只驗證流程"]
-    H --> I["最終測試資料（Set B）<br/>凍結後只評估一次"]
-
-    classDef data fill:#E8F1FF,stroke:#1E5AA8,stroke-width:2px,color:#102A43
-    classDef process fill:#E6F4EA,stroke:#237A3B,stroke-width:2px,color:#12351E
-    classDef decision fill:#FFF4CC,stroke:#9A6700,stroke-width:2px,color:#4A3200
-    classDef gate fill:#FCE8E6,stroke:#B3261E,stroke-width:2px,color:#5F1410
-    class A,B data
-    class C,E,F,H process
-    class D decision
-    class G,I gate
-```
-
-Model seeds 固定為 `17`、`42`、`2026`。Preprocessor 只 fit train 或 final refit 的 train+validation；calibrator 與 threshold 只 fit calibration。
-
-## Inference safety flow
-
-```mermaid
-flowchart TD
-    A["48 小時 ICU records"] --> B["Parser 與 schema validation<br/>outcome descriptor denylist"]
-    B --> C["Tabular features<br/>missingness 與 actual-time slope"]
-    C --> D["3-seed LightGBM ensemble"]
-    D --> E["Platt calibration"]
-    E --> F{"Coverage / vital groups / OOD guard 通過？"}
-    F -->|是| G["顯示 calibrated risk 與固定 threshold"]
-    F -->|否| H["隱藏精確機率<br/>要求人工複核"]
-
-    classDef input fill:#E8F1FF,stroke:#1E5AA8,stroke-width:2px,color:#102A43
-    classDef process fill:#E6F4EA,stroke:#237A3B,stroke-width:2px,color:#12351E
-    classDef decision fill:#FFF4CC,stroke:#9A6700,stroke-width:2px,color:#4A3200
-    classDef safe fill:#E6F4EA,stroke:#237A3B,stroke-width:2px,color:#12351E
-    classDef blocked fill:#FCE8E6,stroke:#B3261E,stroke-width:2px,color:#5F1410
-    class A input
-    class B,C,D,E process
-    class F decision
-    class G safe
-    class H blocked
-```
-
-輸入 schema、禁止欄位、coverage、核心 vital groups 或 OOD guard 未通過時，demo 會拒絕輸入或隱藏精確機率。
+---
 
 ## 快速開始
 
+### 1. 本機環境建立與套件安裝
+
 ```powershell
 python -m venv .venv
-.venv\Scripts\python -m pip install -e ".[dev,tabular,app]"
-.venv\Scripts\python -m pytest
-.venv\Scripts\carerisk-train --config configs/quick.yaml --synthetic
+.\.venv\Scripts\python -m pip install -e ".[dev,tabular,app]"
+.\.venv\Scripts\python -m pytest
 ```
 
-開發資料（Set A）準備與完整 tabular training：
+### 2. 資料下載與模型訓練
 
 ```powershell
-.venv\Scripts\python scripts/download_physionet.py --raw-dir data/raw --set a
-.venv\Scripts\python scripts/generate_data_quality.py
-.venv\Scripts\python scripts/train_tabular.py --config configs/full.yaml
+# 下載 PhysioNet Set A 開發資料並產生品質報告
+.\.venv\Scripts\python scripts/download_physionet.py --raw-dir data/raw --set a
+.\.venv\Scripts\python scripts/generate_data_quality.py
+
+# 執行 Tabular 完整訓練 (3-Seed LightGBM + Platt Calibration)
+.\.venv\Scripts\python scripts/train_tabular.py --config configs/full.yaml
 ```
 
-Deep experiments 使用 [CareRisk48H_Deep_Experiments_Colab.ipynb](notebooks/CareRisk48H_Deep_Experiments_Colab.ipynb)：資料準備使用 Colab CPU，training 使用 L4；quick mode 只能作 synthetic smoke。
-
-Synthetic safety demo：
+<details>
+<summary><strong>啟動 Gradio 安全推論 Web UI</strong></summary>
 
 ```powershell
-.venv\Scripts\python scripts/build_demo_bundle.py
-.venv\Scripts\python app.py
+.\.venv\Scripts\python scripts/build_demo_bundle.py
+.\.venv\Scripts\python app.py
 ```
+
+</details>
+
+---
 
 ## 研究邊界與限制
 
-- Outcome 固定為 `In-hospital_death`；`SAPS-I`、`SOFA`、`Length of stay`、`Survival` 與 outcome descriptors 永不作為 features。
-- 開發資料（Set A）用於 development；最終測試資料（Set B）在 freeze 後只 final evaluation 一次；官方 Set C 完全不使用。
-- 原始資料、processed data、models、predictions、reports、checkpoints 與 final ledger/lock 不提交 Git。
-- 2012 ICU cohort 存在 temporal/practice shift；missingness 也可能反映量測與照護流程。
-- ICU outcome、監測密度與照護情境不同於長照；本模型不能直接遷移至長照或其他場域。
-- Error 與 subgroup analyses 只作描述，不代表 fairness 或 causal conclusions。
+1. **預測目標與特徵隔離**：預測目標嚴格鎖定為 `In-hospital_death`；`SAPS-I`、`SOFA`、`Length of stay` 與直接結果描述欄位一律不得作為輸入特徵。
+2. **資料切分原則**：Set A 專用於開發與校準；Set B 在凍結後僅評估一次，Set C 完全不使用。
+3. **場域不可直接遷移**：ICU 重症監測密度、生理時序動態與醫療決策情境與長照或普通病房截然不同，本模型嚴禁直接跨領域遷移使用。
 
-完整限制與方法見 [MODEL_CARD.md](MODEL_CARD.md) 與 [DATA_CARD.md](DATA_CARD.md)。引用資訊見 [CITATION.cff](CITATION.cff)；程式碼採 [Apache-2.0](LICENSE)，資料依 PhysioNet 的 [ODC-By 1.0](https://physionet.org/content/challenge-2012/view-license/1.0.0/) 使用，詳見 [NOTICE](NOTICE)。
+---
+
+## 授權與聲明
+
+本專案之程式碼採 [Apache-2.0 License](LICENSE)。PhysioNet 2012 原始數據集遵循 [ODC-By 1.0](https://physionet.org/content/challenge-2012/view-license/1.0.0/) 規範，詳見 [NOTICE](NOTICE)。
