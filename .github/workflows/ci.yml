@@ -34,3 +34,19 @@ jobs:
           OMP_NUM_THREADS: "2"
           MKL_NUM_THREADS: "2"
         run: pytest -m "not integration and not slow"
+
+  container:
+    name: Docker non-root launch-free smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build source-only CPU image
+        run: docker build --tag carerisk48h:ci .
+      - name: Launch-free synthetic app smoke
+        run: >-
+          docker run --rm --cpus=2
+          -e CUDA_VISIBLE_DEVICES=
+          --entrypoint python
+          carerisk48h:ci
+          -c "import os; assert os.geteuid() != 0; from app.dashboard import create_app; app = create_app(); assert app is not None"

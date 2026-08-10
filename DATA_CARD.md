@@ -1,42 +1,62 @@
 # CareRisk 48H Data Card
 
-## 資料來源與用途
+## 資料來源與允許用途
 
-本專案使用 [PhysioNet/Computing in Cardiology Challenge 2012 v1.0.0](https://physionet.org/content/challenge-2012/1.0.0/) 的 Set A 開發死亡風險研究原型，並在模型、preprocessing、calibrator 與 threshold 凍結後，以 Set B 做唯一一次 final evaluation。資料包含 ICU 入院最初 48 小時的不規則生理量測與住院死亡標籤。資料僅供研究與教育；不代表一般病房、長照、居家或當代照護流程。
+本專案使用 [PhysioNet/Computing in Cardiology Challenge 2012 v1.0.0](https://physionet.org/content/challenge-2012/1.0.0/) 的去識別化 ICU research data。Set A 用於開發；模型、preprocessing、calibrator、threshold、config 與 split 全部凍結後，以 Set B 執行恰一次 self-audited held-out evaluation；Set C 完全排除。資料只支援研究與教育，不代表現代 ICU、一般病房、長照、居家或其他照護場域。
 
-原始資料依 Open Data Commons Attribution License v1.0 提供，並未包含於本 repository。使用者須從官方來源取得並遵守 [ODC-By 1.0](https://physionet.org/content/challenge-2012/view-license/1.0.0/) 的 attribution 要求。本專案 Apache-2.0 授權不涵蓋資料或由資料衍生且受原授權約束的 artifacts。
+原始資料依 Open Data Commons Attribution License v1.0 提供，未包含於本 repository。使用者須從官方來源取得並遵守 [ODC-By 1.0](https://physionet.org/content/challenge-2012/view-license/1.0.0/)；本專案 Apache-2.0 授權不涵蓋資料或受原授權約束的衍生 artifacts。
 
-## Cohort 與切分
+## Cohort definition 與 48-hour landmark
 
-- Set A：4,000 stays，用於 train/validation/calibration（70%/15%/15%）。
-- 分層：`In-hospital_death × ICUType`；固定 seed `2026`。
-- Set B：4,000 stays，正式 final cohort 有 568 deaths（14.2%）；已在模型凍結後完成恰一次 final evaluation 並建立 persistent final lock。`Outcomes-b.txt` 現在公開，但 2012 challenge 期間 test outcomes 曾隱藏。
-- Set C：完全排除。
+Challenge cohort 共 12,000 ICU stays。官方 cohort 定義為：
 
-## 欄位與轉換
+- 年齡至少 16 歲；
+- 每位病人的首次可用 ICU stay；
+- initial ICU stay 至少 48 小時；
+- 使用 ICU 入院最初 48 小時的 observations；
+- DNR/CMO 個案未排除，官方沒有列出其他 exclusion criteria。
 
-General descriptors 為 Age、Gender、Height、ICUType、initial Weight。37 個 dynamic variables 轉成 48 個 hourly bins，保留 `value`、`measurement mask` 與 `time-since-last-measurement`。`-1` 是官方 missing sentinel。其他 outlier 原樣保留並報告，不在 parser 靜默刪除。
+這是 conditional 48-hour landmark cohort。早於 48 小時死亡、離 ICU 或不滿足 stay duration 的人不在 cohort，因此結果不得解讀成 ICU admission 時點對所有病人的 prediction performance。
 
-唯一 outcome 是 `In-hospital_death`。`SAPS-I`、`SOFA`、`Length_of_stay`、`Survival` 與任何 outcome 欄位不得進入 feature pipeline。
+資料來自單一機構 Beth Israel Deaconess Medical Center 的 MIMIC-II（2001–2007），涵蓋 medical、surgical、coronary 與 cardiac surgery recovery 四種 adult ICU type；不是四所醫院。Challenge cohort 隨機分成 Set A／B／C，各 4,000 stays。這些分組不是 chronological、site-held-out 或 external validation；本研究也沒有可用於跨院驗證的多機構 site variation。
 
-## 已知限制與品質風險
+## Patient leakage 與 split
 
-- Missingness 同時反映病況與量測/照護流程，不能解讀為因果生理訊號。
-- 2012 ICU 資料的設備、臨床流程、族群與 outcome 定義可能和目前部署環境不同。
-- 極端值可能是重症、單位/設備問題或資料錯誤；目前採 report-first 原則。
+- 官方來源只保留每位病人的首次可用 ICU stay，降低同一病人跨 stay 出現在不同官方 sets 的風險。
+- Repository 以 `RecordID` 驗證 Set A train／validation／calibration 互斥，並驗證 outcome alignment。
+- 公開 records 沒有可供研究者獨立重建 patient-level linkage 的跨 stay patient identifier；因此 patient uniqueness 依賴官方 cohort construction，不能把 `RecordID` disjoint 誇大為完整 patient identity audit。
+- Set A 依 `In-hospital_death × ICUType` 分層為 train／validation／calibration = 70%／15%／15%，split seed `2026`。
+- Set B 有 4,000 stays、568 deaths（14.2%）；在模型凍結後完成一次留出評估並建立 persistent final lock。`Outcomes-b.txt` 現已公開，但 2012 challenge 期間 test outcomes 曾隱藏。
+
+## 欄位、label 與時間邊界
+
+General descriptors 為 Age、Gender、Height、ICUType、initial Weight。37 個 dynamic variables 轉成 48 個 hourly bins，保留 `value`、measurement `mask` 與 `time-since-last-measurement`。精確 `48:00` 納入最後一個 bin；超過 48 小時的 measurement 被拒絕。
+
+唯一 outcome 是 `In-hospital_death`。`SAPS-I`、`SOFA`、`Length_of_stay`、`Survival`、任何 outcome descriptor 與 `RecordID` 不得進入 feature pipeline。官方 `-1` sentinel 轉為 missing；其他 outlier 原樣保留並 report-first，不在 parser 靜默刪除。
+
+## Missingness、value 與 unit 風險
+
+- Missingness 同時反映病況、量測政策、臨床工作流程與資源，不能解讀為因果生理訊號。
+- 資料欄位以 Challenge schema 的 canonical unit 為前提；inference payload 沒有獨立 unit metadata，無法做完整 unit reconciliation。
+- Train-derived value-pattern screen 可攔截明顯 scale shift，但不是 physiological plausibility validator，也不能保證每個數值的臨床合理性。
+- 極端值可能是重症、單位／設備問題或資料錯誤；輸入 guard 採 abstention，不自動更正數值。
 - 性別欄位是資料集提供的有限編碼，不足以代表性別多樣性。
-- 沒有足夠證據支持 ICU→長照遷移；若跨場域使用必須重新驗證、重新校準並進行前瞻性安全評估。
 
-## 產生的本機報告
+## Generalizability limits
 
-執行 `scripts/generate_data_quality.py` 後，ignored 的 `reports/generated/data_quality/` 會包含 missingness heatmap、robust outlier table、label/ICUType distribution 與摘要；`data/processed/` 會包含固定 split 及 train-only quality guard thresholds。正式 Set B 的 predictions、error cases、11 個 subgroup reports、PR/ROC/reliability/decision curves、ledger 與 final lock 保存在 ignored 的 `artifacts/final-candidate-c993493/`。原始資料、outcomes 與這些衍生物均不提交 repository。
+- 2012 年資料的設備、治療、族群、missingness process 與 outcome definition 可能和目前流程不同。
+- 沒有 temporal、site-held-out、external 或 prospective validation。
+- 沒有足夠證據支持 ICU 到長照、居家或一般病房遷移。
+- 若在其他場域研究，必須重新定義 cohort、確認 unit/schema、外部驗證、重新校準、設定 abstention policy，並先完成治理與前瞻性安全評估。
+
+## 本機產物與隱私
+
+`scripts/generate_data_quality.py` 會把 aggregate data-quality report 寫入 ignored `reports/generated/data_quality/`，並把固定 split 與 train-only guard thresholds 寫入 ignored `data/processed/`。正式 Set B predictions、error cases、subgroup outputs、plots、ledger 與 final lock 亦保持 ignored。原始資料、outcomes、個案 predictions、models、reports 與 locks 均不提交 repository。
 
 ## Citation
 
-請同時引用 PhysioNet 的標準引用：
+請同時引用 PhysioNet standard citation 與 Challenge 論文：
 
 > Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PC, Mark RG, Mietus JE, Moody GB, Peng CK, Stanley HE. PhysioBank, PhysioToolkit, and PhysioNet: Components of a New Research Resource for Complex Physiologic Signals. Circulation. 2000;101(23):e215–e220. RRID:SCR_007345.
-
-以及 Challenge 論文：
 
 > Silva I, Moody G, Scott DJ, Celi LA, Mark RG. Predicting in-hospital mortality of ICU patients: The PhysioNet/Computing in Cardiology Challenge 2012. Computing in Cardiology. 2012;39:245–248.

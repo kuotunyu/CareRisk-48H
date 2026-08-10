@@ -2,10 +2,21 @@ cff-version: 1.2.0
 message: "If you use CareRisk 48H, cite this software and the PhysioNet Challenge 2012 sources."
 title: "CareRisk 48H"
 type: software
+abstract: >-
+  Leakage-controlled and calibrated mortality-risk research software for irregular
+  48-hour ICU time series, with reproducible evaluation, abstention, monitoring,
+  and explicit non-clinical use boundaries.
 version: 0.1.0
 date-released: 2026-08-04
 authors:
   - name: "kuotunyu"
+keywords:
+  - "trustworthy clinical machine learning"
+  - "calibration"
+  - "mortality risk"
+  - "ICU time series"
+  - "reproducible research"
+  - "PhysioNet"
 repository-code: "https://github.com/kuotunyu/CareRisk-48H"
 url: "https://github.com/kuotunyu/CareRisk-48H"
 license: Apache-2.0

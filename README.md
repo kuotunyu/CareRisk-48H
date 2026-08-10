@@ -2,112 +2,56 @@
 
 [![CI](https://github.com/kuotunyu/CareRisk-48H/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/CareRisk-48H/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/kuotunyu/CareRisk-48H)](https://github.com/kuotunyu/CareRisk-48H/releases/tag/v0.1.0)
-![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
-![LightGBM](https://img.shields.io/badge/LightGBM-3.3%2B-blue?logo=lightgbm&logoColor=white)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?logo=pytorch&logoColor=white)
+![Python 3.10–3.12](https://img.shields.io/badge/Python-3.10%E2%80%933.12-3776AB?logo=python&logoColor=white)
+![LightGBM 4.x](https://img.shields.io/badge/LightGBM-4.x-blue)
+![PyTorch 2.1+](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-本專案基於 **PhysioNet Challenge 2012** 重症加護病房 (ICU) 入院前 48 小時生理時序資料，建立住院死亡風險預測與推論安全防護系統：著重於可重現資料分割、嚴格防洩漏、Platt 機率校準、事前註冊選模與一次性最終盲測 (One-Shot Final Evaluation)，在 4,000 例獨立測試集 (Set B) 上達成 AUPRC **0.555 (0.516–0.594)** 與 AUROC **0.870 (0.855–0.884)**。
+CareRisk 48H 是可信賴 clinical ML 的研究軟體範例，使用 [PhysioNet Challenge 2012](https://physionet.org/content/challenge-2012/1.0.0/) ICU 入院最初 48 小時資料研究住院死亡風險。重點是可重現 split、防洩漏、機率校準、事前選模、abstention 與可稽核評估，不是臨床產品。
 
-> **研究聲明**：本專案僅供學術研究與工程探索，非臨床診斷、治療或照護決策工具；所有分析結果均需合格醫療專業人員複核。
+> 僅供研究與教育；不是臨床診斷、治療、分流、資源配置或照護決策工具。
 
----
+## Cohort 與資料角色
 
-## 系統設計與關鍵特性
+這是 48 小時 landmark cohort：官方納入年齡至少 16 歲、首次可用 ICU stay，且 initial ICU stay 至少 48 小時的個案；DNR/CMO 並未排除。模型因此只適用於已達 48 小時 landmark 的歷史 ICU cohort，不能代表入 ICU 後 48 小時內即離院或死亡者，也不能直接代表一般病房、長照或居家照護。
 
-1. **嚴格資料分割與防洩漏策略**：
-   官方資料分為 Set A (開發資料，4,000 例) 與 Set B (最終測試，4,000 例)；特徵工程僅 fit 訓練集，閾值與校準器僅 fit 校準集，嚴防任何資料穿越。
-2. **事前註冊選模與 3-Seed LightGBM Ensemble**：
-   對比 Logistic Regression、LightGBM、GRU-D 與 TCN 架構，依事前註冊規則選用泛化最佳之 3-Seed LightGBM 集成模型 (Seeds 17, 42, 2026)。
-3. **Platt 機率校準與固定操作閾值 (Fixed Operating Point)**：
-   經 Platt Calibration 校準後達成極低校準誤差 (ECE **0.008**)，並在鎖定 90.9% Specificity 下取得 58.1% 敏感度 (Operating Threshold **0.297**)。
-4. **多重推論安全防護門禁 (Inference Safety Guards)**：
-   內建 JSON Schema 檢核、禁止欄位黑名單過濾、生命徵象覆蓋度 (Vital Coverage) 與分佈外 (OOD) 偵測門控，防範未達標資料誤判。
+資料來自單一機構 Beth Israel Deaconess Medical Center 的 MIMIC-II（2001–2007），涵蓋 medical、surgical、coronary 與 cardiac surgery recovery 四種 adult ICU type。PhysioNet 將 12,000 stays 隨機分成 Set A／B／C，各 4,000 筆；它們是同一歷史來源的隨機分組，不是模型版本、醫院分組或成績等級。本研究沒有 chronological 或 site-held-out validation，也沒有 external 或 prospective validation。
 
----
+| README 名稱 | 官方名稱 | 用途 |
+| --- | --- | --- |
+| 開發資料（Set A） | 4,000 ICU stays | 固定 train／validation／calibration split、選模、refit、Platt calibration、threshold 與 freeze 前檢查。 |
+| 最終測試資料（Set B） | 另 4,000 ICU stays | 所有選擇凍結後，執行一次自我稽核的一次性留出評估。 |
+| 未使用資料 | Set C | 完全排除，不作開發或報告。 |
 
-## 系統架構與 Pipeline
+來源 cohort 只保留每位病人的首次可用 ICU stay，降低同一病人跨 stay leakage；repository 另驗證各 split 的 `RecordID` 不重疊。因公開資料沒有可供獨立 cross-stay linkage 的 patient identifier，病人層級唯一性仍依賴官方 cohort 定義。
 
-### 1. 研究評測與單次盲測流程
+## 研究流程
 
 ```mermaid
-%%{init: {'themeVariables': {'fontSize': '18px'}}}%%
 flowchart TD
-    subgraph Stage1 ["階段一：資料分割與防洩漏策略 (Partition Strategy)"]
-        direction LR
-        Raw[("PhysioNet 2012 Set A<br/>(4,000 ICU Stays 開發資料)")] --> Strat["固定切分策略<br/>(Train / Validation / Calibration)"] --> Sets[("凍結資料清單<br/>(嚴格隔離獨立校準集)")]
-    end
+    A["開發資料（Set A）<br/>4,000 ICU stays"] --> B["固定 split<br/>train / validation / calibration"]
+    B --> C["Logistic / LightGBM<br/>GRU-D / TCN"]
+    C --> D{"預先固定選模規則"}
+    D --> E["LightGBM 3-seed ensemble<br/>train + validation refit"]
+    E --> F["Platt calibration 與 threshold<br/>只 fit calibration"]
+    F --> G["freeze manifest 與 Set A dry-run"]
+    G --> H["最終測試資料（Set B）<br/>一次性留出評估"]
 
-    subgraph Stage2 ["階段二：多架構評估與選模校準 (Training & Calibration)"]
-        direction LR
-        Sets --> Models["多模型評估對照<br/>(Logistic / LightGBM / GRU-D / TCN)"] --> Refit["3-Seed LightGBM Ensemble<br/>(Train+Val Refit · Seeds 17/42/2026)"] --> Calib["Platt 機率校準<br/>(Calibration 集鎖定閾值 0.297)"]
-    end
-
-    subgraph Stage3 ["階段三：流程驗證與單次盲測 (One-Shot Final Evaluation)"]
-        direction LR
-        Calib --> Manifest[("凍結產物清單<br/>(Freeze Manifest)")] --> DryRun["Set A 乾跑流程驗證<br/>(Dry-Run Pipeline)"] --> FinalEval[("Set B 單次盲測<br/>(4,000 例 One-Shot Evaluation)")]
-    end
-
-    Stage1 --> Stage2 --> Stage3
-
-    classDef srcStyle fill:#e7f5ff,stroke:#1971c2,stroke-width:2px,color:#212529
-    classDef procStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#212529
-    classDef evalStyle fill:#e6fcf5,stroke:#0ca678,stroke-width:2px,color:#212529
-
-    class Raw,Sets,Manifest,FinalEval srcStyle
-    class Strat,Models,Refit,Calib,DryRun procStyle
-
-    style Stage1 fill:#f8f9fa,stroke:#1971c2,stroke-width:2px,color:#1971c2,stroke-dasharray: 4 4
-    style Stage2 fill:#faf5ff,stroke:#7b1fa2,stroke-width:2px,color:#7b1fa2,stroke-dasharray: 4 4
-    style Stage3 fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
+    classDef data fill:#E8F1FF,stroke:#1E5AA8,stroke-width:2px,color:#102A43
+    classDef process fill:#E6F4EA,stroke:#237A3B,stroke-width:2px,color:#12351E
+    classDef decision fill:#FFF4CC,stroke:#9A6700,stroke-width:2px,color:#4A3200
+    classDef gate fill:#FCE8E6,stroke:#B3261E,stroke-width:2px,color:#5F1410
+    class A,B data
+    class C,E,F process
+    class D decision
+    class G,H gate
 ```
 
-### 2. 推論安全防護機制 (Inference Safety Guards)
+Model seeds 固定為 `17`、`42`、`2026`。Preprocessing、imputation、scaling 與 feature selection 只 fit 允許的開發 split；`In-hospital_death` 是唯一 label，`SAPS-I`、`SOFA`、`Length_of_stay`、`Survival`、outcome descriptors 與 `RecordID` 永不作為 features。
 
-```mermaid
-%%{init: {'themeVariables': {'fontSize': '18px'}}}%%
-flowchart TD
-    subgraph InputStage ["階段一：輸入檢核與特徵提取"]
-        direction LR
-        Input[("48 小時 ICU 病歷記錄<br/>(時序生理數據)")] --> Schema["Parser 與 Schema 檢核<br/>(黑名單欄位過濾)"] --> Feat["Tabular 特徵提取<br/>(Missingness 與時序斜率)"]
-    end
+## 正式結果
 
-    subgraph ModelStage ["階段二：模型推理與機率校準"]
-        direction LR
-        Feat --> Model["3-Seed LightGBM Ensemble<br/>(集成模型推理)"] --> Platt["Platt Calibration<br/>(校準後風險機率)"]
-    end
-
-    subgraph GuardStage ["階段三：多重安全門禁與分流輸出"]
-        direction LR
-        Platt --> Guard{"Coverage / Vitals /<br/>OOD Guard 通過？"}
-        Guard -->|"通過"| SafeOutput[("顯示 Calibrated Risk<br/>與固定操作閾值")]
-        Guard -->|"未通過"| BlockOutput(["隱藏精確機率<br/>要求人工複核"])
-    end
-
-    InputStage --> ModelStage --> GuardStage
-
-    classDef srcStyle fill:#e7f5ff,stroke:#1971c2,stroke-width:2px,color:#212529
-    classDef procStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#212529
-    classDef condStyle fill:#fff9db,stroke:#f59f00,stroke-width:2px,color:#212529
-    classDef safeStyle fill:#e6fcf5,stroke:#0ca678,stroke-width:2px,color:#212529
-    classDef blockStyle fill:#ffe3e3,stroke:#e03131,stroke-width:2px,color:#212529
-
-    class Input srcStyle
-    class Schema,Feat,Model,Platt procStyle
-    class Guard condStyle
-    class SafeOutput safeStyle
-    class BlockOutput blockStyle
-
-    style InputStage fill:#f8f9fa,stroke:#1971c2,stroke-width:2px,color:#1971c2,stroke-dasharray: 4 4
-    style ModelStage fill:#faf5ff,stroke:#7b1fa2,stroke-width:2px,color:#7b1fa2,stroke-dasharray: 4 4
-    style GuardStage fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
-```
-
----
-
-## 評測結果與指標分析
-
-最終測試資料（Set B，4,000 例）在模型與閾值完全凍結後進行單次一擊評測，信賴區間採用 2,000 次 Stratified Bootstrap 估計：
+依事前固定規則，GRU-D 與 TCN 未同時達到超越最佳 tabular model 的 AUPRC 與 calibration promotion gates，因此選用較簡單的 3-seed LightGBM ensemble。以下結果來自凍結後的自我稽核一次性 Set B holdout；它是同來源 random holdout，不是 temporal、site 或 external validation。
 
 <!-- RESULTS_START -->
 | Frozen model | Split | AUPRC (95% CI) | AUROC (95% CI) | Brier (95% CI) | ECE (95% CI) | Sensitivity @ ≥90% specificity | Threshold |
@@ -115,60 +59,85 @@ flowchart TD
 | lightgbm | 最終測試資料（Set B） | 0.555 (0.516–0.594) | 0.870 (0.855–0.884) | 0.087 (0.083–0.090) | 0.008 (0.007–0.019) | 0.581 @ 0.909 specificity | 0.297 |
 <!-- RESULTS_END -->
 
-### 核心評測指標解讀
+完整精度、bootstrap 設定與安全 provenance hashes 見 [Machine-readable final-result receipt](docs/final-result-receipt.json)。這些數值不構成 clinical validity、部署核准或跨場域可遷移證據。
 
-| 指標名稱 | 實測數值 | 指標意義說明 |
-|---|---|---|
-| AUPRC | 0.555 (95% CI 0.516–0.594) | 核心指標，專門評估正負樣本極度不平衡情境下的預測精確度 |
-| AUROC | 0.870 (95% CI 0.855–0.884) | 衡量模型對高風險個案與低風險個案之排序區辨能力 |
-| ECE (校準誤差) | 0.008 (95% CI 0.007–0.019) | 預測機率與實際發生率之一致性，數值極低代表輸出機率極為可靠 |
-| 固定操作點 | Sensitivity 58.1% @ Specificity 90.9% | 在優先保證 ≥90% 特異度的前提下，成功識別約 58% 死亡高風險個案 |
+## 結果一眼看懂
 
-![最終測試資料評測總覽圖](docs/assets/final-evaluation-overview.png)
+| 指標 | 正式結果 | 如何閱讀 |
+| --- | --- | --- |
+| AUPRC | 0.555（95% CI 0.516–0.594） | 主要 discrimination 指標，適合 outcome imbalance；不能單獨表示臨床效用。 |
+| AUROC | 0.870（95% CI 0.855–0.884） | 描述同來源留出資料中的排序能力。 |
+| 10-bin ECE | 0.008（95% CI 0.007–0.019） | 此 historical same-source holdout 的 fixed-width calibration error；小值不等於外部或個案層級可靠性。 |
+| research operating point | Sensitivity 58.1%、specificity 90.9% | threshold 只由 Set A calibration 依預定規則選取，不是經臨床成本、傷害或工作流程驗證的決策界線。 |
 
----
+### Set A calibration／threshold stability
+
+在原本 600 筆 Set A calibration split 上，以固定 seed 2026 做 2,000 次 outcome-stratified bootstrap：apparent calibration intercept 為 `-0.0002`（percentile range `-0.273–0.329`），slope 為 `1.000`（`0.833–1.220`）；research threshold 點估計 `0.297` 的 range 為 `0.267–0.340`，對應 sensitivity `0.530`（`0.410–0.651`）與 specificity `0.907`（`0.901–0.925`）。
+
+這是同一 calibration split 上、對已 fit Platt probabilities 的 internal/apparent resampling diagnostic；接近 0／1 的 intercept／slope 點估計部分反映 in-sample fit，區間則顯示小 calibration sample 的不確定性。它不是 external calibration、calibrator-refit uncertainty 或 threshold clinical utility evidence。可重現工具為 `scripts/analyze_calibration_stability.py`。
+
+![最終測試資料的 Precision–Recall、ROC、Reliability 與 Decision curve](docs/assets/final-evaluation-overview.png)
+
+圖中 decision curve 是不同 threshold 下的描述性 decision curve analysis；其 harm ratio 是數學假設，沒有經臨床 action、cost 或 utility study 驗證。
+
+## 推論安全與 abstention
+
+```mermaid
+flowchart TD
+    A["48 小時 ICU input"] --> B["Parser / schema<br/>outcome denylist"]
+    B --> C["Coverage / vital groups<br/>missingness-pattern screen"]
+    C --> D["Train-derived<br/>value-pattern screen"]
+    D --> E{"所有研究門禁通過？"}
+    E -->|是| F["研究機率與固定 operating point"]
+    E -->|否| G["隱藏精確機率<br/>人工複核"]
+
+    classDef input fill:#E8F1FF,stroke:#1E5AA8,stroke-width:2px,color:#102A43
+    classDef process fill:#E6F4EA,stroke:#237A3B,stroke-width:2px,color:#12351E
+    classDef decision fill:#FFF4CC,stroke:#9A6700,stroke-width:2px,color:#4A3200
+    classDef blocked fill:#FCE8E6,stroke:#B3261E,stroke-width:2px,color:#5F1410
+    class A input
+    class B,C,D,F process
+    class E decision
+    class G blocked
+```
+
+Demo 的 `missingness/value-pattern anomaly guard` 使用 train-only coverage、measurement count、vital-group、missingness pattern 與 robust value-pattern signals。它會觸發 abstention，但不是 physiological unit validator、external OOD detector 或臨床 safety system。凍結 Set B candidate 是 batch research artifact；public demo 則使用 synthetic-only bundle，兩者不能混稱為 deployable clinical model。
+
+公開介面與研究說明：
+
+- [Inference JSON Schema](configs/inference_schema.json)
+- [MODEL_CARD.md](MODEL_CARD.md)
+- [DATA_CARD.md](DATA_CARD.md)
+- [MONITORING.md](MONITORING.md)
+- [TRIPOD+AI / PROBAST+AI evidence audit](docs/TRIPOD_PROBAST_AUDIT.md)
+- [Zenodo release-readiness checklist](docs/ZENODO_RELEASE_CHECKLIST.md)
+- [CITATION.cff](CITATION.cff)
 
 ## 快速開始
-
-### 1. 本機環境建立與套件安裝
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev,tabular,app]"
 .\.venv\Scripts\python -m pytest
+.\.venv\Scripts\carerisk-train --config configs/quick.yaml --synthetic
 ```
 
-### 2. 資料下載與模型訓練
+開發資料（Set A）需由使用者依官方授權自行下載。一般 CI 只使用 synthetic／mocked data、CPU，且不下載 PhysioNet。
 
-```powershell
-# 下載 PhysioNet Set A 開發資料並產生品質報告
-.\.venv\Scripts\python scripts/download_physionet.py --raw-dir data/raw --set a
-.\.venv\Scripts\python scripts/generate_data_quality.py
-
-# 執行 Tabular 完整訓練 (3-Seed LightGBM + Platt Calibration)
-.\.venv\Scripts\python scripts/train_tabular.py --config configs/full.yaml
-```
-
-<details>
-<summary><strong>啟動 Gradio 安全推論 Web UI</strong></summary>
+Synthetic safety demo：
 
 ```powershell
 .\.venv\Scripts\python scripts/build_demo_bundle.py
 .\.venv\Scripts\python app.py
 ```
 
-</details>
+## 研究邊界
 
----
+- 48 小時 eligibility 造成 landmark selection；結果不涵蓋早期死亡或早期離 ICU 的個案。
+- 2012 ICU 資料存在 temporal、practice、equipment 與 population shift；缺少 contemporary external validation。
+- Missingness 可能編碼病況、量測政策、資源與 clinician behavior，不能作因果解釋。
+- Subgroup results 是小樣本描述，不支持 fairness claim。
+- ICU outcome、監測密度與照護情境與長照不同；本模型不能直接遷移至長照。
+- 任何 clinical use 都需要獨立資料、前瞻性評估、human factors、治理、監測與失效處置；本專案沒有提供這些證據。
 
-## 研究邊界與限制
-
-1. **預測目標與特徵隔離**：預測目標嚴格鎖定為 `In-hospital_death`；`SAPS-I`、`SOFA`、`Length of stay` 與直接結果描述欄位一律不得作為輸入特徵。
-2. **資料切分原則**：Set A 專用於開發與校準；Set B 在凍結後僅評估一次，Set C 完全不使用。
-3. **場域不可直接遷移**：ICU 重症監測密度、生理時序動態與醫療決策情境與長照或普通病房截然不同，本模型嚴禁直接跨領域遷移使用。
-
----
-
-## 授權與聲明
-
-本專案之程式碼採 [Apache-2.0 License](LICENSE)。PhysioNet 2012 原始數據集遵循 [ODC-By 1.0](https://physionet.org/content/challenge-2012/view-license/1.0.0/) 規範，詳見 [NOTICE](NOTICE)。
+程式碼採 [Apache-2.0](LICENSE)。資料依 PhysioNet 的 [ODC-By 1.0](https://physionet.org/content/challenge-2012/view-license/1.0.0/) 使用，且不包含在 repository 中，詳見 [NOTICE](NOTICE)。

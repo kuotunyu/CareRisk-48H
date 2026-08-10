@@ -189,6 +189,24 @@ def test_public_readme_is_concise_and_diagrammed() -> None:
     assert "開發資料（Set A）" in text
     assert "最終測試資料（Set B）" in text
     assert "## 結果一眼看懂" in text
+    assert "48 小時 landmark" in text
+    assert "年齡至少 16 歲" in text
+    assert "首次可用 ICU stay" in text
+    assert "至少 48 小時" in text
+    assert "DNR/CMO" in text
+    assert "同一歷史來源的隨機分組" in text
+    assert "沒有 chronological 或 site-held-out validation" in text
+    assert "自我稽核的一次性留出評估" in text
+    assert "research operating point" in text
+    assert "描述性 decision curve" in text
+    assert "missingness/value-pattern anomaly guard" in text
+    assert "[MODEL_CARD.md](MODEL_CARD.md)" in text
+    assert "[DATA_CARD.md](DATA_CARD.md)" in text
+    assert "最終盲測" not in text
+    assert "單次盲測" not in text
+    assert "極為可靠" not in text
+    assert "極低校準誤差" not in text
+    assert "極度不平衡" not in text
     assert "docs/assets/final-evaluation-overview.png" in text
     assert "PROJECT_PLAN.md" not in text
     assert "🫀" not in text
