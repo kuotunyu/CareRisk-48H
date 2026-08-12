@@ -19,10 +19,445 @@ import numpy as np
 from carerisk48h.constants import VARIABLE_INDEX
 from carerisk48h.data.quality import stay_quality_features
 from carerisk48h.demo import build_synthetic_demo_bundle, synthetic_payload
-from carerisk48h.inference import DISCLAIMER, predict_stay
+from carerisk48h.inference import predict_stay
 from carerisk48h.schema import validate_inference_payload
 
 _TREND_VARIABLES = ("HR", "RespRate", "Temp", "NIMAP", "SaO2")
+
+_APP_CSS = """
+:root {
+    --cr-canvas: #F4F7FA;
+    --cr-surface: #FFFFFF;
+    --cr-ink: #102A43;
+    --cr-navy: #082B4C;
+    --cr-teal: #087F8C;
+    --cr-amber: #A16207;
+    --cr-border: #CAD5E0;
+    --cr-muted: #52677A;
+    --cr-invalid: #B42318;
+    --cr-body: 16px;
+    --cr-label: 14px;
+    --cr-code: 13px;
+}
+
+html,
+body {
+    background: var(--cr-canvas);
+    color: var(--cr-ink);
+    overflow-x: hidden;
+}
+
+.gradio-container {
+    background: var(--cr-canvas) !important;
+    color: var(--cr-ink) !important;
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif !important;
+    font-size: var(--cr-body) !important;
+    line-height: 1.5;
+    margin: 0 auto !important;
+    max-width: 1280px !important;
+    padding: 20px 24px 28px !important;
+    overflow-x: hidden;
+}
+
+#cr-header {
+    background: var(--cr-navy);
+    border-radius: 12px 12px 0 0;
+    color: #FFFFFF;
+    margin: 0 !important;
+    padding: 20px 24px;
+}
+
+.cr-header {
+    align-items: end;
+    display: flex;
+    gap: 24px;
+    justify-content: space-between;
+}
+
+.cr-eyebrow,
+.cr-step {
+    color: var(--cr-teal);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin: 0 0 6px;
+    text-transform: uppercase;
+}
+
+.cr-header .cr-eyebrow {
+    color: #8FDBE0;
+}
+
+.cr-header h1 {
+    color: #FFFFFF;
+    font-size: clamp(30px, 3vw, 36px);
+    letter-spacing: -0.025em;
+    line-height: 1.12;
+    margin: 0;
+}
+
+.cr-value-line {
+    color: #D9E5EE;
+    font-size: 16px;
+    margin: 7px 0 0;
+    max-width: 52rem;
+}
+
+.cr-notice {
+    align-items: center;
+    display: flex;
+    flex: 0 1 34rem;
+    font-size: 15px;
+    gap: 10px;
+    justify-content: flex-end;
+    text-align: right;
+}
+
+.cr-notice__icon {
+    align-items: center;
+    border: 2px solid #8FDBE0;
+    border-radius: 50%;
+    color: #8FDBE0;
+    display: inline-flex;
+    flex: 0 0 24px;
+    font-size: 14px;
+    font-weight: 800;
+    height: 24px;
+    justify-content: center;
+}
+
+#cr-console {
+    background: var(--cr-surface);
+    border: 1px solid var(--cr-border);
+    border-radius: 0 0 12px 12px;
+    display: grid !important;
+    gap: 0 !important;
+    grid-template-columns: minmax(0, 38fr) minmax(0, 62fr);
+    margin: 0 0 20px !important;
+    overflow: hidden;
+}
+
+#cr-scenario,
+#cr-result {
+    min-width: 0 !important;
+    padding: 20px 24px;
+}
+
+#cr-result {
+    border-left: 1px solid var(--cr-border);
+}
+
+.cr-scenario-summary h2,
+.cr-state h2,
+.cr-contributors h2 {
+    color: var(--cr-ink);
+    font-size: clamp(21px, 2vw, 24px);
+    line-height: 1.25;
+    margin: 0 0 12px;
+}
+
+.cr-evidence-list,
+.cr-guard-summary {
+    border-bottom: 1px solid var(--cr-border);
+    border-top: 1px solid var(--cr-border);
+}
+
+.cr-evidence-row {
+    align-items: baseline;
+    border-bottom: 1px solid #E4EAF0;
+    display: flex;
+    font-size: 15px;
+    gap: 16px;
+    justify-content: space-between;
+    min-height: 42px;
+    padding: 9px 2px;
+}
+
+.cr-evidence-row:last-child {
+    border-bottom: 0;
+}
+
+.cr-evidence-row span {
+    color: var(--cr-muted);
+}
+
+.cr-evidence-row strong {
+    color: var(--cr-ink);
+    font-weight: 650;
+    text-align: right;
+}
+
+#cr-run {
+    background: var(--cr-navy) !important;
+    border: 2px solid var(--cr-navy) !important;
+    border-radius: 8px !important;
+    color: #FFFFFF !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    margin-top: 16px !important;
+    min-height: 44px;
+}
+
+#cr-run:hover {
+    background: #0D416E !important;
+}
+
+#cr-run:focus-visible {
+    box-shadow: 0 0 0 4px rgb(8 127 140 / 28%) !important;
+    outline: 2px solid var(--cr-teal) !important;
+    outline-offset: 2px;
+}
+
+.label-wrap,
+.block-info,
+label span {
+    font-size: 14px !important;
+}
+
+#cr-payload .cm-editor,
+#cr-payload pre,
+#cr-payload code {
+    font-size: var(--cr-code) !important;
+    line-height: 1.5 !important;
+}
+
+#cr-payload .cm-editor,
+#cr-payload pre {
+    max-height: 24rem;
+    overflow: auto;
+}
+
+.cr-state {
+    min-height: 100%;
+}
+
+.cr-state > p {
+    font-size: 16px;
+}
+
+.cr-status-line {
+    align-items: center;
+    border: 1px solid var(--cr-teal);
+    border-radius: 8px;
+    color: #075D66;
+    display: flex;
+    font-size: 16px;
+    font-weight: 700;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+}
+
+.cr-status-line span {
+    align-items: center;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    display: inline-flex;
+    height: 24px;
+    justify-content: center;
+    width: 24px;
+}
+
+.cr-state--review {
+    border-left: 4px solid var(--cr-amber);
+    padding-left: 16px;
+}
+
+.cr-state--invalid {
+    border-left: 4px solid var(--cr-invalid);
+    padding-left: 16px;
+}
+
+.cr-score {
+    color: var(--cr-teal);
+    font-size: clamp(42px, 6vw, 64px) !important;
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    margin: 0 0 8px;
+}
+
+.cr-score-note,
+.cr-section-note,
+.cr-boundary {
+    color: var(--cr-muted);
+}
+
+.cr-step--output {
+    margin-top: 20px;
+}
+
+.cr-operating-point {
+    margin: 16px 0;
+}
+
+.cr-operating-point__label {
+    font-size: 15px;
+    margin-bottom: 8px;
+}
+
+.cr-operating-point__track {
+    background: #D9E3EA;
+    height: 4px;
+    position: relative;
+}
+
+.cr-operating-point__track span {
+    background: var(--cr-teal);
+    border: 3px solid var(--cr-surface);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--cr-teal);
+    height: 16px;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px;
+}
+
+.cr-reasons {
+    color: var(--cr-ink);
+    font-size: 15px;
+    margin: 12px 0;
+    padding-left: 22px;
+}
+
+#cr-analysis {
+    display: grid !important;
+    gap: 20px !important;
+    grid-template-columns: minmax(0, 3fr) minmax(20rem, 2fr);
+    margin-bottom: 20px !important;
+}
+
+#cr-trend,
+#cr-contributors {
+    background: var(--cr-surface);
+    border: 1px solid var(--cr-border);
+    border-radius: 10px;
+    min-width: 0 !important;
+    padding: 16px;
+}
+
+.cr-contributors table {
+    border-collapse: collapse;
+    font-size: 14px;
+    width: 100%;
+}
+
+.cr-contributors th,
+.cr-contributors td {
+    border-bottom: 1px solid #E4EAF0;
+    padding: 9px 6px;
+    text-align: left;
+}
+
+.cr-contributors th {
+    color: var(--cr-muted);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.cr-contributors code {
+    background: transparent;
+    color: var(--cr-ink);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.cr-rank,
+.cr-number {
+    font-variant-numeric: tabular-nums;
+}
+
+.cr-number {
+    text-align: right !important;
+}
+
+#cr-advanced {
+    background: var(--cr-surface);
+    border: 1px solid var(--cr-border) !important;
+    border-radius: 10px !important;
+}
+
+#cr-advanced > button,
+#cr-scenario .wrap > button {
+    font-size: 16px !important;
+    min-height: 44px;
+}
+
+@media (max-width: 719px) {
+    .gradio-container {
+        padding: 12px !important;
+    }
+
+    .cr-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .cr-notice {
+        flex: 1 1 auto;
+        justify-content: flex-start;
+        text-align: left;
+    }
+
+    #cr-console,
+    #cr-analysis {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #cr-result {
+        border-left: 0;
+        border-top: 1px solid var(--cr-border);
+    }
+
+    #cr-scenario,
+    #cr-result {
+        padding: 18px 16px;
+    }
+
+    .cr-evidence-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .cr-evidence-row strong {
+        text-align: left;
+    }
+
+    .cr-score {
+        font-size: 44px !important;
+    }
+}
+"""
+
+_ZH_TW_HEAD = f"""
+<style>
+{_APP_CSS}
+</style>
+<script>
+document.documentElement.lang = "zh-TW";
+</script>
+"""
+
+
+def _header_html() -> str:
+    return (
+        '<header class="cr-header">'
+        '<div class="cr-header__identity">'
+        '<p class="cr-eyebrow">SYNTHETIC RESEARCH DEMO</p>'
+        "<h1>CareRisk 48H</h1>"
+        '<p class="cr-value-line">展示 schema validation、evidence gates、calibration 與 '
+        "abstention 的可稽核研究流程。</p>"
+        "</div>"
+        '<div class="cr-notice" role="note">'
+        '<span class="cr-notice__icon" aria-hidden="true">i</span>'
+        "<span>僅使用 synthetic data｜僅供研究與教育｜不得用於臨床決策</span>"
+        "</div>"
+        "</header>"
+    )
 
 
 def _ready_html() -> str:
@@ -226,28 +661,6 @@ def _evaluate(payload_text: str, bundle: dict[str, Any]) -> DashboardEvaluation:
     )
 
 
-def _legacy_outputs(view: DashboardEvaluation) -> tuple[Any, ...]:
-    machine = view.machine_output
-    if not bool(machine.get("allow_probability", False)):
-        raw = calibrated = threshold = "未顯示"
-    else:
-        raw = f"{float(machine['raw_probability']):.3f}"
-        calibrated = f"{float(machine['calibrated_probability']):.3f}"
-        threshold = (
-            f"{float(machine['threshold']):.3f}；above threshold={bool(machine['above_threshold'])}"
-        )
-    contributors = machine.get("contributors")
-    return (
-        view.figure,
-        view.result_html,
-        raw,
-        calibrated,
-        threshold,
-        contributors if isinstance(contributors, list) else [],
-        view.guard_json,
-    )
-
-
 def create_app(bundle_path: str | Path | None = None) -> Any:
     try:
         import gradio as gr
@@ -257,27 +670,53 @@ def create_app(bundle_path: str | Path | None = None) -> Any:
     if not path.exists():
         build_synthetic_demo_bundle(path)
     bundle = joblib.load(path)
-    fixture = json.dumps(synthetic_payload(index=0), indent=2, ensure_ascii=False)
-    with gr.Blocks(title="CareRisk 48H") as application:
-        gr.Markdown(
-            "# CareRisk 48H\n"
-            f"**{DISCLAIMER}。** 本頁預設使用完全合成的 smoke fixture；機率不可視為臨床結果。"
+    fixture_payload = synthetic_payload(index=0)
+    fixture = json.dumps(fixture_payload, indent=2, ensure_ascii=False)
+    default_stay = validate_inference_payload(fixture_payload)
+
+    def run_synthetic_case(text: str) -> tuple[Any, ...]:
+        view = _evaluate(text, bundle)
+        return (
+            view.result_html,
+            gr.update(value=view.figure, visible=view.show_trend),
+            gr.update(value=view.contributors_html, visible=view.show_contributors),
+            view.guard_json,
+            view.machine_output,
         )
-        payload = gr.Code(label="48H JSON payload", value=fixture, language="json")
-        run = gr.Button("執行安全檢查與研究推論", variant="primary")
-        status = gr.Markdown()
-        with gr.Row():
-            raw = gr.Textbox(label="Raw risk", interactive=False)
-            calibrated = gr.Textbox(label="Calibrated probability", interactive=False)
-            threshold = gr.Textbox(label="Decision threshold", interactive=False)
-        trend = gr.Plot(label="48-hour trend and missingness")
-        with gr.Row():
-            contributors = gr.JSON(label="主要 contributing features（非因果）")
-            guard = gr.JSON(label="Missingness / OOD guard")
+
+    with gr.Blocks(
+        title="CareRisk 48H — Synthetic Research Demo",
+        fill_width=True,
+    ) as application:
+        gr.HTML(_header_html(), elem_id="cr-header", head=_ZH_TW_HEAD)
+        with gr.Row(elem_id="cr-console"):
+            with gr.Column(scale=38, elem_id="cr-scenario"):
+                gr.HTML(_scenario_html(default_stay))
+                run = gr.Button("執行 synthetic case", variant="primary", elem_id="cr-run")
+                with gr.Accordion("檢視或編輯 synthetic JSON", open=False):
+                    payload = gr.Code(
+                        label="48H synthetic JSON payload",
+                        value=fixture,
+                        language="json",
+                        elem_id="cr-payload",
+                    )
+            with gr.Column(scale=62, elem_id="cr-result"):
+                result = gr.HTML(_ready_html(), elem_id="cr-result-state")
+        with gr.Row(elem_id="cr-analysis"):
+            trend = gr.Plot(
+                label="48 小時 trends（缺口代表 missing bins）",
+                show_label=True,
+                visible=False,
+                elem_id="cr-trend",
+            )
+            contributors = gr.HTML(visible=False, elem_id="cr-contributors")
+        with gr.Accordion("進階稽核資訊", open=False, elem_id="cr-advanced"), gr.Row():
+            guard = gr.JSON(label="guard", elem_id="cr-guard-json")
+            machine_output = gr.JSON(label="machine output", elem_id="cr-machine-output")
         run.click(
-            fn=lambda text: _legacy_outputs(_evaluate(text, bundle)),
+            fn=run_synthetic_case,
             inputs=payload,
-            outputs=[trend, status, raw, calibrated, threshold, contributors, guard],
+            outputs=[result, trend, contributors, guard, machine_output],
         )
     return application
 

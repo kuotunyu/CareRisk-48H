@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import json
+
 from app.dashboard import (
+    _APP_CSS,
+    _ZH_TW_HEAD,
     _contributors_html,
     _evaluate,
-    _legacy_outputs,
     _ready_html,
     _result_html,
     _scenario_html,
+    create_app,
 )
 from carerisk48h.demo import synthetic_payload
 from carerisk48h.inference import SafePrediction
@@ -90,9 +94,26 @@ def test_invalid_input_clears_stale_evidence_and_escapes_error() -> None:
     assert "schema_error" in view.guard_json
 
 
-def test_legacy_adapter_keeps_current_callback_fail_closed() -> None:
-    view = _evaluate("{}", {})
-    outputs = _legacy_outputs(view)
-    assert len(outputs) == 7
-    assert outputs[0] is None
-    assert outputs[2:5] == ("未顯示", "未顯示", "未顯示")
+def test_create_app_uses_zh_tw_progressive_disclosure(tmp_path, monkeypatch) -> None:
+    bundle_path = tmp_path / "synthetic.joblib"
+    bundle_path.touch()
+    monkeypatch.setattr("app.dashboard.joblib.load", lambda _: {"synthetic": True})
+
+    application = create_app(bundle_path)
+    config = json.dumps(application.get_config_file(), ensure_ascii=False)
+
+    assert "執行 synthetic case" in config
+    assert "檢視或編輯 synthetic JSON" in config
+    assert "進階稽核資訊" in config
+    assert "僅使用 synthetic data" in config
+    assert "zh-TW" in _ZH_TW_HEAD
+
+
+def test_css_enforces_readable_compact_responsive_layout() -> None:
+    assert "--cr-body: 16px" in _APP_CSS
+    assert "font-size: 14px" in _APP_CSS
+    assert "min-height: 44px" in _APP_CSS
+    assert "max-height: 24rem" in _APP_CSS
+    assert "grid-template-columns: minmax(0, 38fr) minmax(0, 62fr)" in _APP_CSS
+    assert "@media (max-width: 719px)" in _APP_CSS
+    assert "overflow-x: hidden" in _APP_CSS
