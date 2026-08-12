@@ -1,6 +1,6 @@
 # CareRisk 48H Demo UI/UX Redesign Specification
 
-Status: approved direction; implementation not started
+Status: approved specification and composition; implementation not started
 
 Date: 2026-08-12
 
@@ -85,6 +85,16 @@ Catalog challengers were not selected:
 - Cassette-deck instrumentation has strong control grammar but risks turning research evidence into novelty hardware.
 - Tensegrity makes dependencies visible but is less legible for a one-click evidence review.
 - Pixel-arcade, PC-98, and alphabet-storm systems do not meet the restraint or accessibility needed for this research surface.
+
+### Approved composition
+
+The approved composition uses **A — Balanced split console** as the responsive page structure and borrows **B — Three-stage evidence flow** for the visible sequence from synthetic fixture to `evidence gates` to research output. C was not selected because its oversized score gives the demonstration value more authority than the evidence boundary.
+
+Approved comp: `.impeccable/mocks/carerisk-demo-comp-a-split.png`
+
+Sequencing reference: `.impeccable/mocks/carerisk-demo-comp-b-flow.png`
+
+Generated dates, counts, units, fixture descriptors, guard labels, contributor names, and contribution values in the comps are visual placeholders. Implementation must derive every displayed fact from the existing synthetic payload, validated stay, guard assessment, and `SafePrediction`; no comp text may create a new capability or claim.
 
 ## 6. Information architecture
 
@@ -210,14 +220,23 @@ The surface must remain understandable in grayscale. Avoid gradients, glow, glas
 
 ## 9. Content rules
 
+### Language and terminology
+
+- Set the document language to `zh-TW` where the Gradio runtime permits.
+- User-facing sentences, actions, instructions, errors, and safety explanations use Traditional Chinese first.
+- Established technical and domain terms remain in their original language. Do not force-translate terms such as `calibration`, `abstention`, `missingness`, `OOD`, `research operating point`, model names, feature names, or schema field names.
+- When a technical term may be unfamiliar, keep the original term and add a concise Traditional Chinese explanation beside it.
+- Do not mix Simplified Chinese into interface copy.
+- Examples of the intended voice include `執行 synthetic case`, `evidence gates 已通過`, `觸發 abstention，需要人工複核`, and `model signals（描述性、非因果）`.
+
 ### Required visible copy
 
-- `Synthetic data only`.
-- `Research and education`.
-- `Not for clinical decisions`.
-- `Synthetic demonstration score` when a precise score is allowed.
-- `Research operating point` for the fixed threshold.
-- `Descriptive, not causal` adjacent to contributors.
+- `僅使用 synthetic data`.
+- `僅供研究與教育`.
+- `不得用於臨床決策`.
+- `合成示範分數` when a precise score is allowed, with an explanation that it is not clinical certainty.
+- `research operating point` for the fixed threshold.
+- `描述性、非因果` adjacent to `model signals`.
 
 ### Prohibited or qualified copy
 

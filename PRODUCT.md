@@ -36,6 +36,8 @@ Reviewers typically encounter the project through GitHub documentation, the mode
 
 The product name is "CareRisk 48H." Its voice is precise, restrained, evidence-led, and explicit about uncertainty. Safety limitations must remain visible rather than being hidden in secondary legal copy. The interface must avoid diagnostic traffic-light framing and any visual treatment that resembles a deployed hospital decision-support system.
 
+User-facing interface copy is Traditional Chinese (`zh-TW`) first. Established technical and domain terms stay in their original language rather than receiving forced translations; examples include `calibration`, `abstention`, `missingness`, `OOD`, `research operating point`, and model or feature names. Plain Traditional Chinese explanations should surround those terms when a non-specialist reviewer needs context.
+
 ## Evidence on Hand
 
 - `README.md` documents the cohort, split roles, formal same-source holdout results, calibration limitations, decision-utility limits, abstention behavior, and research boundary.
