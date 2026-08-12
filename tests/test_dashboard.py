@@ -79,6 +79,19 @@ def test_allowed_state_uses_research_language() -> None:
     assert "<svg" in html
 
 
+def test_allowed_state_groups_guards_before_output_without_changing_abstention() -> None:
+    allowed_html = _result_html(_prediction(allowed=True))
+    review_html = _result_html(_prediction(allowed=False))
+
+    assert 'class="cr-allowed-layout"' in allowed_html
+    assert 'class="cr-allowed-guards"' in allowed_html
+    assert 'class="cr-allowed-output"' in allowed_html
+    assert allowed_html.index('class="cr-allowed-guards"') < allowed_html.index(
+        'class="cr-allowed-output"'
+    )
+    assert 'class="cr-allowed-layout"' not in review_html
+
+
 def test_abstention_hides_precise_probability() -> None:
     html = _result_html(_prediction(allowed=False))
     assert "abstention" in html
@@ -121,7 +134,9 @@ def test_create_app_uses_zh_tw_progressive_disclosure(tmp_path, monkeypatch) -> 
 
 
 def test_css_enforces_readable_compact_responsive_layout() -> None:
-    assert "--cr-body: 16px" in _APP_CSS
+    assert "--cr-body: 17px" in _APP_CSS
+    assert "--cr-label: 15px" in _APP_CSS
+    assert "--cr-code: 14px" in _APP_CSS
     assert "color-scheme: light" in _APP_CSS
     assert "--body-text-color: var(--cr-ink)" in _APP_CSS
     assert "--block-background-fill: var(--cr-surface)" in _APP_CSS
@@ -129,6 +144,8 @@ def test_css_enforces_readable_compact_responsive_layout() -> None:
     assert "min-height: 44px" in _APP_CSS
     assert "max-height: 24rem" in _APP_CSS
     assert "grid-template-columns: minmax(0, 38fr) minmax(0, 62fr)" in _APP_CSS
+    assert "grid-template-columns: minmax(0, 56fr) minmax(0, 44fr)" in _APP_CSS
+    assert "@media (min-width: 1000px)" in _APP_CSS
     assert "@media (max-width: 719px)" in _APP_CSS
     assert "overflow-x: hidden" in _APP_CSS
     assert "#cr-analysis:empty" in _APP_CSS

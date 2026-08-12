@@ -35,15 +35,16 @@ _APP_CSS = """
     --cr-border: #CAD5E0;
     --cr-muted: #52677A;
     --cr-invalid: #B42318;
-    --cr-body: 16px;
-    --cr-label: 14px;
-    --cr-code: 13px;
+    --cr-body: 17px;
+    --cr-label: 15px;
+    --cr-code: 14px;
 }
 
 html,
 body {
     background: var(--cr-canvas);
     color: var(--cr-ink);
+    font-size: var(--cr-body);
     overflow-x: hidden;
 }
 
@@ -66,7 +67,7 @@ body {
     line-height: 1.5;
     margin: 0 auto !important;
     max-width: 1280px !important;
-    padding: 20px 24px 28px !important;
+    padding: 16px 20px 24px !important;
     overflow-x: hidden;
 }
 
@@ -75,7 +76,7 @@ body {
     border-radius: 12px 12px 0 0;
     color: #FFFFFF;
     margin: 0 !important;
-    padding: 20px 24px;
+    padding: 16px 20px;
 }
 
 #cr-header .prose {
@@ -92,7 +93,7 @@ body {
 .cr-eyebrow,
 .cr-step {
     color: var(--cr-teal);
-    font-size: 14px;
+    font-size: var(--cr-label);
     font-weight: 700;
     letter-spacing: 0.08em;
     margin: 0 0 6px;
@@ -105,7 +106,7 @@ body {
 
 .cr-header h1 {
     color: #FFFFFF !important;
-    font-size: clamp(30px, 3vw, 36px) !important;
+    font-size: clamp(32px, 3vw, 38px) !important;
     letter-spacing: -0.025em;
     line-height: 1.12;
     margin: 0;
@@ -113,7 +114,7 @@ body {
 
 .cr-value-line {
     color: #D9E5EE !important;
-    font-size: 16px;
+    font-size: 17px;
     margin: 7px 0 0;
     max-width: 52rem;
 }
@@ -122,7 +123,7 @@ body {
     align-items: center;
     display: flex;
     flex: 0 1 34rem;
-    font-size: 15px;
+    font-size: 16px;
     gap: 10px;
     justify-content: flex-end;
     text-align: right;
@@ -168,7 +169,7 @@ body {
     display: grid !important;
     gap: 0 !important;
     grid-template-columns: minmax(0, 38fr) minmax(0, 62fr);
-    margin: 0 0 20px !important;
+    margin: 0 0 16px !important;
     overflow: hidden;
 }
 
@@ -179,7 +180,7 @@ body {
 #cr-scenario,
 #cr-result {
     min-width: 0 !important;
-    padding: 20px 24px;
+    padding: 16px 20px;
 }
 
 #cr-result {
@@ -190,7 +191,7 @@ body {
 .cr-state h2,
 .cr-contributors h2 {
     color: var(--cr-ink) !important;
-    font-size: clamp(21px, 2vw, 24px);
+    font-size: clamp(24px, 2vw, 26px);
     line-height: 1.25;
     margin: 0 0 12px;
 }
@@ -205,11 +206,11 @@ body {
     align-items: baseline;
     border-bottom: 1px solid #E4EAF0;
     display: flex;
-    font-size: 15px;
-    gap: 16px;
+    font-size: 16px;
+    gap: 12px;
     justify-content: space-between;
-    min-height: 42px;
-    padding: 9px 2px;
+    min-height: 39px;
+    padding: 7px 2px;
 }
 
 .cr-evidence-row:last-child {
@@ -218,11 +219,15 @@ body {
 
 .cr-evidence-row span {
     color: var(--cr-muted) !important;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .cr-evidence-row strong {
     color: var(--cr-ink) !important;
     font-weight: 650;
+    max-width: 58%;
+    overflow-wrap: anywhere;
     text-align: right;
 }
 
@@ -231,10 +236,10 @@ body {
     border: 2px solid var(--cr-navy) !important;
     border-radius: 8px !important;
     color: #FFFFFF !important;
-    font-size: 16px !important;
+    font-size: 17px !important;
     font-weight: 700 !important;
-    margin-top: 16px !important;
-    min-height: 44px;
+    margin-top: 12px !important;
+    min-height: 46px;
 }
 
 #cr-run:hover {
@@ -250,7 +255,7 @@ body {
 .label-wrap,
 .block-info,
 label span {
-    font-size: 14px !important;
+    font-size: var(--cr-label) !important;
 }
 
 #cr-payload .cm-editor,
@@ -272,12 +277,13 @@ label span {
 
 .cr-state > p {
     color: var(--cr-ink) !important;
-    font-size: 16px;
+    font-size: var(--cr-body);
 }
 
 .cr-scenario-summary > .cr-step,
 .cr-state > .cr-step {
     color: var(--cr-teal) !important;
+    font-size: var(--cr-label) !important;
 }
 
 .cr-status-line {
@@ -286,11 +292,11 @@ label span {
     border-radius: 8px;
     color: #075D66;
     display: flex;
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 700;
     gap: 10px;
-    margin-bottom: 16px;
-    padding: 10px 12px;
+    margin-bottom: 12px;
+    padding: 9px 11px;
 }
 
 .cr-status-line span {
@@ -341,15 +347,15 @@ label span {
 }
 
 .cr-step--output {
-    margin-top: 20px;
+    margin-top: 16px;
 }
 
 .cr-operating-point {
-    margin: 16px 0;
+    margin: 14px 0;
 }
 
 .cr-operating-point__label {
-    font-size: 15px;
+    font-size: 16px;
     margin-bottom: 8px;
 }
 
@@ -373,7 +379,7 @@ label span {
 
 .cr-reasons {
     color: var(--cr-ink);
-    font-size: 15px;
+    font-size: 16px;
     margin: 12px 0;
     padding-left: 22px;
 }
@@ -382,7 +388,7 @@ label span {
     display: grid !important;
     gap: 20px !important;
     grid-template-columns: minmax(0, 3fr) minmax(20rem, 2fr);
-    margin-bottom: 20px !important;
+    margin-bottom: 16px !important;
 }
 
 #cr-analysis:empty {
@@ -401,7 +407,7 @@ label span {
 
 .cr-contributors table {
     border-collapse: collapse;
-    font-size: 14px;
+    font-size: 15px;
     width: 100%;
 }
 
@@ -414,14 +420,14 @@ label span {
 
 .cr-contributors th {
     color: var(--cr-muted);
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
 }
 
 .cr-contributors code {
     background: transparent;
     color: var(--cr-ink);
-    font-size: 13px;
+    font-size: var(--cr-code);
     overflow-wrap: anywhere;
 }
 
@@ -442,13 +448,40 @@ label span {
 
 #cr-advanced > button,
 #cr-scenario .wrap > button {
-    font-size: 16px !important;
+    font-size: 17px !important;
     min-height: 44px;
 }
 
 #cr-advanced button.label-wrap,
 #cr-scenario button.label-wrap {
     color: var(--cr-ink) !important;
+}
+
+.cr-allowed-layout {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.cr-allowed-guards,
+.cr-allowed-output {
+    min-width: 0;
+}
+
+@media (min-width: 1000px) {
+    .cr-allowed-layout {
+        align-items: start;
+        grid-template-columns: minmax(0, 56fr) minmax(0, 44fr);
+    }
+
+    .cr-allowed-output {
+        border-left: 1px solid var(--cr-border);
+        padding-left: 18px;
+    }
+
+    .cr-step--output {
+        margin-top: 0;
+    }
 }
 
 @media (max-width: 719px) {
@@ -458,6 +491,10 @@ label span {
 
     #cr-header {
         padding: 16px;
+    }
+
+    .cr-header h1 {
+        font-size: 34px !important;
     }
 
     .cr-header {
@@ -484,9 +521,25 @@ label span {
 
     #cr-scenario,
     #cr-result {
-        padding: 18px 16px;
+        padding: 16px;
     }
 
+    .cr-evidence-row {
+        align-items: baseline;
+        flex-direction: row;
+        gap: 12px;
+    }
+
+    .cr-evidence-row strong {
+        text-align: right;
+    }
+
+    .cr-score {
+        font-size: 52px !important;
+    }
+}
+
+@media (max-width: 359px) {
     .cr-evidence-row {
         align-items: flex-start;
         flex-direction: column;
@@ -494,11 +547,8 @@ label span {
     }
 
     .cr-evidence-row strong {
+        max-width: 100%;
         text-align: left;
-    }
-
-    .cr-score {
-        font-size: 44px !important;
     }
 }
 """
@@ -653,7 +703,11 @@ def _result_html(result: Any) -> str:
         '<p class="cr-step">02 · evidence gates</p>'
         f'<div class="cr-status-line"><span aria-hidden="true">{_CHECK_ICON_SVG}</span>'
         "evidence gates 已通過，研究輸出可顯示</div>"
+        '<div class="cr-allowed-layout">'
+        '<div class="cr-allowed-guards">'
         f"{guard_html}"
+        "</div>"
+        '<div class="cr-allowed-output">'
         '<p class="cr-step cr-step--output">03 · 研究輸出</p>'
         "<h2>合成示範分數</h2>"
         f'<p class="cr-score">{score:.3f}</p>'
@@ -667,6 +721,8 @@ def _result_html(result: Any) -> str:
         "</div>"
         "</div>"
         '<p class="cr-boundary">僅供研究與教育，不得用於臨床決策。</p>'
+        "</div>"
+        "</div>"
         "</section>"
     )
 

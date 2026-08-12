@@ -1,6 +1,6 @@
 # CareRisk 48H Demo UI/UX Redesign Specification
 
-Status: implemented baseline; typography-and-density refinement approved, implementation pending
+Status: typography-and-density refinement implemented; desktop verified; mobile visual re-check pending browser viewport support
 
 Date: 2026-08-12
 
@@ -378,3 +378,15 @@ At the live 1,280 × 720 desktop viewport, evidence rows render at 15 px while s
 - The guard summary and research output are visually parallel on desktop and evidence-first when read by assistive technology.
 - Ready, allowed, `abstention`, and invalid-input behavior and copy remain unchanged except for layout and typography.
 - Existing schema validation, guard, probability withholding, contributors, inference semantics, and synthetic-only boundary remain untouched.
+
+### 15.6 Implementation and verification evidence
+
+The approved refinement is implemented in `app/dashboard.py` with narrow regression coverage in `tests/test_dashboard.py`.
+
+- Live 1,280 × 720 computed styles: body 17 px, evidence rows 16 px, phase labels 15 px, status text 17 px, `research operating point` 16 px, and JSON editor 14 px.
+- The allowed state renders the guard and research output in the approved 56/44 inner grid while retaining guard-first DOM order.
+- The shared console measured approximately 480 px high, down from approximately 716 px before refinement. Unused space below the left-side content measured approximately 38 px, within the 64 px acceptance limit.
+- Ready, allowed, `abstention`, and invalid-input states were exercised in the local synthetic-only demo. `abstention` and invalid input withheld the precise score; all checked states had zero horizontal overflow and the browser console reported zero errors.
+- Desktop evidence screenshot: `reports/generated/ui-ux/demo-density-refinement-desktop.jpg` (ignored local evidence, not a release asset).
+- The responsive CSS contract keeps the inner grid stacked below 1,000 px, compact key/value rows through the 390 px mobile target, and a stacked fallback below 360 px. The in-app browser's documented viewport override did not change its 1,280 × 720 viewport in this session, so a new 390 × 844 visual pass is not claimed. The previous baseline mobile pass remains valid only for the underlying composition, not for this typography refinement.
+- The single detector pass returned advisory design-system drift notices because the approved 15/17/34/38/52 px refinement steps and several pre-existing literal state colors are not represented in the current `DESIGN.md` ramp. No runtime or accessibility failure was reported, and the detector was not rerun.

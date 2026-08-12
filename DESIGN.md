@@ -14,23 +14,23 @@ colors:
 typography:
   title:
     fontFamily: "Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "clamp(30px, 3vw, 36px)"
+    fontSize: "clamp(32px, 3vw, 38px)"
     fontWeight: 700
     lineHeight: 1.12
     letterSpacing: "-0.025em"
   body:
     fontFamily: "Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "16px"
+    fontSize: "17px"
     fontWeight: 400
     lineHeight: 1.5
   label:
     fontFamily: "Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "14px"
+    fontSize: "15px"
     fontWeight: 700
     lineHeight: 1.5
   code:
     fontFamily: "ui-monospace, SFMono-Regular, Consolas, Liberation Mono, monospace"
-    fontSize: "13px"
+    fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.5
 rounded:
@@ -49,7 +49,7 @@ components:
     textColor: "{colors.surface}"
     typography: "{typography.body}"
     rounded: "{rounded.control}"
-    height: "44px"
+    height: "46px"
   evidence-container:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
@@ -113,18 +113,18 @@ The palette combines cool paper neutrals with a deep structural field and a sing
 
 ### Hierarchy
 
-- **Product title:** Bold, responsive 30–36 px with a compact 1.12 line height.
-- **Section heading:** Semibold 21–24 px with a 1.25 line height.
-- **Body:** Regular 16 px with a 1.5 line height.
-- **Control:** Semibold 16 px, never reduced for density.
-- **Label:** 14–15 px; uppercase and tracking are reserved for meaningful phase markers.
-- **Code:** 13 px with a 1.5 line height and bounded scrolling.
+- **Product title:** Bold, responsive 32–38 px on desktop and 34 px on mobile, with a compact 1.12 line height.
+- **Section heading:** Semibold 24–26 px with a 1.25 line height.
+- **Body:** Regular 17 px with a 1.5 line height.
+- **Control:** Semibold 17 px, never reduced for density.
+- **Label:** 15 px; uppercase and tracking are reserved for meaningful phase markers.
+- **Code:** 14 px with a 1.5 line height and bounded scrolling.
 
-**The Read Without Zoom Rule.** Body and controls stay at 16 px or larger, labels at 14 px or larger, and machine detail at 13 px or larger.
+**The Read Without Zoom Rule.** Body and controls stay at 17 px or larger, labels at 15 px or larger, and machine detail at 14 px or larger.
 
 ## Layout
 
-The application centers within a 1,280 px maximum container using 20–24 px desktop padding. Its dominant console is a 38/62 scenario-to-evidence grid with one shared border. Below it, the analytic region uses a 3/2 plot-to-signal split. Empty analytic regions occupy no space.
+The application centers within a 1,280 px maximum container using 16–20 px desktop padding. Its dominant console is a 38/62 scenario-to-evidence grid with one shared border. In an allowed desktop result at 1,000 px or wider, the guard and research output use a compact 56/44 inner grid. Below the console, the analytic region uses a 3/2 plot-to-signal split. Empty analytic regions occupy no space.
 
 Below 720 px, all regions become one column in task order: header, safety notice, fixture, primary action, result, evidence, then advanced detail. Mobile padding tightens to 12–16 px while the primary action remains at least 44 px high and inside the first 390×844 viewport. The page must never introduce horizontal scrolling.
 
@@ -144,14 +144,14 @@ Controls use an 8 px radius, secondary evidence surfaces use 10 px, and the domi
 
 ### Primary Button
 
-- **Shape:** Full-width rectangular control with gently rounded 8 px corners and a 44 px minimum height.
+- **Shape:** Full-width rectangular control with gently rounded 8 px corners and a 46 px height; all secondary controls remain at least 44 px.
 - **Color:** Structural navy with white text; hover deepens the navy.
 - **Focus:** A visible teal outline and translucent focus ring remain outside the control edge.
 
 ### Evidence Rows
 
 - **Structure:** Key and value share one row on desktop, separated by quiet horizontal rules.
-- **Mobile:** Key and value stack without turning into individual cards.
+- **Mobile:** Key and value remain compact inline rows at the 390 px target and stack only below 360 px; they never become individual cards.
 - **Meaning:** Labels use muted copy; validated or derived values use research ink and stronger weight.
 
 ### Status Line
@@ -168,6 +168,7 @@ Controls use an 8 px radius, secondary evidence surfaces use 10 px, and the domi
 ### Evidence Console
 
 - **Desktop:** One 38/62 frame with a single vertical divider.
+- **Allowed result:** At 1,000 px or wider, one evidence-first 56/44 inner grid places the guard summary beside the research output without changing DOM order.
 - **Mobile:** One stacked frame with a horizontal divider between fixture and result.
 - **Content:** Avoid nested cards; use headings, rows, tables, and disclosures.
 
