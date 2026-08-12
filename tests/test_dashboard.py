@@ -7,9 +7,11 @@ from app.dashboard import (
     _ZH_TW_HEAD,
     _contributors_html,
     _evaluate,
+    _header_html,
     _ready_html,
     _result_html,
     _scenario_html,
+    _trend_figure,
     create_app,
 )
 from carerisk48h.demo import synthetic_payload
@@ -23,6 +25,13 @@ def test_ready_state_is_zh_tw_and_explains_evidence_sequence() -> None:
     assert "evidence gates" in html
     assert "臨床" in html
     assert "1.000" not in html
+
+
+def test_header_avoids_redundant_eyebrow_and_uses_authored_icon() -> None:
+    html = _header_html()
+    assert "SYNTHETIC RESEARCH DEMO" not in html
+    assert "<svg" in html
+    assert "僅使用 synthetic data" in html
 
 
 def test_scenario_summary_is_derived_from_validated_fixture() -> None:
@@ -66,6 +75,8 @@ def test_allowed_state_uses_research_language() -> None:
     assert "0.620" in html
     assert "research operating point" in html
     assert "不是臨床確定性" in html
+    assert "✓" not in html
+    assert "<svg" in html
 
 
 def test_abstention_hides_precise_probability() -> None:
@@ -111,9 +122,26 @@ def test_create_app_uses_zh_tw_progressive_disclosure(tmp_path, monkeypatch) -> 
 
 def test_css_enforces_readable_compact_responsive_layout() -> None:
     assert "--cr-body: 16px" in _APP_CSS
+    assert "color-scheme: light" in _APP_CSS
+    assert "--body-text-color: var(--cr-ink)" in _APP_CSS
+    assert "--block-background-fill: var(--cr-surface)" in _APP_CSS
     assert "font-size: 14px" in _APP_CSS
     assert "min-height: 44px" in _APP_CSS
     assert "max-height: 24rem" in _APP_CSS
     assert "grid-template-columns: minmax(0, 38fr) minmax(0, 62fr)" in _APP_CSS
     assert "@media (max-width: 719px)" in _APP_CSS
     assert "overflow-x: hidden" in _APP_CSS
+    assert "#cr-analysis:empty" in _APP_CSS
+    assert "border-left: 4px" not in _APP_CSS
+
+
+def test_trend_figure_uses_readable_label_sizes() -> None:
+    stay = validate_inference_payload(synthetic_payload(index=0))
+    figure = _trend_figure(stay)
+    try:
+        assert all(axis.yaxis.label.get_size() >= 11 for axis in figure.axes)
+        assert figure.axes[-1].xaxis.label.get_size() >= 11
+        assert figure._suptitle is not None
+        assert figure._suptitle.get_size() >= 14
+    finally:
+        figure.clear()

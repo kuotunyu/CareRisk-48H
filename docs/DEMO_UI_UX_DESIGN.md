@@ -1,6 +1,6 @@
 # CareRisk 48H Demo UI/UX Redesign Specification
 
-Status: approved specification and composition; implementation not started
+Status: implemented and locally verified with synthetic-only desktop/mobile interaction tests
 
 Date: 2026-08-12
 
@@ -332,8 +332,8 @@ Implementation is acceptable only when all of the following pass:
 - Run the UI detector once on the changed target, then inspect desktop and mobile screenshots in two batched rounds at most.
 - Record commands and actual outcomes in `PROJECT_PLAN.md`; never fabricate a pass.
 
-## 14. Deferred decisions
+## 14. Resolved implementation decisions
 
-- The exact human-readable synthetic scenario fields will be chosen only from values already available without inventing units or clinical interpretation.
-- The final trend rendering may remain Matplotlib or move to an accessible responsive renderer if behavior, dependencies, and tests remain controlled.
-- `DESIGN.md` will be written from the verified implementation after the finish review, not from this pre-build specification.
+- The human-readable summary uses only observation-window length, measurement count, dynamic-variable coverage, core vital-group count, and explicit synthetic-fixture type derived from validated synthetic input.
+- The trend remains Matplotlib, with larger labels and explicit wording that gaps are missing bins.
+- The verified implementation is recorded in root `DESIGN.md`; locally ignored `.impeccable/design.json` carries the extended design-system sidecar.

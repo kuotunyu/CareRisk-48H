@@ -131,6 +131,10 @@ Synthetic safety demo：
 .\.venv\Scripts\python app.py
 ```
 
+介面以正體中文（`zh-TW`）為主，並保留 `calibration`、`abstention`、`missingness`、`research operating point`、model／feature／schema 名稱等專有名詞原文。預設 synthetic fixture 可一鍵執行；fixture JSON 與 machine-readable output 預設收合，結果會先顯示 `evidence gates` 與是否需要人工複核，再決定是否呈現合成示範分數。
+
+這個互動介面只使用 synthetic data 與 synthetic-only bundle，不是 frozen Set B candidate 的臨床前端。分數僅是 demonstration value，`research operating point` 不是臨床 action threshold，`model signals` 也只具描述性、非因果意義。
+
 ## 研究邊界
 
 - 48 小時 eligibility 造成 landmark selection；結果不涵蓋早期死亡或早期離 ICU 的個案。

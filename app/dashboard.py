@@ -48,8 +48,19 @@ body {
 }
 
 .gradio-container {
+    --background-fill-primary: var(--cr-canvas) !important;
+    --background-fill-secondary: var(--cr-surface) !important;
+    --block-background-fill: var(--cr-surface) !important;
+    --block-border-color: var(--cr-border) !important;
+    --body-text-color: var(--cr-ink) !important;
+    --body-text-color-subdued: var(--cr-muted) !important;
+    --button-secondary-background-fill: var(--cr-surface) !important;
+    --button-secondary-text-color: var(--cr-ink) !important;
+    --input-background-fill: var(--cr-surface) !important;
+    --input-border-color: var(--cr-border) !important;
     background: var(--cr-canvas) !important;
     color: var(--cr-ink) !important;
+    color-scheme: light;
     font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif !important;
     font-size: var(--cr-body) !important;
     line-height: 1.5;
@@ -65,6 +76,10 @@ body {
     color: #FFFFFF;
     margin: 0 !important;
     padding: 20px 24px;
+}
+
+#cr-header .prose {
+    color: #FFFFFF !important;
 }
 
 .cr-header {
@@ -85,19 +100,19 @@ body {
 }
 
 .cr-header .cr-eyebrow {
-    color: #8FDBE0;
+    color: #8FDBE0 !important;
 }
 
 .cr-header h1 {
-    color: #FFFFFF;
-    font-size: clamp(30px, 3vw, 36px);
+    color: #FFFFFF !important;
+    font-size: clamp(30px, 3vw, 36px) !important;
     letter-spacing: -0.025em;
     line-height: 1.12;
     margin: 0;
 }
 
 .cr-value-line {
-    color: #D9E5EE;
+    color: #D9E5EE !important;
     font-size: 16px;
     margin: 7px 0 0;
     max-width: 52rem;
@@ -111,19 +126,39 @@ body {
     gap: 10px;
     justify-content: flex-end;
     text-align: right;
+    color: #FFFFFF !important;
+}
+
+.cr-notice > span:last-child {
+    color: #FFFFFF !important;
 }
 
 .cr-notice__icon {
     align-items: center;
-    border: 2px solid #8FDBE0;
-    border-radius: 50%;
-    color: #8FDBE0;
+    border: 0;
+    color: #8FDBE0 !important;
     display: inline-flex;
     flex: 0 0 24px;
     font-size: 14px;
     font-weight: 800;
     height: 24px;
     justify-content: center;
+}
+
+.cr-icon {
+    display: block;
+    fill: none;
+    height: 24px;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+    width: 24px;
+}
+
+.cr-notice__icon .cr-icon {
+    color: #8FDBE0 !important;
+    stroke: #8FDBE0 !important;
 }
 
 #cr-console {
@@ -135,6 +170,10 @@ body {
     grid-template-columns: minmax(0, 38fr) minmax(0, 62fr);
     margin: 0 0 20px !important;
     overflow: hidden;
+}
+
+#cr-console .prose {
+    color: var(--cr-ink) !important;
 }
 
 #cr-scenario,
@@ -150,7 +189,7 @@ body {
 .cr-scenario-summary h2,
 .cr-state h2,
 .cr-contributors h2 {
-    color: var(--cr-ink);
+    color: var(--cr-ink) !important;
     font-size: clamp(21px, 2vw, 24px);
     line-height: 1.25;
     margin: 0 0 12px;
@@ -178,11 +217,11 @@ body {
 }
 
 .cr-evidence-row span {
-    color: var(--cr-muted);
+    color: var(--cr-muted) !important;
 }
 
 .cr-evidence-row strong {
-    color: var(--cr-ink);
+    color: var(--cr-ink) !important;
     font-weight: 650;
     text-align: right;
 }
@@ -232,7 +271,13 @@ label span {
 }
 
 .cr-state > p {
+    color: var(--cr-ink) !important;
     font-size: 16px;
+}
+
+.cr-scenario-summary > .cr-step,
+.cr-state > .cr-step {
+    color: var(--cr-teal) !important;
 }
 
 .cr-status-line {
@@ -250,8 +295,6 @@ label span {
 
 .cr-status-line span {
     align-items: center;
-    border: 2px solid currentColor;
-    border-radius: 50%;
     display: inline-flex;
     height: 24px;
     justify-content: center;
@@ -259,17 +302,21 @@ label span {
 }
 
 .cr-state--review {
-    border-left: 4px solid var(--cr-amber);
-    padding-left: 16px;
+    background: #FFFBEB;
+    border: 1px solid #D6A756;
+    border-radius: 8px;
+    padding: 16px;
 }
 
 .cr-state--invalid {
-    border-left: 4px solid var(--cr-invalid);
-    padding-left: 16px;
+    background: #FFF7F7;
+    border: 1px solid #E0A3A0;
+    border-radius: 8px;
+    padding: 16px;
 }
 
 .cr-score {
-    color: var(--cr-teal);
+    color: var(--cr-teal) !important;
     font-size: clamp(42px, 6vw, 64px) !important;
     font-variant-numeric: tabular-nums;
     font-weight: 750;
@@ -278,10 +325,19 @@ label span {
     margin: 0 0 8px;
 }
 
+.cr-state > .cr-score {
+    color: var(--cr-teal) !important;
+}
+
 .cr-score-note,
 .cr-section-note,
 .cr-boundary {
-    color: var(--cr-muted);
+    color: var(--cr-muted) !important;
+}
+
+.cr-state > .cr-score-note,
+.cr-state > .cr-boundary {
+    color: var(--cr-muted) !important;
 }
 
 .cr-step--output {
@@ -327,6 +383,11 @@ label span {
     gap: 20px !important;
     grid-template-columns: minmax(0, 3fr) minmax(20rem, 2fr);
     margin-bottom: 20px !important;
+}
+
+#cr-analysis:empty {
+    display: none !important;
+    margin: 0 !important;
 }
 
 #cr-trend,
@@ -385,15 +446,24 @@ label span {
     min-height: 44px;
 }
 
+#cr-advanced button.label-wrap,
+#cr-scenario button.label-wrap {
+    color: var(--cr-ink) !important;
+}
+
 @media (max-width: 719px) {
     .gradio-container {
         padding: 12px !important;
     }
 
+    #cr-header {
+        padding: 16px;
+    }
+
     .cr-header {
         align-items: flex-start;
         flex-direction: column;
-        gap: 12px;
+        gap: 8px;
     }
 
     .cr-notice {
@@ -442,18 +512,31 @@ document.documentElement.lang = "zh-TW";
 </script>
 """
 
+_INFO_ICON_SVG = (
+    '<svg class="cr-icon" viewBox="0 0 24 24" aria-hidden="true">'
+    '<circle cx="12" cy="12" r="9"></circle>'
+    '<path d="M12 11v6"></path><path d="M12 7.5h.01"></path>'
+    "</svg>"
+)
+
+_CHECK_ICON_SVG = (
+    '<svg class="cr-icon" viewBox="0 0 24 24" aria-hidden="true">'
+    '<circle cx="12" cy="12" r="9"></circle>'
+    '<path d="m8 12 2.5 2.5L16 9"></path>'
+    "</svg>"
+)
+
 
 def _header_html() -> str:
     return (
         '<header class="cr-header">'
         '<div class="cr-header__identity">'
-        '<p class="cr-eyebrow">SYNTHETIC RESEARCH DEMO</p>'
         "<h1>CareRisk 48H</h1>"
         '<p class="cr-value-line">展示 schema validation、evidence gates、calibration 與 '
         "abstention 的可稽核研究流程。</p>"
         "</div>"
         '<div class="cr-notice" role="note">'
-        '<span class="cr-notice__icon" aria-hidden="true">i</span>'
+        f'<span class="cr-notice__icon" aria-hidden="true">{_INFO_ICON_SVG}</span>'
         "<span>僅使用 synthetic data｜僅供研究與教育｜不得用於臨床決策</span>"
         "</div>"
         "</header>"
@@ -568,7 +651,7 @@ def _result_html(result: Any) -> str:
     return (
         '<section class="cr-state cr-state--available" role="status">'
         '<p class="cr-step">02 · evidence gates</p>'
-        '<div class="cr-status-line"><span aria-hidden="true">✓</span>'
+        f'<div class="cr-status-line"><span aria-hidden="true">{_CHECK_ICON_SVG}</span>'
         "evidence gates 已通過，研究輸出可顯示</div>"
         f"{guard_html}"
         '<p class="cr-step cr-step--output">03 · 研究輸出</p>'
@@ -612,16 +695,17 @@ def _contributors_html(contributors: list[dict[str, float | str]]) -> str:
 
 
 def _trend_figure(stay: Any) -> Any:
-    figure, axes = plt.subplots(len(_TREND_VARIABLES), 1, figsize=(10, 8), sharex=True)
+    figure, axes = plt.subplots(len(_TREND_VARIABLES), 1, figsize=(10, 7.5), sharex=True)
     hours = np.arange(48)
     for axis, variable in zip(axes, _TREND_VARIABLES, strict=True):
         column = VARIABLE_INDEX[variable]
         observed = stay.mask[:, column]
         axis.plot(hours[observed], stay.values[observed, column], marker="o", linewidth=1)
-        axis.set_ylabel(variable)
+        axis.set_ylabel(variable, fontsize=11)
+        axis.tick_params(axis="both", labelsize=10)
         axis.grid(alpha=0.2)
-    axes[-1].set_xlabel("Hour bin")
-    figure.suptitle("48-hour measurements (gaps are missing bins)")
+    axes[-1].set_xlabel("Hour bin", fontsize=11)
+    figure.suptitle("48-hour measurements (gaps are missing bins)", fontsize=14)
     figure.tight_layout()
     return figure
 
