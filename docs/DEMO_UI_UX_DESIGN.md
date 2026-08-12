@@ -1,6 +1,6 @@
 # CareRisk 48H Demo UI/UX Redesign Specification
 
-Status: implemented and locally verified with synthetic-only desktop/mobile interaction tests
+Status: implemented baseline; typography-and-density refinement approved, implementation pending
 
 Date: 2026-08-12
 
@@ -337,3 +337,44 @@ Implementation is acceptable only when all of the following pass:
 - The human-readable summary uses only observation-window length, measurement count, dynamic-variable coverage, core vital-group count, and explicit synthetic-fixture type derived from validated synthetic input.
 - The trend remains Matplotlib, with larger labels and explicit wording that gaps are missing bins.
 - The verified implementation is recorded in root `DESIGN.md`; locally ignored `.impeccable/design.json` carries the extended design-system sidecar.
+
+## 15. Approved typography and density refinement
+
+The user reviewed the completed allowed-output state and approved **Approach A: larger type plus a compact two-zone result layout**. This is a refinement of the existing `Compact Evidence Console`, not a replacement visual world.
+
+### 15.1 Observed problem
+
+At the live 1,280 × 720 desktop viewport, evidence rows render at 15 px while several metadata and disclosure labels render at 14 px. The allowed-output panel serializes the guard summary and research output vertically. That right-side sequence makes the shared console approximately 716 px tall and leaves approximately 264 px below the left JSON disclosure without adding information.
+
+### 15.2 Typography contract
+
+- Default body and explanatory copy: 17 px.
+- Evidence rows, guard rows, status copy, `research operating point`, safety boundary, and notice: 16–17 px according to hierarchy.
+- Phase labels and metadata: 15 px minimum.
+- JSON and machine detail: 14 px minimum with bounded internal scrolling.
+- Product title: up to 38 px on desktop and 34 px on mobile.
+- Section headings: 24–26 px.
+- The existing 64 px maximum synthetic demonstration score remains unchanged; it is already sufficiently prominent and must not gain more authority.
+
+### 15.3 Desktop layout contract
+
+- Preserve the 38/62 outer scenario/result split.
+- In the allowed-output state at desktop widths of at least 1,000 px, keep the evidence disposition above a compact 56/44 inner grid: human-readable guard rows on the left and research output on the right.
+- Ready, `abstention`, and invalid-input states remain single-column so their recovery or review message stays direct.
+- Reduce header and panel padding by one spacing step, tighten row padding, and remove empty analytic-row space without reducing the 44 px control target.
+- Do not add filler copy, new metrics, icons, cards, claims, or decorative content merely to occupy space.
+
+### 15.4 Responsive contract
+
+- Below 1,000 px, the allowed-output inner grid returns to one column in the same evidence-first reading order.
+- At 390 × 844 px, scenario evidence rows remain compact key/value rows where the content fits instead of stacking every label and value vertically.
+- The primary action must remain entirely inside the first mobile viewport after the font increase.
+- Desktop and mobile must retain zero horizontal page overflow.
+
+### 15.5 Acceptance gates
+
+- Computed desktop body size is at least 17 px; evidence rows at least 16 px; phase/metadata labels at least 15 px; JSON text at least 14 px.
+- At the 1,280 px allowed-output state, unused space below the left disclosure is no more than 64 px.
+- The guard summary and research output are visually parallel on desktop and evidence-first when read by assistive technology.
+- Ready, allowed, `abstention`, and invalid-input behavior and copy remain unchanged except for layout and typography.
+- Existing schema validation, guard, probability withholding, contributors, inference semantics, and synthetic-only boundary remain untouched.
