@@ -23,7 +23,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install CPU dependencies
-        run: pip install -e ".[dev,tabular]"
+        run: pip install -e ".[app,dev,tabular]"
       - name: Ruff
         run: ruff check .
       - name: Mypy

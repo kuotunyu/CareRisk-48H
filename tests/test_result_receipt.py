@@ -268,6 +268,17 @@ def test_ci_pytest_invocation_keeps_repository_app_importable() -> None:
     assert pytest_step["run"].split()[:3] == ["python", "-m", "pytest"]
 
 
+def test_ci_installs_extras_required_by_collected_tests() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["test"]["steps"]
+    install_step = next(step for step in steps if step.get("name") == "Install CPU dependencies")
+    extras_text = install_step["run"].partition(".[")[2].partition("]")[0]
+
+    assert set(extras_text.split(",")) >= {"app", "dev", "tabular"}
+
+
 def test_numpy_constraint_keeps_python310_mypy_compatible_stubs() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     numpy_line = next(
