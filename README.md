@@ -11,6 +11,8 @@ CareRisk 48H 是可信賴 clinical ML 的研究軟體範例，使用 [PhysioNet 
 
 > 僅供研究與教育；不是臨床診斷、治療、分流、資源配置或照護決策工具。
 
+版本狀態：`v0.1.0` 是目前唯一發布版本；`main` 包含該版本後尚未發布的可信度強化與 demo 改善。
+
 ## Cohort 與資料角色
 
 這是 48 小時 landmark cohort：官方納入年齡至少 16 歲、首次可用 ICU stay，且 initial ICU stay 至少 48 小時的個案；DNR/CMO 並未排除。模型因此只適用於已達 48 小時 landmark 的歷史 ICU cohort，不能代表入 ICU 後 48 小時內即離院或死亡者，也不能直接代表一般病房、長照或居家照護。
@@ -110,7 +112,6 @@ Demo 的 `missingness/value-pattern anomaly guard` 使用 train-only coverage、
 - [DATA_CARD.md](DATA_CARD.md)
 - [MONITORING.md](MONITORING.md)
 - [TRIPOD+AI / PROBAST+AI evidence audit](docs/TRIPOD_PROBAST_AUDIT.md)
-- [Zenodo release-readiness checklist](docs/ZENODO_RELEASE_CHECKLIST.md)
 - [CITATION.cff](CITATION.cff)
 
 ## 快速開始

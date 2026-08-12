@@ -318,3 +318,23 @@ def test_local_only_synthetic_fixture_is_not_tracked() -> None:
     ).stdout.strip()
 
     assert tracked == ""
+
+
+def test_internal_working_documents_are_not_tracked() -> None:
+    tracked = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "--",
+            "PRODUCT.md",
+            "DESIGN.md",
+            "docs/DEMO_UI_UX_DESIGN.md",
+            "docs/ZENODO_RELEASE_CHECKLIST.md",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert tracked == ""

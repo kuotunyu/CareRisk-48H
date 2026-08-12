@@ -1,4 +1,4 @@
-"""Hugging Face Space entry point."""
+"""CareRisk 48H research demo entry point."""
 
 from app.dashboard import create_app
 
