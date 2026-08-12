@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -255,6 +256,27 @@ def test_ci_exercises_every_declared_python_minor() -> None:
     assert any(step.get("uses") == "actions/checkout@v7" for step in job["steps"])
     setup = next(step for step in job["steps"] if step.get("uses") == "actions/setup-python@v7")
     assert setup["with"]["python-version"] == "${{ matrix.python-version }}"
+
+
+def test_ci_pytest_invocation_keeps_repository_app_importable() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["test"]["steps"]
+    pytest_step = next(step for step in steps if step.get("name", "").startswith("Pytest"))
+
+    assert pytest_step["run"].split()[:3] == ["python", "-m", "pytest"]
+
+
+def test_numpy_constraint_keeps_python310_mypy_compatible_stubs() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    numpy_line = next(
+        line.strip().strip('",') for line in pyproject.splitlines() if '"numpy' in line
+    )
+    numpy_requirement = Requirement(numpy_line)
+
+    assert "2.4.6" in numpy_requirement.specifier
+    assert "2.5.2" not in numpy_requirement.specifier
 
 
 def test_release_metadata_is_discoverable_and_modern() -> None:
