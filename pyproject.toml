@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "carerisk48h"
-version = "0.1.0"
+version = "0.2.0"
 description = "Leakage-safe and calibrated mortality-risk research for irregular ICU time series."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -43,7 +43,7 @@ all = [
 [project.urls]
 Homepage = "https://github.com/kuotunyu/CareRisk-48H"
 Repository = "https://github.com/kuotunyu/CareRisk-48H"
-Release = "https://github.com/kuotunyu/CareRisk-48H/releases/tag/v0.1.0"
+Release = "https://github.com/kuotunyu/CareRisk-48H/releases/tag/v0.2.0"
 
 [project.scripts]
 carerisk-train = "carerisk48h.cli:train_main"
