@@ -6,8 +6,8 @@ abstract: >-
   Leakage-controlled and calibrated mortality-risk research software for irregular
   48-hour ICU time series, with reproducible evaluation, abstention, monitoring,
   and explicit non-clinical use boundaries.
-version: 0.1.0
-date-released: 2026-08-04
+version: 0.2.0
+date-released: 2026-08-16
 authors:
   - name: "kuotunyu"
 keywords:

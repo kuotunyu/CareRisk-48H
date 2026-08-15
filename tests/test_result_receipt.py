@@ -223,17 +223,33 @@ def test_committed_receipt_matches_formal_public_values() -> None:
     )
 
 
+def test_release_manifest_keeps_software_release_separate_from_frozen_evidence() -> None:
+    manifest = json.loads((ROOT / "docs" / "release-v0.2.0.json").read_text(encoding="utf-8"))
+
+    assert manifest["release"] == "v0.2.0"
+    assert manifest["release_kind"] == "research-software-portfolio-closure"
+    evidence = manifest["scientific_evidence"]
+    assert evidence["final_result_receipt"] == "docs/final-result-receipt.json"
+    assert evidence["scientific_result_changed"] is False
+    assert evidence["set_b_rerun"] is False
+    assert evidence["set_c_used"] is False
+    assert evidence["frozen_model_changed"] is False
+    assert evidence["threshold_changed"] is False
+    assert manifest["zenodo"] == {"status": "not-configured", "doi": None}
+
+
 def test_readme_links_to_machine_readable_receipt() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "[Machine-readable final-result receipt](docs/final-result-receipt.json)" in readme
+    assert "[`docs/release-v0.2.0.json`](docs/release-v0.2.0.json)" in readme
 
 
 def test_citation_identifies_the_sole_release_author() -> None:
     citation = yaml.safe_load((ROOT / "CITATION.cff").read_text(encoding="utf-8"))
 
-    assert citation["version"] == "0.1.0"
-    assert str(citation["date-released"]) == "2026-08-04"
+    assert citation["version"] == "0.2.0"
+    assert str(citation["date-released"]) == "2026-08-16"
     assert citation["authors"] == [{"name": "kuotunyu"}]
     assert citation["repository-code"] == "https://github.com/kuotunyu/CareRisk-48H"
     assert "preferred-citation" not in citation
@@ -294,9 +310,10 @@ def test_release_metadata_is_discoverable_and_modern() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     repository = "https://github.com/kuotunyu/CareRisk-48H"
-    release = f"{repository}/releases/tag/v0.1.0"
+    release = f"{repository}/releases/tag/v0.2.0"
     workflow = f"{repository}/actions/workflows/ci.yml"
 
+    assert 'version = "0.2.0"' in pyproject
     assert "setuptools>=77.0.3" in pyproject
     assert 'license = "Apache-2.0"' in pyproject
     assert 'license-files = ["LICENSE", "NOTICE"]' in pyproject

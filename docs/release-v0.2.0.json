@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "release": "v0.2.0",
+  "release_date": "2026-08-16",
+  "release_kind": "research-software-portfolio-closure",
+  "baseline_main_commit": "fc12cd3834664cf47e5f71326d672be7d58a73df",
+  "scientific_evidence": {
+    "final_result_receipt": "docs/final-result-receipt.json",
+    "final_result_receipt_git_blob_sha": "b13ec7655bbdb8db1079c3b4793a0bf5590ef69c",
+    "scientific_result_changed": false,
+    "set_b_rerun": false,
+    "set_c_used": false,
+    "frozen_model_changed": false,
+    "threshold_changed": false
+  },
+  "scope": [
+    "calibration stability diagnostics",
+    "monitoring contracts",
+    "abstention and inference guards",
+    "synthetic-only demo improvements",
+    "TRIPOD+AI and PROBAST+AI evidence audit",
+    "CI, container, schema, and documentation hardening"
+  ],
+  "limitations": [
+    "no external validation",
+    "no temporal or site-held-out validation",
+    "no prospective validation",
+    "no clinical utility study",
+    "historical same-source ICU cohort"
+  ],
+  "zenodo": {
+    "status": "not-configured",
+    "doi": null
+  }
+}
