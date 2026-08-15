@@ -298,7 +298,7 @@ def test_ci_installs_extras_required_by_collected_tests() -> None:
 def test_numpy_constraint_keeps_python310_mypy_compatible_stubs() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     numpy_line = next(
-        line.strip().strip('\",') for line in pyproject.splitlines() if '\"numpy' in line
+        line.strip().strip('",') for line in pyproject.splitlines() if '"numpy' in line
     )
     numpy_requirement = Requirement(numpy_line)
 
