@@ -1,7 +1,7 @@
 # CareRisk 48H
 
 [![CI](https://github.com/kuotunyu/CareRisk-48H/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/CareRisk-48H/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/kuotunyu/CareRisk-48H)](https://github.com/kuotunyu/CareRisk-48H/releases/tag/v0.1.0)
+[![Release](https://img.shields.io/github/v/release/kuotunyu/CareRisk-48H)](https://github.com/kuotunyu/CareRisk-48H/releases/tag/v0.2.0)
 ![Python 3.10–3.12](https://img.shields.io/badge/Python-3.10%E2%80%933.12-3776AB?logo=python&logoColor=white)
 ![LightGBM 4.x](https://img.shields.io/badge/LightGBM-4.x-blue)
 ![PyTorch 2.1+](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)
@@ -11,7 +11,7 @@ CareRisk 48H 是可信賴 clinical ML 的研究軟體範例，使用 [PhysioNet 
 
 > 僅供研究與教育；不是臨床診斷、治療、分流、資源配置或照護決策工具。
 
-版本狀態：`v0.1.0` 是目前唯一發布版本；`main` 包含該版本後尚未發布的可信度強化與 demo 改善。
+版本狀態：`v0.2.0` 是目前的 research-software／portfolio release。它封存 `v0.1.0` 之後完成的 calibration stability、monitoring、abstention guard、synthetic-only demo 與 evidence documentation 強化；**凍結的 Set B 科學結果沒有重跑、沒有改值，Set C 仍完全未使用**。版本與 frozen scientific receipt 的關係另見 [`docs/release-v0.2.0.json`](docs/release-v0.2.0.json)。
 
 ## Cohort 與資料角色
 
