@@ -1,0 +1,466 @@
+# CareRisk 48H — Evidence & Abstention Explorer Design
+
+**Date:** 2026-08-31
+**Status:** Approved direction; design specification awaiting central review
+**Product surface:** Gradio Docker Space
+**Canonical future destination:** `https://huggingface.co/spaces/steven0226/carerisk-48h`
+**Evidence release:** GitHub tag `v0.2.0`
+**Evidence tag object:** `2f1ddb0e2276fa894e124b856de488e31e21e88c`
+**Evidence tag commit:** `f4c820cce953f401c1ec525bd8df3a3c1678bbf3`
+**Design base:** `11184984ddd553aa3b45a3d5fc0ea4a866877722`
+
+## 1. Decision and scope
+
+Build a public, synthetic-only Hugging Face Docker Space named **CareRisk 48H — Evidence & Abstention Explorer**. The Space is an evidence viewer and an abstention-state explainer. It is not a patient-risk predictor, model-serving endpoint, clinical workflow simulation, or upload surface.
+
+The MVP has two isolated information paths:
+
+1. A read-only evidence path that renders a small, fixed subset of aggregate metrics from the exact `v0.2.0` final-result receipt and release manifest.
+2. A fixed-scenario path that renders one of four abstract, in-memory synthetic gate states. It displays only `evidence available` or `evidence withheld` and enumerated reasons.
+
+No patient-like payload crosses either path. No model, calibrator, threshold procedure, guard artifact, prediction function, or trained-data-derived runtime object is present in the Space.
+
+This specification authorizes no product implementation, Space creation, upload, GitHub About change, deployment, or remote mutation. Those remain behind later written approvals.
+
+## 2. Goals
+
+- Make calibration, abstention, provenance, and claim limits understandable to portfolio reviewers within one page.
+- Ensure every quantitative UI value is parsed from the exact committed aggregate receipt rather than copied into application source.
+- Demonstrate fail-closed evidence validation and a bounded capability surface.
+- Make it technically impossible through the intended UI and public event API to enter, upload, paste, or submit arbitrary patient data.
+- Produce an exact allowlist export from GitHub source into a separate Hugging Face repository without mirroring GitHub history.
+- Keep runtime CPU-only, non-root, read-only except for a bounded ephemeral `/tmp`, and functional with external networking disabled.
+- Preserve Apache-2.0 code licensing while clearly separating PhysioNet data and data-derived evidence licensing and attribution.
+
+## 3. Non-goals
+
+- No editable JSON, code editor, textbox, dataframe editor, file upload, image/audio/video input, chat input, or free-form API payload.
+- No live probability, raw score, calibrated score, risk class, case recommendation, threshold comparison, threshold-based case decision, causal explanation, feature contribution, or clinical action.
+- No model weights, model bundles, `joblib`, pickle, LightGBM, SHAP, scikit-learn, PyTorch, NumPy, pandas, matplotlib, Plotly, or existing inference/guard code.
+- No real, deidentified, pseudonymized, or row-level PhysioNet data.
+- No final evaluation rerun, receipt regeneration, Set B access, Set C access, model refit, calibration refit, or threshold selection.
+- No runtime network fetch from GitHub, Hugging Face Hub, PhysioNet, CDNs, analytics services, or other external origins.
+- No final-evaluation overview image in MVP. `docs/assets/final-evaluation-overview.png` remains excluded until an independently approved public hash-provenance relationship exists.
+- No monitoring, user analytics, telemetry, feedback capture, persistence, session history, or logging of user interaction values.
+- No mirroring of the GitHub repository or its commit history into the Hugging Face repository.
+
+## 4. Claim ceiling exact-copy contract
+
+The following two paragraphs are normative copy. Punctuation, capitalization, English terms, and paragraph order must be preserved in the rendered app and in the public Space card.
+
+**Primary zh-TW claim ceiling:**
+
+> 僅供研究與教育；不是臨床診斷、治療、分流、資源配置或照護決策工具。本 Space 僅使用內建 synthetic gate-state scenarios，不接受、儲存或處理任何使用者提供的病人資料；不輸出 live probability、risk class、case recommendation 或 threshold-based case decision。
+
+**Brief English safety subtitle:**
+
+> Research and education only. Non-clinical and synthetic-only. No patient data entry or upload, no live predictions, and no care decisions.
+
+No shorter wording may replace these paragraphs in the primary surface. Other sections may repeat a shorter reminder only after the exact copy has appeared.
+
+### 4.1 DOM and focus order
+
+Within the app-owned root `#carerisk-space-root`, document order is fixed:
+
+1. `header` containing the product name and one-sentence evidence-explorer description.
+2. `section#claim-ceiling[role="note"]` containing the exact zh-TW paragraph followed by the exact English subtitle.
+3. `section#scenario-explorer` whose scenario radio group is the first app-owned focusable element.
+4. `section#scenario-result[aria-live="polite"]` containing the synthetic gate-state result.
+5. `section#receipt-evidence` containing receipt-backed aggregate evidence.
+6. `section#provenance` containing release, manifest, source, and license information.
+
+There must be no app-owned `a[href]`, `button`, `input`, `select`, `textarea`, element with non-negative `tabindex`, or other focusable element before `#claim-ceiling` has rendered in full. Hugging Face platform chrome outside `#carerisk-space-root` is outside this contract.
+
+The claim ceiling must be visible without expanding an accordion or opening a tab. CSS must not use fixed overlays, clipping, or scroll containers that can hide any part of it. At both required review viewports, the entire claim ceiling and the beginning of the first scenario control must appear in the initial viewport.
+
+## 5. Page architecture
+
+### 5.1 Header
+
+- Product name: `CareRisk 48H — Evidence & Abstention Explorer`.
+- One sentence: `以可稽核的 aggregate receipt 與固定 synthetic states 展示 calibration、evidence gates 與 abstention。`
+- No model badge, clinical iconography, patient avatar, risk traffic light, “AI diagnosis” language, score, leaderboard, or performance superlative.
+
+### 5.2 Fixed scenario explorer
+
+The only user-controlled value is a single-select radio group. It has no preselected value. Its four allowed IDs, visible labels, output states, and reasons are immutable application constants:
+
+| Scenario ID | zh-TW label | Output state | Enumerated reason text |
+| --- | --- | --- | --- |
+| `synthetic_evidence_available` | `Synthetic A｜所有示意 evidence gates 通過` | `evidence available` | `所有示意 evidence gates 均通過；此狀態不產生分數。` |
+| `synthetic_schema_withheld` | `Synthetic B｜schema contract 不完整` | `evidence withheld` | `示意 schema contract 未通過，因此研究 evidence 不顯示。` |
+| `synthetic_coverage_withheld` | `Synthetic C｜measurement coverage 不足` | `evidence withheld` | `示意 measurement coverage 不足，因此研究 evidence 不顯示。` |
+| `synthetic_value_pattern_withheld` | `Synthetic D｜value pattern 超出 synthetic reference` | `evidence withheld` | `示意 value pattern 超出 synthetic reference，因此研究 evidence 不顯示。` |
+
+The scenario objects contain only `id`, `label_zh_tw`, `state`, `reason_zh_tw`, and fixed gate booleans named `schema_contract`, `measurement_coverage`, and `value_pattern`. They contain no age, sex/gender, ICU type, measurement, timestamp, variable, record ID, label, outcome, probability, threshold, or model output.
+
+The scenario registry is an immutable in-memory tuple. It is not loaded from a user-controlled file, request body, environment variable, URL, database, or remote service. Unknown, missing, duplicated, non-string, or altered scenario IDs return the safe state `evidence withheld` with reason code `unknown_synthetic_scenario`; they never echo the submitted value.
+
+The scenario result may render the three gate names and pass/withheld status. It must not render numeric gate thresholds, OOD scores, coverage percentages, measurement counts, physiologic values, probability availability, or “human review” language that could imply a live clinical workflow.
+
+### 5.3 Receipt-backed evidence
+
+The evidence panel reads from `evidence/final-result-receipt.json` only after all validation gates in Section 7 pass. It renders:
+
+- Dataset name and role, `n`, events, and prevalence.
+- AUPRC estimate and 95% interval.
+- AUROC estimate and 95% interval.
+- Brier estimate and 95% interval.
+- ECE estimate and 95% interval.
+- Bootstrap method, samples, and seed.
+- Evaluation status, one-success count, and final-lock status.
+- The receipt `use_limitation` verbatim.
+
+Formatting may round for display but must retain a machine-checkable relationship to the parsed value: AUPRC/AUROC/Brier/ECE estimates and interval endpoints display to three decimals, prevalence to one decimal percent, and counts as integers. Tests compare formatted UI text against values parsed from the receipt, never against duplicate application constants.
+
+The primary MVP UI does not render the receipt threshold, confusion matrix, PPV, NPV, sensitivity, specificity, individual or subgroup results, candidate hashes, or artifact hashes. The receipt remains publicly available as a file for auditors, but the UI does not provide a raw JSON editor or JSON output component.
+
+The calibration section consists of Brier and ECE estimate/interval rows with explanatory labels. It does not reconstruct reliability bins, invent calibration intercept/slope, display the excluded aggregate evaluation image, or call the same-source result external calibration.
+
+### 5.4 Provenance and limitations
+
+The provenance section renders only values validated from the release manifest and deployment manifest:
+
+- Evidence tag `v0.2.0` and its immutable tag commit.
+- Receipt Git blob SHA and SHA-256.
+- Space app GitHub source commit recorded in the deployment manifest.
+- Public destination repository identifier.
+- `scientific_result_changed=false`, `set_b_rerun=false`, `set_c_used=false`, `frozen_model_changed=false`, and `threshold_changed=false` as release relationship statements.
+- The release manifest’s five limitations, without positive reinterpretation.
+
+External links to the GitHub tag, source repository, receipt, LICENSE, and NOTICE may appear only in this section, after the first scenario control. Clicking them is a user navigation; the application itself performs no fetch.
+
+## 6. Component and data-flow design
+
+The clean Space application is a standalone package named `carerisk_space`. It has these bounded units:
+
+| Unit | Responsibility | Inputs | Outputs | Dependencies |
+| --- | --- | --- | --- | --- |
+| `contracts.py` | Constants, claim copy, reason codes, strict schemas, hash helpers | Public bundle bytes | Validated immutable values or bounded error code | Python standard library only |
+| `evidence.py` | Read and validate receipt, release metadata, deployment manifest; format approved evidence | Three committed JSON files | `EvidenceViewModel` or `EvidenceFailure` | `contracts.py`, standard library |
+| `scenarios.py` | Own four immutable abstract scenarios and exact-ID lookup | Enumerated scenario ID | `ScenarioViewModel` | `contracts.py`, standard library |
+| `ui.py` | Build safe or evidence-failure Gradio Blocks | Evidence result and scenario registry | Gradio application | Gradio, local units |
+| `app.py` | Thin entry point; construct once and launch on port 7860 | No user configuration | Running local server | `ui.py` |
+
+Startup flow:
+
+1. Read only the three allowlisted JSON files from package-relative paths.
+2. Validate byte hashes, Git blob relationship, schemas, release relationship, and manifest path set.
+3. If any gate fails, construct the evidence-failure UI in Section 12. Do not construct scenario controls or metric cards.
+4. If all gates pass, construct the normal UI from immutable view models.
+5. During interaction, accept one enumerated scenario ID, perform exact lookup, and render only the bounded state and reason.
+
+No callback accesses receipt files again after startup. No callback accepts arbitrary mappings, lists, files, paths, URLs, request objects, headers, cookies, query parameters, or free text.
+
+## 7. Evidence and provenance validation
+
+### 7.1 Fixed evidence anchors
+
+The exact evidence anchors are:
+
+- Release tag: `v0.2.0`.
+- Annotated tag object: `2f1ddb0e2276fa894e124b856de488e31e21e88c`.
+- Tag commit: `f4c820cce953f401c1ec525bd8df3a3c1678bbf3`.
+- Release manifest source path: `docs/release-v0.2.0.json`.
+- Receipt source path: `docs/final-result-receipt.json`.
+- Receipt Git blob SHA: `b13ec7655bbdb8db1079c3b4793a0bf5590ef69c`.
+- Receipt SHA-256: `f1eb4958f253bf016bc73c405f498055b36cb8b7100654d8868a088f31d426fc`.
+- Formal metrics SHA-256 named inside the receipt: `808525afad2ec550e8059c4ba37c2f5aaf8af748873a5a590dff7f1aeaaf47af`.
+
+The export process must extract the receipt and release manifest from the tag commit with Git object reads, not copy them from an arbitrary working tree.
+
+### 7.2 Runtime receipt gates
+
+Receipt validation is fail-closed and must verify all of the following before parsing values for display:
+
+1. File exists at exactly `evidence/final-result-receipt.json` and is a regular file, not a symlink.
+2. Raw-byte SHA-256 equals the fixed receipt SHA-256.
+3. Git blob hash computed as SHA-1 over `blob <byte-length>\0<raw-bytes>` equals the fixed receipt Git blob SHA.
+4. UTF-8 JSON parses without duplicate keys, NaN, Infinity, or trailing data.
+5. Top-level keys exactly equal `confidence_intervals`, `dataset`, `evaluation`, `evaluation_status`, `metrics`, `model`, `privacy`, `provenance`, `schema_version`, `title`, and `use_limitation`.
+6. `schema_version == 1`, `evaluation_status == "final"`, `privacy.aggregate_only == true`, and `evaluation.set_b_final_evaluation_successes == 1`.
+7. `evaluation.final_lock_status == "locked_after_one_success"`.
+8. Every displayed metric and interval is finite, in `[0, 1]`, interval-ordered, and has interval estimate equal to the corresponding metric.
+9. Dataset role is `final_test`, `n == 4000`, events `== 568`, and prevalence is finite and consistent with the receipt value.
+10. Bootstrap method is `stratified percentile`, samples `== 2000`, and seed `== 2026`.
+11. `provenance.formal_metrics_sha256` equals the fixed formal metrics hash.
+12. The privacy exclusion list contains the seven committed exclusions and no displayed field comes from those excluded categories.
+
+### 7.3 Runtime release relationship gates
+
+Release validation verifies:
+
+1. `evidence/release-v0.2.0.json` is a regular non-symlink file whose SHA-256 and size equal its deployment-manifest entry.
+2. `schema_version == 1`, `release == "v0.2.0"`, and `release_kind == "research-software-portfolio-closure"`.
+3. `scientific_evidence.final_result_receipt` identifies the source receipt path.
+4. `scientific_evidence.final_result_receipt_git_blob_sha` equals the validated receipt blob SHA.
+5. The five scientific-change booleans are all false.
+6. The limitations array exactly contains the committed five limitations.
+
+The Space performs no `git` command and no remote verification at runtime. Tag and source relationships are established during clean export and represented by the signed-off deployment manifest; runtime revalidates the local immutable bytes and manifest consistency.
+
+## 8. Source-to-destination clean export
+
+### 8.1 Separate histories
+
+The GitHub source repository remains canonical for app source and evidence. The Hugging Face Space is a separate repository whose initial public commit contains only the clean export. It must not share Git object ancestry, branches, tags, reflogs, `.git` directory, or deleted history with GitHub.
+
+Updates are regenerated from an exact GitHub source commit and exact evidence tag. They are committed as ordinary destination updates; GitHub history is never mirrored or force-pushed into Hugging Face.
+
+### 8.2 Non-self-referential provenance sequence
+
+Implementation uses two source commits so the deployment manifest can name an immutable Space app source commit without self-reference:
+
+1. **App source commit:** contains the reviewed Space app, tests, locks, SBOM, license inventory, and export tooling. Its SHA becomes `space_app_source_git_sha`.
+2. **Export-manifest commit:** adds the deployment manifest that records the app source commit, evidence tag/object/commit, exact source-to-destination paths, byte hashes, sizes, capabilities, base-image digest, and lock/SBOM/license hashes.
+
+The export reads app files from the app source commit, evidence/legal files from the `v0.2.0` tag commit, and the deployment manifest from the export-manifest commit. The Hugging Face destination commit is recorded after upload in a separate post-deployment audit record; it is not self-embedded in the destination commit.
+
+Both commits and any remote actions require later approval and are not created by this design task.
+
+### 8.3 Exact destination allowlist
+
+The clean export contains exactly these destination paths:
+
+| Source category | Destination path | Capability |
+| --- | --- | --- |
+| Space source | `README.md` | Space card and safety copy |
+| Space source | `Dockerfile` | Container build |
+| Space source | `requirements.lock` | Hash-locked runtime dependencies |
+| Space source | `requirements-dev.lock` | Hash-locked verification dependencies |
+| Space source | `app.py` | Thin launch entry point |
+| Space source | `carerisk_space/__init__.py` | Package identity only |
+| Space source | `carerisk_space/contracts.py` | Contracts and validation helpers |
+| Space source | `carerisk_space/evidence.py` | Read-only evidence loader |
+| Space source | `carerisk_space/scenarios.py` | Fixed in-memory scenarios |
+| Space source | `carerisk_space/ui.py` | Gradio presentation |
+| `v0.2.0` evidence | `evidence/final-result-receipt.json` | Aggregate final evidence |
+| `v0.2.0` evidence | `evidence/release-v0.2.0.json` | Release/evidence relationship |
+| Export-manifest commit | `deployment-manifest.json` | Source/destination provenance and allowlist |
+| `v0.2.0` legal metadata | `LICENSE` | Apache-2.0 code license |
+| `v0.2.0` legal metadata | `NOTICE` | PhysioNet attribution and boundary |
+| `v0.2.0` legal metadata | `CITATION.cff` | v0.2.0 citation |
+| Space source | `SBOM.spdx.json` | Exact source/runtime dependency SBOM |
+| Space source | `THIRD_PARTY_LICENSES.json` | Dependency license inventory |
+| Space source | `tests/test_claim_contract.py` | Exact copy and DOM-order contract |
+| Space source | `tests/test_evidence_contract.py` | Receipt/release fail-closed contract |
+| Space source | `tests/test_scenario_contract.py` | Fixed scenario and no-score contract |
+| Space source | `tests/test_gradio_contract.py` | Component/event/API capability contract |
+| Space source | `tests/test_export_contract.py` | Exact path/hash/denylist contract |
+| Space source | `tests/test_container_contract.py` | Container/runtime contract |
+
+No directory wildcard is allowed. The export manifest lists every destination path explicitly, sorted by destination path. For every allowlisted file except `deployment-manifest.json`, it records source ref, source path, destination path, SHA-256, byte size, media type, and one capability from `runtime_code`, `evidence`, `legal`, `metadata`, `supply_chain`, or `test`.
+
+The manifest lists itself in the path allowlist but does not attempt to embed its own hash. CI records the manifest SHA-256 in its immutable verification output, and the later post-deployment audit record binds that hash to the destination commit.
+
+The exporter reads committed Git blobs into a fresh temporary directory, rejects symlinks and path traversal, compares the final recursive file set to the exact destination allowlist, verifies every hash and size, and refuses a dirty or mismatched source ref. It never copies the repository working directory wholesale.
+
+### 8.4 Denylist
+
+Any match is a hard export failure, including if a similarly named path is newly added:
+
+- `.env`, `.env.*`, credentials, tokens, keys, cookies, auth state, Space Secrets, or Space Variables.
+- `.git`, `.github`, worktrees, bundles, patches, reflogs, or GitHub history exports.
+- `data`, `artifacts`, `models`, `checkpoints`, `results`, `reports`, notebooks, caches, temporary files, coverage output, or build output.
+- Any raw/processed PhysioNet data, outcomes, row-level data, record IDs, predictions, subgroup rows, error cases, access ledger, final lock contents, artifact map, environment capture, or real-data-derived guard/model bundle.
+- File suffixes `.joblib`, `.pkl`, `.pickle`, `.pt`, `.pth`, `.ckpt`, `.onnx`, `.parquet`, `.feather`, `.arrow`, `.npy`, `.npz`, `.csv`, `.tsv`, `.zip`, `.tar`, `.gz`, or database files.
+- `docs/assets/final-evaluation-overview.png` and all other plots or screenshots.
+- Existing `app/dashboard.py`, existing root `app.py`, `src/carerisk48h`, `configs/inference_schema.json`, training/downloader/evaluation scripts, and the existing synthetic scoring bundle path.
+- `AGENTS.md`, `PROJECT_PLAN.md`, `.agents`, local design/product documents, interview guides, handoffs, or internal governance evidence.
+- Any path not present in the exact allowlist, any file larger than 1 MiB, any symlink, device, FIFO, executable binary, or archive.
+
+## 9. Import and capability boundary
+
+Runtime application modules may import only:
+
+- Python standard-library modules required for immutable data structures, strict JSON parsing, HTML escaping, hashing, package-relative read-only paths, and typing.
+- The exactly locked `gradio` package.
+- Local `carerisk_space` modules.
+
+Application-source AST and import-graph tests reject:
+
+- `joblib`, `pickle`, `cloudpickle`, `dill`, `eval`, `exec`, dynamic imports, and plugin discovery.
+- `numpy`, `pandas`, `scipy`, `sklearn`, `lightgbm`, `shap`, `torch`, `tensorflow`, `onnx`, `matplotlib`, and `plotly`.
+- `requests`, `httpx`, `urllib.request`, `huggingface_hub`, cloud SDKs, database clients, SMTP, SSH, and outbound socket clients.
+- `subprocess`, shell execution, process spawning, file watching, and background workers.
+- Application writes through `open` write/append/update modes, `Path.write_text`, `Path.write_bytes`, rename, replace, delete, mkdir, or persistence APIs.
+- Reading environment variables, command-line file paths, user home, current working directory discovery, or arbitrary absolute paths.
+
+The only application file reads are package-relative reads of the three committed JSON files. Docker and test infrastructure may use operational environment values, but product code has no environment-based configuration and the deployed Space requires zero user-defined Secrets or Variables.
+
+## 10. Dependency and supply-chain contract
+
+- Runtime and development locks list every direct and transitive Python package with exact `==` versions and accepted distribution SHA-256 hashes.
+- Docker installation uses `python -m pip install --require-hashes --no-deps -r requirements.lock`; the lock itself contains the complete transitive closure, so resolution cannot drift during build.
+- The lock is compiled for the single supported Linux/Python target used by the Docker image. Cross-platform convenience ranges are not part of the public runtime contract.
+- The Docker `FROM` instruction contains both an explicit CPython 3.11 slim-bookworm patch tag and its immutable OCI `sha256:` digest. A mutable tag without digest fails verification.
+- The deployment manifest records the base image repository, tag, digest, runtime-lock SHA-256, development-lock SHA-256, SBOM SHA-256, and third-party-license inventory SHA-256.
+- `SBOM.spdx.json` identifies the app, base image, and every locked Python distribution with version, package URL, hashes, and license expression.
+- `THIRD_PARTY_LICENSES.json` contains one reviewed record per runtime and development dependency, including package, version, license expression, source URL, notice requirement, and review disposition.
+- Unknown, missing, non-redistributable, or incompatible licenses block export. License conclusions are recorded as inventory evidence, not inferred from package names.
+- Container scanning must report no unresolved critical or high vulnerability. A time-bounded, documented exception requires separate central approval; this design grants none.
+- No build credential, private index, token, or authenticated package source is permitted.
+
+## 11. Container and runtime contract
+
+- Single CPU image; no CUDA base, GPU package, GPU device request, or accelerator metadata.
+- App listens on `0.0.0.0:7860`; Space card declares `sdk: docker` and `app_port: 7860`.
+- Final image runs as a dedicated numeric non-root UID/GID with no shell and no writable home in the image.
+- Dockerfile uses explicit `COPY` statements for runtime files only; it never uses `COPY .`.
+- Runtime image excludes tests, development lock, SBOM tooling, compiler, package cache, Git, curl, wget, and shell utilities not required to launch Python.
+- Workspace, application source, evidence, legal files, and dependency environment are read-only.
+- Product code performs zero filesystem writes. Framework-required temporary operations, if any, are confined to an empty bounded tmpfs mounted at `/tmp`; no persistent or workspace path is writable.
+- Gradio analytics and Hugging Face telemetry are disabled through immutable image configuration. No application analytics are implemented.
+- Runtime smoke uses `--network none`, `--read-only`, a bounded `--tmpfs /tmp:rw,noexec,nosuid,size=64m`, `--cpus=2`, empty CUDA visibility, and no mounted secrets or host files.
+- Smoke asserts non-root UID, non-writable workspace/evidence files, successful app construction, local loopback health response, visible exact claim copy, and absence of model libraries.
+- Network-disabled runtime is the authoritative no-fetch proof. Static source scans are defense in depth, not a substitute.
+
+## 12. Evidence-failure UX
+
+Validation failure must still produce a healthy static page so a broken evidence artifact cannot be mistaken for successful metrics.
+
+The failure page contains, in order:
+
+1. Product header.
+2. The exact claim ceiling.
+3. `Evidence unavailable` heading.
+4. zh-TW explanation: `公開 evidence 未通過完整性驗證，因此本頁不顯示 metrics 或 synthetic gate states。`
+5. Brief English line: `Evidence integrity checks failed; metrics and scenarios are disabled.`
+6. Exactly one bounded reason code from `receipt_missing`, `receipt_hash_mismatch`, `receipt_schema_invalid`, `release_relationship_invalid`, or `deployment_manifest_invalid`.
+
+It contains no scenario control, metric value, partially parsed evidence, path, raw exception, stack trace, file content, environment value, or retry/upload control. The server logs the same bounded reason code and no raw payload.
+
+## 13. Gradio component, config, and API contract
+
+The normal app may contain only static HTML/Markdown output, one `Radio` input with the four exact scenario IDs, and bounded HTML output for the selected state. A button is unnecessary. No component accepts arbitrary bytes or strings.
+
+The Gradio config contract verifies:
+
+- No `Textbox`, `Code`, `File`, `UploadButton`, `Dataframe`, editable `JSON`, input `Image`, input `Audio`, input `Video`, chatbot, multimodal, gallery upload, or state initialized from request data.
+- The only input component is the single-select scenario radio; its choices exactly equal the four IDs and `allow_custom_value` is false.
+- The sole event dependency has one input, bounded outputs, no public `api_name`, no examples API, no batch mode, no queue, and no concurrency worker pool beyond the default single bounded callback.
+- API documentation is hidden. Gradio’s internal event transport is acknowledged rather than misrepresented as absent.
+- The callback independently validates the exact scenario allowlist. Direct calls with unknown strings, nested data, oversized strings, lists, mappings, nulls, or extra arguments return `unknown_synthetic_scenario` without echoing input.
+- Launch configuration exposes no local file paths, allowed directories, static mounts, file serving, authentication hook, request object, or user-provided path.
+- Gradio flagging, feedback, analytics, and persistence are absent.
+
+Tests inspect `Blocks.get_config_file()` and event dependency metadata, invoke the callback directly with adversarial values, and probe the running local server’s documented API metadata. The contract is capability-based: an internal endpoint is acceptable only when it cannot carry any value beyond the four enumerated IDs and cannot return anything beyond bounded state HTML.
+
+## 14. Space card and licensing
+
+The public `README.md` begins with Hugging Face YAML metadata declaring:
+
+- Title `CareRisk 48H — Evidence & Abstention Explorer`.
+- `sdk: docker`.
+- `app_port: 7860`.
+- `license: apache-2.0` for the application source.
+- A short description that uses `research`, `synthetic-only`, `calibration`, `abstention`, and `reproducibility`, and does not say clinical prediction, medical device, decision support, deployment-ready, or validated for care.
+
+Immediately after metadata, the rendered card repeats the exact claim ceiling before screenshots, links, instructions, or interactive claims.
+
+License boundary copy must state:
+
+- Space application code is Apache-2.0.
+- PhysioNet Challenge 2012 data is not included and is not relicensed by Apache-2.0.
+- No raw data, row-level derived data, outcomes, predictions, or data-derived model/guard artifacts are included.
+- The aggregate receipt remains evidence from the source research release and is accompanied by `NOTICE`, PhysioNet attribution, and the ODC-By 1.0 source-license link.
+- Synthetic gate states are original abstract application constants, not sampled, transformed, or reconstructed patient records and not validation evidence.
+
+The card links to the exact GitHub `v0.2.0` tag, source repository, release manifest, aggregate receipt, Apache LICENSE, NOTICE, and citations. It does not embed the excluded final-evaluation image.
+
+## 15. Verification strategy
+
+### 15.1 Static and unit gates
+
+- Exact-copy tests for both claim paragraphs in app config and Space card.
+- DOM-order test proving the claim section precedes the first app-owned focusable element.
+- Receipt byte SHA, Git blob SHA, strict JSON/schema, metric/CI, privacy, and release-relationship tests, including one mutation test per failure reason.
+- Formatter tests proving every rendered quantitative value comes from parsed receipt fields.
+- Scenario registry tests proving exactly four IDs, immutable fields, no numeric or patient-like fields, no score/probability/threshold strings, and fail-closed unknown input.
+- Source AST/import boundary and no-write/no-network client tests.
+- Gradio config/event/API capability tests from Section 13.
+- Exact clean-export path, size, hash, symlink, denylist, secret-pattern, private-key, large-file, and binary-signature tests.
+- Space card metadata, license boundary, citation, NOTICE, SBOM, and one-license-record-per-lock-package tests.
+- `ruff`, strict type checking for Space modules, `pip check`, and full Space-specific pytest.
+
+Tests must not import the existing dashboard, model package, data parser, guard, synthetic cohort generator, or final evaluation code. They use only committed public evidence bytes and abstract synthetic states.
+
+### 15.2 Container gates
+
+- Build from the digest-pinned base using the exact runtime lock and no credentials.
+- Verify final user is non-root and no shell or writable workspace exists.
+- Run under read-only root, bounded tmpfs, two CPUs, no GPU, and `--network none`.
+- Perform launch-free app construction and a same-container loopback HTTP health/claim probe.
+- Verify normal and each bounded evidence-failure startup mode without altering committed files.
+- Generate and compare image SBOM to the committed dependency SBOM; inventory differences fail.
+- Scan vulnerabilities and licenses under the contract in Section 10.
+
+### 15.3 Browser and accessibility gates
+
+For both `1440×900` and `390×844`:
+
+- Full claim ceiling visible in initial viewport before the first scenario control.
+- No horizontal overflow; body text at least 16 px; control target at least 44×44 CSS pixels.
+- Logical heading hierarchy, programmatic radio label, keyboard-only scenario selection, visible focus, and `aria-live` state announcement.
+- State and reason are not conveyed by color alone; no red/green clinical traffic-light treatment.
+- Four fixed scenarios render the exact allowed state/reason pair and never render score, probability, risk, recommendation, threshold comparison, patient-like values, or stale prior state.
+- Evidence-failure page exposes no controls or metrics.
+- WCAG 2.2 AA automated checks have zero serious or critical findings; manual keyboard and screen-reader-name review is recorded.
+- Browser console has zero errors and no runtime external requests beyond the Hugging Face platform shell. App iframe requests remain same-origin/local.
+
+### 15.4 Cold-start review
+
+- Record three fresh local container starts under the two-CPU, no-network contract and three fresh public Space cold starts after later deployment authorization.
+- Record time to first HTTP 200 and time until the exact claim ceiling is visible.
+- Thirty seconds is the local engineering soft target, not a public SLA. Missing the soft target requires an optimization or an explicit documented observation; timing must never be fabricated.
+- A hard gate is that every start resolves to either the validated normal page or the bounded evidence-failure page without partial metrics, crash loop, download, or model initialization.
+
+## 16. Existing app reuse boundary
+
+Permitted conceptual reuse:
+
+- Navy/teal daylight palette, typography scale, visible focus treatment, responsive stacking, and compact evidence-row concepts.
+- Exact safety-first ordering discipline, HTML escaping discipline, stale-state clearing test concept, non-root container concept, and desktop/mobile review method.
+- Gradio `Blocks` as the presentation framework.
+
+Forbidden reuse:
+
+- Copying, importing, packaging, or executing existing `app/dashboard.py`, existing root `app.py`, `carerisk48h.demo`, `carerisk48h.synthetic`, `carerisk48h.inference`, `carerisk48h.guard`, `carerisk48h.schema`, feature builders, models, calibrators, or scoring helpers.
+- Existing editable JSON, machine-output JSON, trend chart, contributor table, patient-shaped synthetic payload, synthetic trained bundle, joblib serialization, probability display, threshold marker, or “人工複核” workflow.
+- Existing Dockerfile or broad `pyproject.toml` dependency extras as the Space runtime definition.
+
+Implementation must create a standalone Space-specific surface. Similar CSS values or test ideas do not make the existing scoring app part of the public bundle.
+
+## 17. Authenticated and remote gates outside implementation
+
+These gates are sequential and remain outside the design/spec commit and outside the later product-code implementation unless separately authorized:
+
+1. With the namespace owner authenticated, verify `steven0226/carerisk-48h` has no public, private, deleted, reserved, or organization-policy collision. Any ambiguity stops before creation.
+2. Obtain explicit authorization to create the public Space repository.
+3. Verify the clean export and deployment manifest locally from approved source commits.
+4. Obtain explicit authorization to upload the exact clean export.
+5. Compare the public destination tree and bytes to the deployment manifest; verify destination commit and record it in the separate post-deployment audit record.
+6. Execute live cold-start, browser, accessibility, source-tree, license, log, secret/variable, and no-external-request reviews.
+7. Obtain explicit authorization before setting GitHub About Website to the Space URL. About description, topics, visibility, Pages, pinning, releases, and other GitHub metadata are not implicitly authorized.
+
+No collision check authorizes creation. No creation authorizes upload. No successful upload authorizes an About change.
+
+## 18. Acceptance criteria for implementation review
+
+Implementation is eligible for deployment review only when all statements below have fresh evidence:
+
+- The public candidate contains exactly the allowlisted files and no denylisted path/content.
+- Exact claim copy and DOM order pass at code, config, and live-browser levels.
+- Only four abstract in-memory scenarios are selectable; arbitrary values fail closed without echo.
+- Scenario output is limited to `evidence available`/`evidence withheld`, gate booleans, and one enumerated reason; no score or case decision exists anywhere in source, config, response, card, or screenshot.
+- Every displayed quantitative value is derived from the validated exact receipt.
+- Receipt, release, tag, app-source commit, export paths, hashes, locks, base digest, SBOM, and licenses are mutually consistent.
+- App source has no model/data/scoring imports, no product filesystem writes, no environment configuration, and no outbound network capability.
+- Container passes non-root, read-only, bounded tmpfs, CPU-only, network-disabled smoke.
+- Gradio config and direct event probes prove there is no arbitrary data-entry or upload capability.
+- Normal, four scenario, and five evidence-failure states pass desktop/mobile/accessibility/live review.
+- Space creation, upload, and GitHub About remain unperformed until their explicit gates are approved.
+
+## 19. Design review handoff
+
+This specification resolves the approved product direction without open product choices. After central written review, the next permitted process step is `writing-plans`. Product implementation, export generation, dependency selection, container build, authenticated collision checking, Space creation/upload, and GitHub About work must not begin during spec review.
