@@ -210,6 +210,7 @@ def validate_receipt(raw: bytes) -> ReceiptEvidence:
             or any(isinstance(seed, bool) or not isinstance(seed, int) for seed in model["seeds"])
             or not isinstance(model["threshold"], (int, float))
             or isinstance(model["threshold"], bool)
+            or not math.isfinite(float(model["threshold"]))
         ):
             raise ContractViolation("receipt_schema_invalid")
         result: dict[str, MetricInterval] = {}
@@ -248,7 +249,10 @@ def validate_receipt(raw: bytes) -> ReceiptEvidence:
 
 def validate_release(raw: bytes, receipt: ReceiptEvidence) -> ReleaseRelationship:
     try:
-        root = loads_strict_object(raw)
+        try:
+            root = loads_strict_object(raw)
+        except ContractViolation as exc:
+            raise ContractViolation("release_relationship_invalid") from exc
         if (
             set(root) != _RELEASE_KEYS
             or root["schema_version"] != 1

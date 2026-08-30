@@ -111,6 +111,46 @@ def test_receipt_model_schema_and_types_are_exact(monkeypatch: pytest.MonkeyPatc
         validate_receipt(raw)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("schema_version",),
+        ("dataset", "n"),
+        ("dataset", "events"),
+        ("dataset", "prevalence"),
+        ("evaluation", "set_b_final_evaluation_successes"),
+        ("evaluation", "bootstrap", "samples"),
+        ("evaluation", "bootstrap", "seed"),
+        ("model", "threshold"),
+        ("metrics", "auroc"),
+        ("confidence_intervals", "auroc", "estimate"),
+    ],
+)
+def test_receipt_rejects_exponent_overflow_for_every_numeric_field(
+    path: tuple[str, ...], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = json.loads(receipt_raw())
+    target = source
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = 1e9999
+    raw = json.dumps(source).encode()
+    monkeypatch.setattr(evidence_module, "RECEIPT_SHA256", hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(evidence_module, "RECEIPT_GIT_BLOB_SHA", git_blob_sha1(raw))
+    with pytest.raises(ContractViolation, match="receipt_schema_invalid"):
+        validate_receipt(raw)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [b"{", b'{} trailing', b'{"x": 1, "x": 2}', b"\xff", b"[]"],
+)
+def test_release_parse_failures_use_release_relationship_code(raw: bytes) -> None:
+    receipt = validate_receipt(receipt_raw())
+    with pytest.raises(ContractViolation, match="release_relationship_invalid"):
+        validate_release(raw, receipt)
+
+
 def test_receipt_metrics_and_intervals_are_finite_and_ordered() -> None:
     evidence = validate_receipt(receipt_raw())
     assert set(evidence.metrics) == {"auprc", "auroc", "brier", "ece"}
