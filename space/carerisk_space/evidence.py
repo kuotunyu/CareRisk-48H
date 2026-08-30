@@ -7,7 +7,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from typing import NoReturn
+from types import MappingProxyType
+from typing import NoReturn, cast
 
 from .contracts import (
     ContractViolation,
@@ -95,6 +96,7 @@ _EXCLUSIONS = (
     "access_ledger_contents",
 )
 _DISPLAYED_METRICS = ("auprc", "auroc", "brier", "ece")
+_MODEL_KEYS = {"calibrator", "family", "seeds", "threshold"}
 
 
 def loads_strict_object(raw: bytes) -> dict[str, object]:
@@ -125,9 +127,9 @@ def git_blob_sha1(raw: bytes) -> str:
     return hashlib.sha1(header + raw, usedforsecurity=False).hexdigest()
 
 
-def _object(value: object, keys: set[str]) -> dict[str, object]:
+def _object(value: object, keys: set[str], code: str = "receipt_schema_invalid") -> dict[str, object]:
     if not isinstance(value, dict) or set(value) != keys:
-        raise ContractViolation("receipt_schema_invalid")
+        raise ContractViolation(code)
     return value
 
 
@@ -139,6 +141,12 @@ def _number(value: object) -> float:
     ):
         raise ContractViolation("receipt_schema_invalid")
     return float(value)
+
+
+def _text(value: object) -> str:
+    if not isinstance(value, str):
+        raise ContractViolation("receipt_schema_invalid")
+    return value
 
 
 def validate_receipt(raw: bytes) -> ReceiptEvidence:
@@ -158,6 +166,7 @@ def validate_receipt(raw: bytes) -> ReceiptEvidence:
         dataset = _object(root["dataset"], _DATASET_KEYS)
         evaluation = _object(root["evaluation"], _EVALUATION_KEYS)
         bootstrap = _object(evaluation["bootstrap"], _BOOTSTRAP_KEYS)
+        model = _object(root["model"], _MODEL_KEYS)
         privacy = _object(root["privacy"], _PRIVACY_KEYS)
         provenance = _object(root["provenance"], _PROVENANCE_KEYS)
         metrics_raw = _object(
@@ -189,6 +198,20 @@ def validate_receipt(raw: bytes) -> ReceiptEvidence:
             "excluded"
         ] != list(_EXCLUSIONS):
             raise ContractViolation("receipt_schema_invalid")
+        if not isinstance(dataset["name"], str) or not isinstance(dataset["role"], str):
+            raise ContractViolation("receipt_schema_invalid")
+        if not isinstance(root["title"], str) or not isinstance(root["use_limitation"], str):
+            raise ContractViolation("receipt_schema_invalid")
+        if not isinstance(model["family"], str) or not isinstance(model["calibrator"], str):
+            raise ContractViolation("receipt_schema_invalid")
+        if (
+            not isinstance(model["seeds"], list)
+            or len(model["seeds"]) != 3
+            or any(isinstance(seed, bool) or not isinstance(seed, int) for seed in model["seeds"])
+            or not isinstance(model["threshold"], (int, float))
+            or isinstance(model["threshold"], bool)
+        ):
+            raise ContractViolation("receipt_schema_invalid")
         result: dict[str, MetricInterval] = {}
         for name in _DISPLAYED_METRICS:
             metric = _number(metrics_raw[name])
@@ -202,20 +225,20 @@ def validate_receipt(raw: bytes) -> ReceiptEvidence:
                 raise ContractViolation("receipt_schema_invalid")
             result[name] = MetricInterval(estimate, lower, upper)
         return ReceiptEvidence(
-            dataset_name=str(dataset["name"]),
-            dataset_role=str(dataset["role"]),
+            dataset_name=_text(dataset["name"]),
+            dataset_role=_text(dataset["role"]),
             n=int(dataset["n"]),
             events=int(dataset["events"]),
             prevalence=_number(dataset["prevalence"]),
-            metrics=result,
-            bootstrap_method=str(bootstrap["method"]),
+            metrics=MappingProxyType(result),
+            bootstrap_method=_text(bootstrap["method"]),
             bootstrap_samples=int(bootstrap["samples"]),
             bootstrap_seed=int(bootstrap["seed"]),
             evaluation_status="final",
             success_count=int(evaluation["set_b_final_evaluation_successes"]),
-            final_lock_status=str(evaluation["final_lock_status"]),
-            use_limitation=str(root["use_limitation"]),
-            formal_metrics_sha256=str(provenance["formal_metrics_sha256"]),
+            final_lock_status=_text(evaluation["final_lock_status"]),
+            use_limitation=_text(root["use_limitation"]),
+            formal_metrics_sha256=_text(provenance["formal_metrics_sha256"]),
         )
     except ContractViolation:
         raise
@@ -233,7 +256,9 @@ def validate_release(raw: bytes, receipt: ReceiptEvidence) -> ReleaseRelationshi
             or root["release_kind"] != "research-software-portfolio-closure"
         ):
             raise ContractViolation("release_relationship_invalid")
-        scientific = _object(root["scientific_evidence"], _SCIENTIFIC_KEYS)
+        if receipt.dataset_name != "PhysioNet Challenge 2012 Set B" or receipt.dataset_role != "final_test" or receipt.n != 4000 or receipt.events != 568 or receipt.formal_metrics_sha256 != FORMAL_METRICS_SHA256:
+            raise ContractViolation("release_relationship_invalid")
+        scientific = _object(root["scientific_evidence"], _SCIENTIFIC_KEYS, "release_relationship_invalid")
         if (
             scientific["final_result_receipt"] != "docs/final-result-receipt.json"
             or scientific["final_result_receipt_git_blob_sha"] != RECEIPT_GIT_BLOB_SHA
@@ -253,7 +278,9 @@ def validate_release(raw: bytes, receipt: ReceiptEvidence) -> ReleaseRelationshi
             _LIMITATIONS
         ):
             raise ContractViolation("release_relationship_invalid")
-        return ReleaseRelationship("v0.2.0", _LIMITATIONS, flags)  # type: ignore[arg-type]
+        return ReleaseRelationship(
+            "v0.2.0", _LIMITATIONS, MappingProxyType(cast(dict[str, bool], flags))
+        )
     except ContractViolation:
         raise
     except (KeyError, TypeError, ValueError) as exc:

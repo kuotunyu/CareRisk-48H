@@ -2,8 +2,10 @@
 import hashlib
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
+import carerisk_space.evidence as evidence_module
 import pytest
 from carerisk_space.contracts import ContractViolation
 from carerisk_space.evidence import (
@@ -65,6 +67,13 @@ def test_receipt_rejects_nonfinite_json_constants(token: bytes) -> None:
         loads_strict_object(raw)
 
 
+def test_strict_parser_rejects_nested_duplicate_and_trailing_bytes() -> None:
+    with pytest.raises(ContractViolation, match="receipt_schema_invalid"):
+        loads_strict_object(b'{"nested":{"x":1,"x":2}}')
+    with pytest.raises(ContractViolation, match="receipt_schema_invalid"):
+        loads_strict_object(b'{"schema_version":1} trailing')
+
+
 def test_exact_committed_receipt_hash_and_git_blob() -> None:
     raw = receipt_raw()
     assert hashlib.sha256(raw).hexdigest() == RECEIPT_SHA256
@@ -76,6 +85,30 @@ def test_receipt_schema_is_exact() -> None:
     assert evidence.dataset_name == "PhysioNet Challenge 2012 Set B"
     assert evidence.dataset_role == "final_test"
     assert evidence.formal_metrics_sha256 == FORMAL_METRICS_SHA256
+
+
+@pytest.mark.parametrize("field", ["name", "title", "use_limitation"])
+def test_receipt_text_fields_require_strings(field: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = json.loads(receipt_raw())
+    if field in source["dataset"]:
+        source["dataset"][field] = 3
+    else:
+        source[field] = 3
+    raw = json.dumps(source).encode()
+    monkeypatch.setattr(evidence_module, "RECEIPT_SHA256", hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(evidence_module, "RECEIPT_GIT_BLOB_SHA", git_blob_sha1(raw))
+    with pytest.raises(ContractViolation, match="receipt_schema_invalid"):
+        validate_receipt(raw)
+
+
+def test_receipt_model_schema_and_types_are_exact(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = json.loads(receipt_raw())
+    source["model"]["family"] = 3
+    raw = json.dumps(source).encode()
+    monkeypatch.setattr(evidence_module, "RECEIPT_SHA256", hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(evidence_module, "RECEIPT_GIT_BLOB_SHA", git_blob_sha1(raw))
+    with pytest.raises(ContractViolation, match="receipt_schema_invalid"):
+        validate_receipt(raw)
 
 
 def test_receipt_metrics_and_intervals_are_finite_and_ordered() -> None:
@@ -119,8 +152,33 @@ def test_release_relationship_is_exact() -> None:
     )
 
 
+def test_release_requires_supplied_validated_receipt_relationship() -> None:
+    receipt = validate_receipt(receipt_raw())
+    mismatched = replace(receipt, dataset_name="other")
+    with pytest.raises(ContractViolation, match="release_relationship_invalid"):
+        validate_release(release_raw(), mismatched)
+
+
+def test_release_nested_schema_uses_bounded_failure_code() -> None:
+    source = json.loads(release_raw())
+    source["scientific_evidence"] = {"broken": True}
+    with pytest.raises(ContractViolation, match="release_relationship_invalid"):
+        validate_release(json.dumps(source).encode(), validate_receipt(receipt_raw()))
+
+
+def test_validated_mappings_are_deeply_immutable() -> None:
+    receipt = validate_receipt(receipt_raw())
+    with pytest.raises(TypeError):
+        receipt.metrics["new"] = receipt.metrics["auroc"]  # type: ignore[index]
+    release = validate_release(release_raw(), receipt)
+    with pytest.raises(TypeError):
+        release.scientific_change_flags["new"] = True  # type: ignore[index]
+
+
 @pytest.mark.parametrize("gate", range(1, 13))
-def test_receipt_numbered_gate_mutations_are_rejected(gate: int) -> None:
+def test_receipt_numbered_gate_mutations_are_rejected(
+    gate: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
     source = json.loads(receipt_raw())
     mutations = {
         1: lambda d: d.update({"_path": "not-a-runtime-object"}),
@@ -137,8 +195,13 @@ def test_receipt_numbered_gate_mutations_are_rejected(gate: int) -> None:
         12: lambda d: d["privacy"].update({"excluded": []}),
     }
     mutations[gate](source)
-    with pytest.raises(ContractViolation):
-        validate_receipt(json.dumps(source, allow_nan=False).encode())
+    raw = json.dumps(source, allow_nan=False).encode()
+    if gate == 4:
+        raw += b" trailing"
+    monkeypatch.setattr(evidence_module, "RECEIPT_SHA256", hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(evidence_module, "RECEIPT_GIT_BLOB_SHA", git_blob_sha1(raw))
+    with pytest.raises(ContractViolation, match="receipt_schema_invalid"):
+        validate_receipt(raw)
 
 
 @pytest.mark.parametrize("gate", range(1, 7))
