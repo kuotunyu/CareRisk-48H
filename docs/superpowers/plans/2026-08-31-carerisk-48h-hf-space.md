@@ -17,7 +17,7 @@
 - The only user-controlled value is one radio selection from four fixed scenario IDs. There is no upload, editable JSON, free text, code, dataframe editor, arbitrary file/path/URL, live probability, score, risk class, recommendation, or threshold-based case decision.
 - Scenario output is limited to `evidence available` or `evidence withheld`, fixed gate booleans, and one enumerated reason. Synthetic states are explanatory application constants, not clinical validation.
 - Quantitative UI values come only from the exact committed `v0.2.0` aggregate receipt after byte, Git-blob, schema, release, and deployment-manifest validation. Any validation failure disables metrics and scenario controls.
-- Receipt SHA-256 is `f1eb4958f253bf016bc73c405f498055b36cb8b7100654d8868a088f31d426fc`; receipt Git blob is `b13ec7655bbdb8db1079c3b4793a0bf5590ef69c`; formal metrics SHA-256 is `808525afad2ec550e8059c4ba37c2f5aaf8af748873a5a590dff7f1aeaaf47af`.
+- Receipt SHA-256 is `d32d833af25e4ebb2f5bd06b64343eb36d7cd180c8e9777f539f6401b78064b3`; receipt Git blob is `b13ec7655bbdb8db1079c3b4793a0bf5590ef69c` (3,363 bytes); formal metrics SHA-256 is `808525afad2ec550e8059c4ba37c2f5aaf8af748873a5a590dff7f1aeaaf47af`. The canonical byte domain is exactly the unmodified LF bytes emitted by `git cat-file blob b13ec7655bbdb8db1079c3b4793a0bf5590ef69c`; no line-ending normalization is allowed. The rejected noncanonical CRLF working-tree diagnostic SHA-256 `f1eb4958f253bf016bc73c405f498055b36cb8b7100654d8868a088f31d426fc` cannot be exported or used for validation.
 - Evidence tag is annotated object `2f1ddb0e2276fa894e124b856de488e31e21e88c`, resolving to commit `f4c820cce953f401c1ec525bd8df3a3c1678bbf3`.
 - Do not read, modify, copy, or stage `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation working assets, private scientific ledgers/final locks, unapproved private evaluation outputs, or Set C. This prohibition does not cover the approved public `v0.2.0` receipt/release Git objects or the dependency lockfiles created and verified by this plan. Never run the receipt exporter or final evaluation.
 - Do not import, copy, package, or execute existing `app/dashboard.py`, root `app.py`, `src/carerisk48h`, joblib, scoring, guard, inference, schema, model, calibrator, or synthetic-patient paths in the public application.
@@ -463,6 +463,8 @@ def git_blob_sha1(raw: bytes) -> str:
 ```
 
 Build immutable typed values only after exact top-level/nested keys, expected constants, finite/range/interval consistency, bootstrap, privacy exclusions, formal metrics hash, receipt SHA-256, and Git blob gates pass. Do not expose threshold, confusion, PPV, NPV, sensitivity, specificity, subgroup, artifact, or record-level values in `ReceiptEvidence.metrics`.
+
+Receipt tests and runtime validation must hash the exact unmodified bytes read from the approved Git blob; they must not normalize CRLF/LF. A CRLF-normalized diagnostic is rejected and is never exported or accepted by a manifest/runtime gate.
 
 - [ ] **Step 4: Run targeted GREEN and type checks**
 
@@ -1117,6 +1119,8 @@ def test_source_maps_partition_the_exact_public_allowlist() -> None:
 
 Invoke `git cat-file blob` with the already validated exact commit-and-path argument, or use an equivalent no-checkout Git object read. Reject a dirty worktree before manifest generation or export. Reject missing/non-commit SHAs, non-ancestor manifest commit, mutable tag mismatch, path traversal, symlinks, special files, collisions, unsorted/duplicate paths, hash/size mismatch, secret/private-key signatures, denied suffixes/content, and any final path-set difference. Write into a newly created destination only; on failure remove only that verified temporary destination.
 
+For `docs/final-result-receipt.json`, the exporter must read blob `b13ec7655bbdb8db1079c3b4793a0bf5590ef69c` (3,363 bytes) and require SHA-256 `d32d833af25e4ebb2f5bd06b64343eb36d7cd180c8e9777f539f6401b78064b3`; checkout line endings and normalization are invalid.
+
 Compute `ExportReceipt.tree_sha256` as SHA-256 over the UTF-8 bytes of each sorted `destination_path`, NUL, lowercase file SHA-256, NUL, decimal byte size, and newline. This is an audit digest for the exact tree listing, not a substitute for per-file hashes or a Hugging Face destination commit.
 
 - [ ] **Step 4: Run GREEN using temporary synthetic Git repositories**
@@ -1460,6 +1464,7 @@ if (@(git status --porcelain=v1 --untracked-files=all).Count -ne 0) { throw 'Dir
 if ((git rev-parse 'v0.2.0^{tag}').Trim() -cne '2f1ddb0e2276fa894e124b856de488e31e21e88c') { throw 'Tag object mismatch' }
 if ((git rev-parse 'v0.2.0^{}').Trim() -cne 'f4c820cce953f401c1ec525bd8df3a3c1678bbf3') { throw 'Tag commit mismatch' }
 if ((git rev-parse 'v0.2.0:docs/final-result-receipt.json').Trim() -cne 'b13ec7655bbdb8db1079c3b4793a0bf5590ef69c') { throw 'Receipt blob mismatch' }
+if ((git cat-file -s 'v0.2.0:docs/final-result-receipt.json').Trim() -cne '3363') { throw 'Receipt byte size mismatch' }
 ```
 
 - [ ] **Step 2: Generate the real manifest from committed objects**

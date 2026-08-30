@@ -164,7 +164,8 @@ The exact evidence anchors are:
 - Release manifest source path: `docs/release-v0.2.0.json`.
 - Receipt source path: `docs/final-result-receipt.json`.
 - Receipt Git blob SHA: `b13ec7655bbdb8db1079c3b4793a0bf5590ef69c`.
-- Receipt SHA-256: `f1eb4958f253bf016bc73c405f498055b36cb8b7100654d8868a088f31d426fc`.
+- Receipt SHA-256: `d32d833af25e4ebb2f5bd06b64343eb36d7cd180c8e9777f539f6401b78064b3`.
+- The canonical receipt byte domain is the 3,363 unmodified LF bytes emitted by `git cat-file blob b13ec7655bbdb8db1079c3b4793a0bf5590ef69c`; no checkout, text-mode, or line-ending normalization is permitted. The rejected noncanonical CRLF working-tree diagnostic SHA-256 `f1eb4958f253bf016bc73c405f498055b36cb8b7100654d8868a088f31d426fc` must not be exported or used for validation.
 - Formal metrics SHA-256 named inside the receipt: `808525afad2ec550e8059c4ba37c2f5aaf8af748873a5a590dff7f1aeaaf47af`.
 
 The export process must extract the receipt and release manifest from the tag commit with Git object reads, not copy them from an arbitrary working tree.
@@ -174,7 +175,7 @@ The export process must extract the receipt and release manifest from the tag co
 Receipt validation is fail-closed and must verify all of the following before parsing values for display:
 
 1. File exists at exactly `evidence/final-result-receipt.json` and is a regular file, not a symlink.
-2. Raw-byte SHA-256 equals the fixed receipt SHA-256.
+2. Raw-byte SHA-256 equals the fixed receipt SHA-256 over the unmodified Git-blob bytes; CRLF-normalized bytes fail this gate.
 3. Git blob hash computed as SHA-1 over `blob <byte-length>\0<raw-bytes>` equals the fixed receipt Git blob SHA.
 4. UTF-8 JSON parses without duplicate keys, NaN, Infinity, or trailing data.
 5. Top-level keys exactly equal `confidence_intervals`, `dataset`, `evaluation`, `evaluation_status`, `metrics`, `model`, `privacy`, `provenance`, `schema_version`, `title`, and `use_limitation`.
