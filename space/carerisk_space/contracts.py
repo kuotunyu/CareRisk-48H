@@ -16,6 +16,33 @@ SAFETY_SUBTITLE_EN = (
     "No patient data entry or upload, no live predictions, and no care decisions."
 )
 
+PUBLIC_PATHS: tuple[str, ...] = (
+    "README.md",
+    "Dockerfile",
+    "requirements.lock",
+    "requirements-dev.lock",
+    "app.py",
+    "carerisk_space/__init__.py",
+    "carerisk_space/contracts.py",
+    "carerisk_space/evidence.py",
+    "carerisk_space/scenarios.py",
+    "carerisk_space/ui.py",
+    "evidence/final-result-receipt.json",
+    "evidence/release-v0.2.0.json",
+    "deployment-manifest.json",
+    "LICENSE",
+    "NOTICE",
+    "CITATION.cff",
+    "SBOM.spdx.json",
+    "THIRD_PARTY_LICENSES.json",
+    "tests/test_claim_contract.py",
+    "tests/test_evidence_contract.py",
+    "tests/test_scenario_contract.py",
+    "tests/test_gradio_contract.py",
+    "tests/test_export_contract.py",
+    "tests/test_container_contract.py",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ClaimContract:
@@ -40,6 +67,11 @@ EvidenceFailureCode = Literal[
     "release_relationship_invalid",
     "deployment_manifest_invalid",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceFailure:
+    code: EvidenceFailureCode
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,9 +106,45 @@ class ReleaseRelationship:
     scientific_change_flags: Mapping[str, bool]
 
 
+ManifestCapability = Literal[
+    "runtime_code", "evidence", "legal", "metadata", "supply_chain", "test"
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ManifestFile:
+    source_ref: str
+    source_path: str
+    destination_path: str
+    sha256: str | None
+    byte_size: int | None
+    media_type: str
+    capability: ManifestCapability
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentManifest:
+    space_app_source_git_sha: str
+    evidence_tag: str
+    evidence_tag_object: str
+    evidence_tag_commit: str
+    destination_repository: str
+    files: tuple[ManifestFile, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceViewModel:
+    receipt: ReceiptEvidence
+    release: ReleaseRelationship
+    manifest: DeploymentManifest
+
+
 class ContractViolation(ValueError):
     """Raised when immutable public evidence fails a contract gate."""
 
 
 class ReceiptHashMismatch(ContractViolation):
     """Raised when receipt bytes do not match the committed evidence anchor."""
+
+
+EvidenceLoadResult = EvidenceViewModel | EvidenceFailure
