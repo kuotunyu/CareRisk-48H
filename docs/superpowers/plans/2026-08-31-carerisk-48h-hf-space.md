@@ -419,7 +419,7 @@ def test_exact_committed_receipt_hash_and_git_blob() -> None:
     assert git_blob_sha1(raw) == RECEIPT_GIT_BLOB_SHA
 ```
 
-Also add named tests `test_receipt_schema_is_exact`, `test_receipt_metrics_and_intervals_are_finite_and_ordered`, `test_receipt_privacy_exclusions_are_exact`, `test_release_relationship_is_exact`, and one mutation test for every numbered gate in design Sections 7.2 and 7.3.
+Task 2 owns design Section 7.2 gates 2–12 and Section 7.3 gates 2–6: exact raw bytes, strict JSON, typed schema, finite metrics/privacy, and the supplied validated receipt relationship. Add named tests `test_receipt_schema_is_exact`, `test_receipt_metrics_and_intervals_are_finite_and_ordered`, `test_receipt_privacy_exclusions_are_exact`, `test_release_relationship_is_exact`, plus controlled-anchor mutation coverage for each of those numbered gates. Gate 2 must patch neither the canonical SHA nor the canonical Git-blob anchor (retain both unchanged) and therefore fail at the raw SHA gate; gate 3 must patch only the SHA anchor (retain the blob anchor) to reach the Git-blob mismatch; gates 4–12 must controlled-patch both anchors to exercise downstream validation. JSON mutations must never masquerade as path, existence, symlink, manifest hash, or manifest-size gates.
 
 - [ ] **Step 2: Run RED**
 
@@ -429,6 +429,8 @@ $env:PYTHONPATH = (Resolve-Path space)
 ```
 
 Expected: FAIL on missing evidence interfaces.
+
+Task 3 owns Section 7.2 gate 1 and Section 7.3 gate 1 through `read_regular_file` and deployment-manifest validation: literal package-relative paths, existence, regular/non-symlink checks, and manifest-declared hash/size checks. Task 3 must add exact missing-file, non-regular/symlink, receipt/release hash, and size mutations; these path/manifest gates must not be represented by JSON mutations.
 
 - [ ] **Step 3: Implement strict parsing without permissive fallbacks**
 
@@ -563,7 +565,7 @@ def load_evidence(bundle_root: Path) -> EvidenceLoadResult:
     return format_evidence(receipt, release, manifest)
 ```
 
-`read_regular_file` accepts only the three literal package-relative paths, rejects symlinks and non-regular files, and never receives a user value. Manifest validation requires exact keys, exact tag/object/commit, destination `steven0226/carerisk-48h`, exact allowlist, sorted unique paths, file sizes/hashes, capability enum, base-image/lock/SBOM/license hashes, and receipt/release relationships.
+`read_regular_file` accepts only the three literal package-relative paths, rejects symlinks and non-regular files, and never receives a user value. This implements Task 3’s Section 7.2 gate 1 and Section 7.3 gate 1 ownership. Manifest validation requires exact keys, exact tag/object/commit, destination `steven0226/carerisk-48h`, exact allowlist, sorted unique paths, file sizes/hashes, capability enum, base-image/lock/SBOM/license hashes, and receipt/release relationships. Its tests must use exact missing, symlink/non-regular, hash, and size mutations; JSON mutations cannot stand in for these path/manifest gates.
 
 Define the 24-entry `PUBLIC_PATHS: tuple[str, ...]` once in `contracts.py` using the exact order in the File and Interface Map. Runtime manifest validation, UI provenance, exporter source mapping, and tests all consume that single application constant; the export contract test retains an independent expected tuple to catch accidental edits.
 
