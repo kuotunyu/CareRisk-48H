@@ -60,6 +60,19 @@ PUBLIC_CLAIM_CONTRACT = ClaimContract(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class ScenarioViewModel:
+    """One immutable, abstract synthetic evidence-gate state."""
+
+    id: str
+    label_zh_tw: str
+    state: Literal["evidence available", "evidence withheld"]
+    reason_zh_tw: str
+    schema_contract: bool
+    measurement_coverage: bool
+    value_pattern: bool
+
+
 EvidenceFailureCode = Literal[
     "receipt_missing",
     "receipt_hash_mismatch",
