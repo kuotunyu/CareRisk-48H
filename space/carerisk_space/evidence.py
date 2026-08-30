@@ -553,7 +553,12 @@ def validate_deployment_manifest(
 ) -> DeploymentManifest:
     try:
         root = loads_strict_object(raw)
-        if set(root) != _MANIFEST_KEYS or root["schema_version"] != 1:
+        schema_version = root.get("schema_version")
+        if (
+            set(root) != _MANIFEST_KEYS
+            or type(schema_version) is not int
+            or schema_version != 1
+        ):
             raise ContractViolation("deployment_manifest_invalid")
         app_source_sha = _manifest_text(root["space_app_source_git_sha"])
         evidence_tag = _manifest_text(root["evidence_tag"])

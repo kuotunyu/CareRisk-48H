@@ -577,6 +577,42 @@ def test_normal_state_returns_receipt_backed_view(candidate_bundle: Path) -> Non
     assert result.manifest.destination_repository == "steven0226/carerisk-48h"
 
 
+def apply_mutation(
+    bundle: Path,
+    mutation: str,
+    *,
+    controlled_receipt_anchor_patch: pytest.MonkeyPatch | None = None,
+) -> None:
+    """Mutate only the three temporary candidate JSON files owned by this test module."""
+    receipt_path = bundle / "evidence" / "final-result-receipt.json"
+    release_path = bundle / "evidence" / "release-v0.2.0.json"
+    if mutation == "remove_receipt":
+        receipt_path.unlink()
+    elif mutation == "change_receipt_byte":
+        receipt_path.write_bytes(receipt_path.read_bytes().replace(b'"title":', b'"titel":', 1))
+    elif mutation == "duplicate_receipt_key":
+        if controlled_receipt_anchor_patch is None:
+            raise AssertionError("duplicate_receipt_key requires controlled test-only anchors")
+        raw = receipt_path.read_bytes().replace(
+            b'"schema_version": 1,', b'"schema_version": 1,\n  "schema_version": 1,', 1
+        )
+        receipt_path.write_bytes(raw)
+        controlled_receipt_anchor_patch.setattr(
+            evidence_module, "RECEIPT_SHA256", hashlib.sha256(raw).hexdigest()
+        )
+        controlled_receipt_anchor_patch.setattr(
+            evidence_module, "RECEIPT_GIT_BLOB_SHA", git_blob_sha1(raw)
+        )
+    elif mutation == "change_release_flag":
+        release = json.loads(release_path.read_bytes())
+        release["scientific_evidence"]["set_b_rerun"] = True
+        release_path.write_text(json.dumps(release), encoding="utf-8")
+    elif mutation == "change_manifest_source_sha":
+        _rewrite_manifest(bundle, lambda value: value.update(space_app_source_git_sha="b" * 40))
+    else:
+        raise AssertionError(mutation)
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     [
@@ -593,27 +629,11 @@ def test_evidence_failure_reason_is_bounded(
     expected: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    receipt_path = candidate_bundle / "evidence" / "final-result-receipt.json"
-    release_path = candidate_bundle / "evidence" / "release-v0.2.0.json"
-    if mutation == "remove_receipt":
-        receipt_path.unlink()
-    elif mutation == "change_receipt_byte":
-        receipt_path.write_bytes(receipt_path.read_bytes().replace(b'"title":', b'"titel":', 1))
-    elif mutation == "duplicate_receipt_key":
-        raw = receipt_path.read_bytes().replace(
-            b'"schema_version": 1,', b'"schema_version": 1,\n  "schema_version": 1,', 1
-        )
-        receipt_path.write_bytes(raw)
-        monkeypatch.setattr(evidence_module, "RECEIPT_SHA256", hashlib.sha256(raw).hexdigest())
-        monkeypatch.setattr(evidence_module, "RECEIPT_GIT_BLOB_SHA", git_blob_sha1(raw))
-    elif mutation == "change_release_flag":
-        release = json.loads(release_path.read_bytes())
-        release["scientific_evidence"]["set_b_rerun"] = True
-        release_path.write_text(json.dumps(release), encoding="utf-8")
-    elif mutation == "change_manifest_source_sha":
-        _rewrite_manifest(candidate_bundle, lambda value: value.update(space_app_source_git_sha="b" * 40))
-    else:
-        raise AssertionError(mutation)
+    apply_mutation(
+        candidate_bundle,
+        mutation,
+        controlled_receipt_anchor_patch=monkeypatch,
+    )
     result = evidence_module.load_evidence(candidate_bundle)
     assert result == contracts_module.EvidenceFailure(expected)
     assert tuple(field.name for field in fields(result)) == ("code",)
@@ -770,6 +790,20 @@ def test_manifest_nested_duplicate_key_maps_to_bounded_failure(candidate_bundle:
     assert raw.count(needle) == 1
     raw = raw.replace(needle, b'"runtime_lock_sha256":"0","runtime_lock_sha256":"', 1)
     path.write_bytes(raw)
+    assert evidence_module.load_evidence(candidate_bundle) == contracts_module.EvidenceFailure(
+        "deployment_manifest_invalid"
+    )
+
+
+@pytest.mark.parametrize("token", [b"true", b"1.0", b"1e9999"])
+def test_manifest_schema_version_requires_exact_integer_one(
+    candidate_bundle: Path, token: bytes
+) -> None:
+    path = candidate_bundle / "deployment-manifest.json"
+    raw = path.read_bytes()
+    needle = b'"schema_version":1'
+    assert raw.count(needle) == 1
+    path.write_bytes(raw.replace(needle, b'"schema_version":' + token, 1))
     assert evidence_module.load_evidence(candidate_bundle) == contracts_module.EvidenceFailure(
         "deployment_manifest_invalid"
     )
