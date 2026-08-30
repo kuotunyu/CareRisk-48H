@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the new application isolated under `space/` as a small `carerisk_space` package. Pure standard-library contracts parse three committed JSON artifacts and fail closed before Gradio is constructed; Gradio only presents static evidence plus one four-choice radio input. A source-only exporter reads exact Git blobs into a fresh directory, with application files from an app-source commit, evidence and legal files from the annotated `v0.2.0` tag commit, and `deployment-manifest.json` from the immediately following manifest commit.
 
-**Tech Stack:** CPython 3.11 slim-bookworm Docker image pinned by patch tag and OCI digest; Gradio; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
+**Tech Stack:** CPython 3.11 slim-bookworm runtime image pinned by patch tag and OCI digest; an official Playwright Python test/reviewer image pinned by matching Playwright patch tag plus OCI index/linux-amd64 digests; Gradio; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
 
 **Approved design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md` at commit `10a85171afeb9fafb531b3bca1128cddc987619e`.
 
@@ -19,13 +19,14 @@
 - Quantitative UI values come only from the exact committed `v0.2.0` aggregate receipt after byte, Git-blob, schema, release, and deployment-manifest validation. Any validation failure disables metrics and scenario controls.
 - Receipt SHA-256 is `f1eb4958f253bf016bc73c405f498055b36cb8b7100654d8868a088f31d426fc`; receipt Git blob is `b13ec7655bbdb8db1079c3b4793a0bf5590ef69c`; formal metrics SHA-256 is `808525afad2ec550e8059c4ba37c2f5aaf8af748873a5a590dff7f1aeaaf47af`.
 - Evidence tag is annotated object `2f1ddb0e2276fa894e124b856de488e31e21e88c`, resolving to commit `f4c820cce953f401c1ec525bd8df3a3c1678bbf3`.
-- Do not read, modify, copy, or stage `.env`, `data/`, `artifacts/`, model bundles, checkpoints, Set B working assets, training/evaluation outputs, ledgers, locks, or Set C. Never run the receipt exporter or final evaluation.
+- Do not read, modify, copy, or stage `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation working assets, private scientific ledgers/final locks, unapproved private evaluation outputs, or Set C. This prohibition does not cover the approved public `v0.2.0` receipt/release Git objects or the dependency lockfiles created and verified by this plan. Never run the receipt exporter or final evaluation.
 - Do not import, copy, package, or execute existing `app/dashboard.py`, root `app.py`, `src/carerisk48h`, joblib, scoring, guard, inference, schema, model, calibrator, or synthetic-patient paths in the public application.
 - Product code reads no environment variable and performs no network request, process spawn, shell call, filesystem write, persistence, analytics, telemetry, or dynamic import.
 - Runtime is CPU-only, non-root, and read-only except framework-owned operations in bounded ephemeral `/tmp`. No persistent service is started during ordinary unit tests.
 - The approved “no shell” interpretation is precise: the runtime account is non-login with `/usr/sbin/nologin`, the app uses exec-form startup and never invokes a shell, and unnecessary shell utilities are excluded. Do not assert that Debian slim physically lacks `/bin/sh`.
-- Locks contain the complete direct and transitive closure with exact versions and accepted distribution hashes. Docker installation uses `python -m pip install --require-hashes --no-deps -r requirements.lock`.
-- The Docker base uses a real CPython 3.11 slim-bookworm patch tag plus a real OCI digest resolved and recorded during implementation. No mutable-only `python:3.11-slim` reference is accepted.
+- `requirements.lock` contains the complete runtime closure. `requirements-dev.lock` contains the complete runtime-plus-development union closure; every normalized runtime package/version pair is present unchanged in the development lock. Both locks contain exact versions and accepted target-distribution hashes. Docker installation uses `python -m pip install --require-hashes --no-deps` against the appropriate complete closure.
+- The final runtime base uses a real CPython 3.11 slim-bookworm patch tag plus real OCI index/linux-amd64 digests. The test/reviewer base uses the official Playwright Python image whose patch version exactly matches the locked Playwright Python package, with real tag, index digest, linux/amd64 digest, embedded browser revisions, OS/system-package inventory digest, license, and notices recorded. Mutable-only image references are rejected.
+- Registry/package/browser acquisition and Docker build are controlled supply-chain phases: egress is allowed only to retrieve already selected tag/digest/hash-pinned inputs, and all resolved bytes are verified and inventoried. Hash locks and `--pull=false` do not make a networked build offline. Evidence export, test execution, runtime/cold-start execution, and browser review are separate no-egress phases.
 - Never use broad staging (`git add .`, `git add -A`, directory staging, or wildcard staging). Every commit command below names every file explicitly.
 - Export requires a clean source worktree and a nonexistent or empty destination. Never export by copying the working tree, and never commit an export directory.
 - Hugging Face collision checking, Space creation, upload, visibility, Secrets/Variables, and live review are outside implementation. GitHub About, Pages, topics, pinning, visibility, releases, and metadata changes are also outside implementation.
@@ -46,17 +47,17 @@
 | File | Responsibility |
 | --- | --- |
 | `space/README.md` | Hugging Face card metadata, exact claim ceiling, evidence/license boundary, source links |
-| `space/Dockerfile` | Digest-pinned Linux test stage plus non-root, read-only-compatible final CPU runtime |
+| `space/Dockerfile` | Digest-pinned official Playwright test/reviewer stage plus non-root CPython final CPU runtime |
 | `space/requirements.lock` | Complete hash-locked runtime dependency closure |
-| `space/requirements-dev.lock` | Complete hash-locked test/review dependency closure |
+| `space/requirements-dev.lock` | Complete hash-locked runtime-plus-development union closure for the reviewer target |
 | `space/app.py` | Fixed port 7860 exec-form Python entry point; no environment configuration |
 | `space/carerisk_space/__init__.py` | Package identity and version-free public surface |
 | `space/carerisk_space/contracts.py` | Exact copy, hashes, schemas, immutable view models, bounded reason codes |
 | `space/carerisk_space/evidence.py` | Strict JSON parsing, hash/schema/release/deployment validation, formatting |
 | `space/carerisk_space/scenarios.py` | Four immutable abstract scenarios and exact-ID callback |
 | `space/carerisk_space/ui.py` | Safe/failure Gradio `Blocks`, DOM ordering, bounded event binding |
-| `space/SBOM.spdx.json` | Deterministic SPDX record for app, base image, and locked Python packages |
-| `space/THIRD_PARTY_LICENSES.json` | One reviewed license record per locked distribution |
+| `space/SBOM.spdx.json` | Deterministic SPDX record for app, both base images, embedded browsers/system inventory, and locked Python packages |
+| `space/THIRD_PARTY_LICENSES.json` | Reviewed license/notice records for every locked distribution, base image, and embedded browser identity |
 | `space/tests/test_claim_contract.py` | Exact card/UI copy and DOM/focus ordering |
 | `space/tests/test_evidence_contract.py` | Receipt/release/deployment fail-closed validation |
 | `space/tests/test_scenario_contract.py` | Four-state registry, no-score fields, adversarial callback |
@@ -74,11 +75,12 @@
 | `tools/space/requirements-runtime.in` | Reviewed direct runtime requirement input |
 | `tools/space/requirements-dev.in` | Reviewed direct verification requirement input |
 | `tools/space/lock-tooling.txt` | Hash-locked resolver/generator tooling |
-| `tools/space/base-image.json` | Resolved patch tag, index digest, linux/amd64 digest, registry source |
+| `tools/space/base-image.json` | Named runtime/reviewer records with patch tags, index/platform digests, Python/Playwright/browser identity, and inventory hashes |
 | `tools/space/license-policy.json` | Reviewed SPDX expressions and dispositions keyed by normalized package/version |
 | `scripts/build_hf_space_supply_chain.py` | Resolve/verify locks, base reference, inventory, and SPDX outputs |
 | `scripts/export_hf_space.py` | Generate deployment manifest and clean export from committed Git objects |
 | `scripts/review_hf_space_local.py` | Ephemeral local browser/accessibility/cold-start evidence runner |
+| `scripts/verify_hf_space_candidate.py` | Cross-platform ownership-safe final export/build/test/review orchestration with bounded temp cleanup |
 | `tests/test_hf_space_source_boundary.py` | AST/import/no-write/no-network/no-existing-app boundary |
 | `tests/test_hf_space_supply_chain.py` | Lock/base/SBOM/license reproducibility contracts |
 | `tests/test_hf_space_exporter.py` | Git-object mapping, two-commit provenance, path and content rejection |
@@ -251,16 +253,24 @@ class ExportReceipt:
 - [ ] **Step 1: Verify exact branch, base, remote, and clean state**
 
 ```powershell
-$expectedDesign = '10a85171afeb9fafb531b3bca1128cddc987619e'
+$approvedDesign = '10a85171afeb9fafb531b3bca1128cddc987619e'
 $expectedMain = '11184984ddd553aa3b45a3d5fc0ea4a866877722'
 git fetch origin main --tags --prune
-if ((git rev-parse HEAD) -ne $expectedDesign) { throw 'Unexpected design HEAD' }
-if ((git rev-parse origin/main) -ne $expectedMain) { throw 'origin/main moved; stop for central review' }
-if ((git merge-base HEAD origin/main) -ne $expectedMain) { throw 'Unexpected merge-base' }
+$approvedImplementationHead = ([string]$env:CARERISK_APPROVED_IMPLEMENTATION_SHA).Trim()
+if ($approvedImplementationHead -notmatch '^[0-9a-f]{40}$') { throw 'Invalid implementation HEAD' }
+$currentHead = (git rev-parse HEAD).Trim()
+if ($currentHead -cne $approvedImplementationHead) { throw 'HEAD differs from central authorization' }
+if ((git branch --show-current).Trim() -cne 'docs/carerisk-hf-space-design') { throw 'Unexpected implementation branch' }
+if ((git rev-parse origin/main).Trim() -cne $expectedMain) { throw 'origin/main moved; stop for central review' }
+if ((git merge-base HEAD origin/main).Trim() -cne $expectedMain) { throw 'Unexpected merge-base' }
+git merge-base --is-ancestor $approvedDesign $approvedImplementationHead
+if ($LASTEXITCODE -ne 0) { throw 'Approved design is not an ancestor' }
+$postDesignPaths = @(git diff --name-only "$approvedDesign..$approvedImplementationHead")
+if ($postDesignPaths.Count -ne 1 -or $postDesignPaths[0] -cne 'docs/superpowers/plans/2026-08-31-carerisk-48h-hf-space.md') { throw 'Unexpected post-design scope' }
 if (@(git status --porcelain=v1 --untracked-files=all).Count -ne 0) { throw 'Dirty worktree' }
 ```
 
-Expected: design branch is clean, one commit ahead of the exact approved main base. If any assertion fails, stop without edits.
+Expected: central has explicitly named `$approvedImplementationHead` in its written implementation authorization; the branch is clean, the approved design is an ancestor, every post-design change is confined to this plan file, and the merge-base is the exact approved main base. If the current SHA differs from central authorization or any assertion fails, stop without edits.
 
 - [ ] **Step 2: Create isolated verification environments outside tracked paths**
 
@@ -506,7 +516,7 @@ def test_evidence_failure_reason_is_bounded(
 def test_normal_state_returns_receipt_backed_view(candidate_bundle: Path) -> None:
     result = load_evidence(candidate_bundle)
     assert isinstance(result, EvidenceViewModel)
-    assert set(result.metrics) == {"auprc", "auroc", "brier", "ece"}
+    assert set(result.receipt.metrics) == {"auprc", "auroc", "brier", "ece"}
 ```
 
 - [ ] **Step 2: Run RED**
@@ -859,6 +869,7 @@ EXPECTED_PUBLIC_PATHS = (
 
 def test_public_paths_are_exact_and_independently_repeated() -> None:
     assert PUBLIC_PATHS == EXPECTED_PUBLIC_PATHS
+    assert len(PUBLIC_PATHS) == len(set(PUBLIC_PATHS)) == 24
 ```
 
 Add explicit deny patterns from design Section 8.4, a 1 MiB limit, symlink/device/FIFO rejection, executable-binary signature rejection, and forbidden-content patterns for credentials/private keys. Tests must assert that `app/dashboard.py`, root `app.py`, `src/carerisk48h`, and the excluded PNG never appear in either path tuple.
@@ -908,17 +919,30 @@ def test_locks_are_complete_exact_and_hashed() -> None:
         assert all(entry.version_operator == "==" for entry in entries)
         assert all(entry.sha256_hashes for entry in entries)
         assert not any(entry.editable or entry.url_without_hash for entry in entries)
+    runtime = normalized_package_versions(RUNTIME_LOCK)
+    development = normalized_package_versions(DEVELOPMENT_LOCK)
+    assert runtime <= development
 
-def test_base_image_is_patch_tagged_and_digest_pinned() -> None:
-    base = json.loads(BASE_IMAGE.read_text(encoding="utf-8"))
-    assert re.fullmatch(r"python:3\.11\.\d+-slim-bookworm", base["tag"])
-    assert re.fullmatch(r"sha256:[0-9a-f]{64}", base["index_digest"])
-    assert re.fullmatch(r"sha256:[0-9a-f]{64}", base["linux_amd64_digest"])
+def test_both_base_images_are_patch_tagged_digest_pinned_and_compatible() -> None:
+    bases = json.loads(BASE_IMAGE.read_text(encoding="utf-8"))["images"]
+    runtime, reviewer = bases["runtime"], bases["reviewer"]
+    assert re.fullmatch(r"python:3\.11\.\d+-slim-bookworm", runtime["tag"])
+    assert re.fullmatch(r"mcr\.microsoft\.com/playwright/python:v\d+\.\d+\.\d+-(jammy|noble)", reviewer["tag"])
+    assert reviewer["playwright_python_version"] == direct_pin("playwright")
+    assert set(reviewer["embedded_browsers"]) == {"chromium", "firefox", "webkit"}
+    for base in (runtime, reviewer):
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}", base["index_digest"])
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}", base["linux_amd64_digest"])
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}", base["system_inventory_sha256"])
 
 def test_sbom_and_license_inventory_cover_every_lock_package_once() -> None:
     locked = normalized_locked_packages(RUNTIME_LOCK, DEVELOPMENT_LOCK)
-    assert sbom_package_keys(SBOM) == locked | {"carerisk-space", "python-base-image"}
-    assert license_inventory_keys(LICENSES) == locked
+    image_components = {
+        "carerisk-space", "python-runtime-base", "playwright-reviewer-base",
+        "chromium", "firefox", "webkit",
+    }
+    assert sbom_package_keys(SBOM) == locked | image_components
+    assert license_inventory_keys(LICENSES) == locked | (image_components - {"carerisk-space"})
     assert all(item["review_disposition"] == "approved" for item in load_licenses(LICENSES))
 ```
 
@@ -936,8 +960,8 @@ Expected: FAIL because inputs, generator, locks, base record, SBOM, and license 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "resolve-base":
-        return resolve_base(args)
+    if args.command == "resolve-images":
+        return resolve_images(args)
     if args.command == "lock":
         return build_locks(args)
     if args.command == "inventory":
@@ -948,9 +972,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     raise AssertionError("unreachable")
 ```
 
-`resolve-base` queries the official image registry read-only, selects a concrete CPython 3.11 patch `slim-bookworm` tag, records both index and linux/amd64 manifest digests, and refuses a mutable-only response. `lock` runs the hash-locked resolver tooling from `lock-tooling.txt`, targets Linux CPython 3.11, emits exact complete closures, and immediately verifies an offline `--no-index --require-hashes --no-deps` install from a temporary wheelhouse. `inventory` extracts metadata and notices from the exact accepted wheels, joins every package/version to an explicit approved `license-policy.json` record, and serializes sorted canonical JSON with a final newline.
+`resolve-images` queries the official image registries during the controlled supply-chain phase. It selects (a) a concrete CPython 3.11 patch `slim-bookworm` runtime image and (b) an official Playwright Python reviewer image whose exact patch version equals the direct locked Playwright Python pin. It records each tag, OCI index digest, linux/amd64 manifest digest, Python target, system-package inventory digest, source registry, license/notices, and, for the reviewer, the exact Chromium/Firefox/WebKit revisions and content identities. Mutable-only or cross-platform-only responses are rejected.
 
-The direct runtime input contains only Gradio. The direct development input contains pytest, Ruff, Mypy, PyYAML, packaging, Playwright/test integration, accessibility tooling, lock verification, vulnerability scanning, and license/SBOM verification tools. Product code still imports only Gradio, standard library, and local modules.
+`lock` runs only the hash-locked resolver tooling from `lock-tooling.txt`. It emits `requirements.lock` as the complete runtime closure for the runtime Linux/Python target and `requirements-dev.lock` as the complete runtime-plus-development union closure for the reviewer Linux/Python target. The normalized package/version pairs from the runtime lock must be an unchanged subset of the development lock. Each lock is installed alone with `--require-hashes --no-deps`; a controlled acquisition step first fills a temporary wheelhouse with only accepted hashes, then a separate no-egress `--no-index` step verifies installation from that wheelhouse. Do not describe the controlled acquisition step as offline.
+
+`inventory` extracts metadata and notices from exact accepted wheels and both exact image manifests/inventories, includes the reviewer image's embedded browser revisions and system packages, joins every component to an explicit approved `license-policy.json` record, and serializes sorted canonical JSON with a final newline. `SBOM.spdx.json`, `THIRD_PARTY_LICENSES.json`, and their tests cover both base images as well as the Python and browser components; the final runtime image still contains only the runtime base and runtime lock.
+
+The direct runtime input contains only Gradio. The direct development input contains pytest, Ruff, Mypy, PyYAML, packaging, the exact Playwright Python pin matching the reviewer image, accessibility tooling, lock verification, vulnerability scanning, and license/SBOM verification tools. It does not rely on Playwright wheels to supply browsers or Debian packages, and Dockerfile generation must not run `playwright install` or `apt-get install` in the reviewer stage. Product code still imports only Gradio, standard library, and local modules.
 
 - [ ] **Step 4: Resolve and review real pins rather than writing guessed values**
 
@@ -958,22 +986,29 @@ The direct runtime input contains only Gradio. The direct development input cont
 $toolVenv = '.venv-space-lock'
 python -m venv $toolVenv
 & "$toolVenv\Scripts\python.exe" -m pip install --require-hashes -r tools/space/lock-tooling.txt
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py resolve-base --output tools/space/base-image.json
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py resolve-images --output tools/space/base-image.json
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py lock --runtime-input tools/space/requirements-runtime.in --development-input tools/space/requirements-dev.in --runtime-output space/requirements.lock --development-output space/requirements-dev.lock
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json
 ```
 
-Expected: every generated file contains actual values and hashes. Review package source URLs, license texts, notices, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable licenses stop the task.
+Expected: this explicitly controlled, logged egress phase acquires only the selected registry/package/browser references and verifies every digest/hash. Every generated file contains actual values and hashes. Review package source URLs, both base-image inventories, embedded-browser revisions, license texts, notices, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components stop the task.
 
 - [ ] **Step 5: Run reproducibility and installation GREEN**
 
 ```powershell
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify --repo-root .
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
-$first = Get-FileHash space/requirements.lock,space/requirements-dev.lock,space/SBOM.spdx.json,space/THIRD_PARTY_LICENSES.json -Algorithm SHA256
+$trackedOutputs = @('space/requirements.lock', 'space/requirements-dev.lock', 'space/SBOM.spdx.json', 'space/THIRD_PARTY_LICENSES.json')
+$first = @($trackedOutputs | ForEach-Object {
+    $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_
+    '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant()
+})
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json
-$second = Get-FileHash space/requirements.lock,space/requirements-dev.lock,space/SBOM.spdx.json,space/THIRD_PARTY_LICENSES.json -Algorithm SHA256
-if (Compare-Object $first.Hash $second.Hash) { throw 'Supply-chain outputs are not reproducible' }
+$second = @($trackedOutputs | ForEach-Object {
+    $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_
+    '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant()
+})
+if ([string]::Join("`n", $first) -cne [string]::Join("`n", $second)) { throw 'Supply-chain outputs are not reproducible' }
 ```
 
 Expected: verify and tests pass, and regeneration is byte-for-byte stable.
@@ -1069,7 +1104,18 @@ TAG_SOURCE_MAP = {
 MANIFEST_SOURCE_MAP = {"deployment-manifest.json": "space/deployment-manifest.json"}
 ```
 
-Use `git cat-file blob <sha>:<path>` or an equivalent no-checkout Git object read. Reject a dirty worktree before manifest generation or export. Reject missing/non-commit SHAs, non-ancestor manifest commit, mutable tag mismatch, path traversal, symlinks, special files, collisions, unsorted/duplicate paths, hash/size mismatch, secret/private-key signatures, denied suffixes/content, and any final path-set difference. Write into a newly created destination only; on failure remove only that verified temporary destination.
+In `tests/test_hf_space_exporter.py`, independently assert the cardinalities and partition:
+
+```python
+def test_source_maps_partition_the_exact_public_allowlist() -> None:
+    source_sets = tuple(map(set, (APP_SOURCE_MAP, TAG_SOURCE_MAP, MANIFEST_SOURCE_MAP)))
+    assert tuple(map(len, source_sets)) == (18, 5, 1)
+    assert not (source_sets[0] & source_sets[1] or source_sets[0] & source_sets[2] or source_sets[1] & source_sets[2])
+    assert set().union(*source_sets) == set(PUBLIC_PATHS)
+    assert "scripts/verify_hf_space_candidate.py" not in set().union(*source_sets)
+```
+
+Invoke `git cat-file blob` with the already validated exact commit-and-path argument, or use an equivalent no-checkout Git object read. Reject a dirty worktree before manifest generation or export. Reject missing/non-commit SHAs, non-ancestor manifest commit, mutable tag mismatch, path traversal, symlinks, special files, collisions, unsorted/duplicate paths, hash/size mismatch, secret/private-key signatures, denied suffixes/content, and any final path-set difference. Write into a newly created destination only; on failure remove only that verified temporary destination.
 
 Compute `ExportReceipt.tree_sha256` as SHA-256 over the UTF-8 bytes of each sorted `destination_path`, NUL, lowercase file SHA-256, NUL, decimal byte size, and newline. This is an audit digest for the exact tree listing, not a substitute for per-file hashes or a Hugging Face destination commit.
 
@@ -1090,7 +1136,7 @@ git diff --cached --check
 git commit -m 'feat(space): export exact public Git objects'
 ```
 
-### Task 9: Add digest-pinned Docker runtime and clarified non-login acceptance
+### Task 9: Add separate digest-pinned reviewer and final runtime stages
 
 **Files:**
 - Create: `space/Dockerfile`
@@ -1099,18 +1145,22 @@ git commit -m 'feat(space): export exact public Git objects'
 - Modify: `tests/test_hf_space_supply_chain.py`
 
 **Interfaces:**
-- Consumes: `tools/space/base-image.json`, runtime lock, and the temporary clean export as Docker build context.
+- Consumes: both named images in `tools/space/base-image.json`, the runtime/development locks, and the temporary clean export as Docker build context.
 - Produces: a static non-root/nologin Docker contract; Task 13 produces the actual runtime smoke evidence.
 
 - [ ] **Step 1: Write failing Dockerfile contract tests**
 
 ```python
-def test_dockerfile_uses_recorded_patch_tag_and_digest() -> None:
-    base = load_base_image()
+def test_dockerfile_uses_both_recorded_patch_tags_and_platform_digests() -> None:
+    images = load_base_images()
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
-    assert f'FROM {base["tag"]}@{base["index_digest"]}' in dockerfile
+    assert f'FROM {images["reviewer"]["tag"]}@{images["reviewer"]["linux_amd64_digest"]} AS test' in dockerfile
+    assert f'FROM {images["runtime"]["tag"]}@{images["runtime"]["linux_amd64_digest"]} AS runtime' in dockerfile
     assert "COPY ." not in dockerfile
+    assert "pip install --require-hashes --no-deps -r requirements-dev.lock" in dockerfile
     assert "pip install --require-hashes --no-deps -r requirements.lock" in dockerfile
+    assert "playwright install" not in dockerfile
+    assert "playwright install-deps" not in dockerfile
 
 def test_runtime_account_is_non_root_and_non_login_without_claiming_bin_sh_absent() -> None:
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
@@ -1131,7 +1181,9 @@ Expected: FAIL because the Space Dockerfile and smoke contract do not exist.
 
 - [ ] **Step 3: Generate the Dockerfile from the verified base record**
 
-The generated Dockerfile must expose named `test` and `runtime` stages. The Linux test stage installs `requirements-dev.lock` with hashes and no dependency resolution, contains the six public test modules plus the Playwright browser matching the locked Python package, and never becomes the deployed stage. The final runtime stage uses explicit `COPY` for runtime files only, creates numeric UID/GID `10001`, assigns `/usr/sbin/nologin`, retains no writable home, installs `requirements.lock` with hashes and no dependency resolution, excludes tests/dev tools/browser from the final image, sets immutable framework cache/temp paths under `/tmp`, disables analytics/telemetry, and uses `USER 10001:10001` plus exec-form `CMD ["python", "app.py"]`.
+The generated Dockerfile must expose named `test` and `runtime` stages with no ancestry between them. `test` starts from the exact official Playwright Python reviewer tag plus recorded linux/amd64 digest, installs the complete `requirements-dev.lock` union closure with hashes and no dependency resolution, and contains the six public test modules. Its Playwright Python version is exactly the one matched by the reviewer image and it uses only the Chromium/Firefox/WebKit bytes already embedded in that pinned image; it runs no browser download, `playwright install`, or unrecorded `apt` acquisition. This stage never becomes or contributes a filesystem layer to the deployed stage.
+
+`runtime` starts independently from the exact CPython 3.11 slim-bookworm runtime tag plus recorded linux/amd64 digest. It uses explicit `COPY` for runtime files only, creates numeric UID/GID `10001`, assigns `/usr/sbin/nologin`, retains no writable home, installs `requirements.lock` with hashes and no dependency resolution, excludes tests/dev tools/browser/reviewer layers from the final image, sets immutable framework cache/temp paths under `/tmp`, disables analytics/telemetry, and uses `USER 10001:10001` plus exec-form `CMD ["python", "app.py"]`. Tests inspect the final image history/package inventory and fail if Playwright, pytest, browser files, or a reviewer-layer digest appears.
 
 Do not add an assertion or removal step for `/bin/sh`. The accepted proof is non-login passwd metadata plus absence of shell calls in application AST and exec-form startup.
 
@@ -1143,7 +1195,7 @@ $env:PYTHONPATH = (Resolve-Path space)
 .venv-space\Scripts\python.exe scripts/build_hf_space_supply_chain.py verify --repo-root .
 ```
 
-Expected: Dockerfile/base/lock/account/startup/source contracts pass. Do not build from `space/` directly because it intentionally lacks tag-sourced evidence/legal files, and do not invent a provisional manifest. Actual image, UID/GID, read-only/tmpfs, CPU, no-network, loopback, and cold-start evidence is required from the two-commit clean export in Task 13 before any runtime success claim.
+Expected: Dockerfile/two-base/union-lock/account/startup/source contracts pass. Do not build from `space/` directly because it intentionally lacks tag-sourced evidence/legal files, and do not invent a provisional manifest. Actual image, final-stage inventory, UID/GID, read-only/tmpfs, CPU, no-network, loopback, and cold-start evidence is required from the two-commit clean export in Task 13 before any runtime success claim.
 
 - [ ] **Step 5: Run tests and commit exact files**
 
@@ -1158,12 +1210,13 @@ git commit -m 'build(space): harden CPU-only container runtime'
 
 **Files:**
 - Create: `scripts/review_hf_space_local.py`
+- Create: `scripts/verify_hf_space_candidate.py`
 - Create: `tests/test_hf_space_live_review.py`
 - Modify: `space/tests/test_gradio_contract.py`
 
 **Interfaces:**
-- Consumes: a local container image or local candidate process plus a temporary output directory outside the repository.
-- Produces: `ReviewPlan`, `LiveReviewRecord`, and orchestration that Task 13 exercises against the final clean candidate.
+- Consumes: a local container image or local candidate process plus an owned GUID-named temporary run root outside the repository.
+- Produces: `ReviewPlan`, `LiveReviewRecord`, and ownership-safe orchestration that Task 13 exercises against the final clean candidate.
 
 - [ ] **Step 1: Write failing review-contract tests**
 
@@ -1193,6 +1246,12 @@ def test_failed_live_record_cannot_be_reported_as_green() -> None:
     record = sample_record(serious_accessibility_findings=1)
     with pytest.raises(ReviewFailure, match="accessibility"):
         assert_review_passed(record)
+
+def test_candidate_verifier_temp_self_test_rejects_unowned_or_outside_paths() -> None:
+    result = run_candidate_verifier("--self-test-temp-ownership")
+    assert result.returncode == 0
+    assert "rejected-unowned" in result.stdout
+    assert "rejected-outside-temp-root" in result.stdout
 ```
 
 - [ ] **Step 2: Run RED**
@@ -1275,9 +1334,9 @@ def assert_review_passed(record: LiveReviewRecord) -> None:
         raise ReviewFailure("partial evidence or runtime download")
 ```
 
-The runner has two explicit modes. Container cold-start mode starts the app image with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` to probe HTTP 200 and exact claim copy on container loopback, so no host port or external network is required. Browser-review mode creates a temporary Docker `--internal` network, starts the final app image and Linux test-stage reviewer image on that network, drives Playwright at both exact viewports, selects all four scenarios by keyboard, tests normal plus each of the five failure bundles, runs automated WCAG 2.2 AA checks, and records console/request evidence. The internal network permits reviewer-to-app traffic but has no external route. The two modes are separate evidence: browser review never substitutes for the stricter `--network none` container smoke.
+The Python runner has two explicit modes. Container cold-start mode starts the app image with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` to probe HTTP 200 and exact claim copy on container loopback, so no host port or external network is required. Browser-review mode creates a temporary Docker `--internal` network, starts the final app image and the exact pinned Playwright reviewer stage on that network, drives Playwright at both exact viewports, selects all four scenarios by keyboard, tests normal plus each of the five failure bundles, runs automated WCAG 2.2 AA checks, and records console/request evidence. The internal network permits reviewer-to-app traffic but has no external route. Browser review performs no package, browser, or system dependency download. The two modes are separate evidence: browser review never substitutes for the stricter `--network none` container smoke.
 
-Screenshots and JSON records go only to the caller-provided temporary directory and are deleted after review unless central explicitly requests retention outside the repository.
+`verify_hf_space_candidate.py` owns final orchestration. It creates exactly one GUID-named run directory beneath `Path(tempfile.gettempdir()).resolve(strict=True)` and writes an ownership marker containing that GUID and canonical root. Candidate and review directories are children of that run root. A `try/finally` always stops only containers/networks labeled with the same GUID and calls a cleanup function that re-resolves the OS temp root, rejects symlinks/reparse points, requires the exact GUID prefix plus matching ownership marker/canonical root, and then applies `shutil.rmtree` only to that one run directory. Unowned, missing-marker, mismatched, symlink/reparse-point, workspace, temp-root itself, or outside-temp paths are a hard stop and are never deleted. The script emits its final verification receipt to stdout after cleanup; it persists no review file unless central later provides a separately authorized, explicit outside-repository retention path.
 
 - [ ] **Step 4: Run orchestration/config GREEN before the final candidate exists**
 
@@ -1290,7 +1349,7 @@ Expected: orchestration, exact viewport/state matrix, hardened command construct
 - [ ] **Step 5: Commit exact review files**
 
 ```powershell
-git add -- scripts/review_hf_space_local.py tests/test_hf_space_live_review.py space/tests/test_gradio_contract.py
+git add -- scripts/review_hf_space_local.py scripts/verify_hf_space_candidate.py tests/test_hf_space_live_review.py space/tests/test_gradio_contract.py
 git diff --cached --check
 git commit -m 'test(space): gate local accessibility and cold start'
 ```
@@ -1324,6 +1383,22 @@ def test_space_ci_is_read_only_pinned_and_runs_all_gates() -> None:
         "--tmpfs", "--cpus=2", "pip check",
     ):
         assert required in commands
+
+def test_app_source_workflow_runs_source_gates_only_without_manifest() -> None:
+    workflow = yaml.safe_load(SPACE_CI.read_text(encoding="utf-8"))
+    source = workflow["jobs"]["source_gates"]
+    candidate = workflow["jobs"]["candidate_gates"]
+    assert source["env"]["REVIEWER_IMAGE"] == recorded_reviewer_platform_ref()
+    assert source["outputs"]["manifest_present"] == "${{ steps.manifest.outputs.present }}"
+    assert candidate["needs"] == "source_gates"
+    assert candidate["if"] == "${{ needs.source_gates.outputs.manifest_present == 'true' }}"
+    source_commands = "\n".join(step.get("run", "") for step in source["steps"])
+    candidate_commands = "\n".join(step.get("run", "") for step in candidate["steps"])
+    assert "--require-hashes --no-deps" in source_commands
+    assert "--network none" in source_commands
+    assert "verify_hf_space_candidate.py" not in source_commands
+    assert "verify_hf_space_candidate.py" in candidate_commands
+    assert "provisional" not in SPACE_CI.read_text(encoding="utf-8").lower()
 ```
 
 - [ ] **Step 2: Run RED**
@@ -1336,7 +1411,9 @@ Expected: FAIL because the workflow does not exist.
 
 - [ ] **Step 3: Add the least-privilege workflow with immutable action SHAs**
 
-Resolve official action tag commits read-only and write the resulting real 40-character SHAs directly into the workflow. Jobs must install from `space/requirements-dev.lock` with hashes, run source/Space tests and static gates, verify supply-chain outputs, build a temporary clean candidate, run the hardened Docker smoke, scan vulnerabilities/licenses, and upload no public artifact. Before the manifest commit exists, the export job must stop after app-source validation rather than fabricating a manifest.
+Resolve official action tag commits read-only and write the resulting real 40-character SHAs directly into the workflow. The `source_gates` job always runs and binds `REVIEWER_IMAGE` to the same exact reviewer tag plus linux/amd64 digest recorded in `base-image.json`. A controlled acquisition step fills an ephemeral wheelhouse from `space/requirements-dev.lock` and rejects every non-matching hash. A separate invocation of that reviewer image uses `--network none`, mounts the repository read-only plus the wheelhouse, installs the development union lock alone with `--no-index --require-hashes --no-deps`, verifies the runtime-package/version subset relation, and runs source/Space/static/supply-chain gates. The job exports a literal `manifest_present` output from an exact Linux check (`if [ -f space/deployment-manifest.json ]; then echo 'present=true' >> "$GITHUB_OUTPUT"; else echo 'present=false' >> "$GITHUB_OUTPUT"; fi`). It never calls manifest generation, export, candidate build, or candidate verification.
+
+The separate `candidate_gates` job has `needs: source_gates` and the exact condition `${{ needs.source_gates.outputs.manifest_present == 'true' }}`. Thus it is skipped on the app-source commit, where the manifest does not yet exist, and becomes required after the manifest commit exists. Only that job invokes the ownership-safe clean-export verifier, controlled digest/hash-pinned image/dependency acquisition and build, followed by no-egress tests/runtime/browser review, vulnerability/license scan, and no public artifact upload. Workflow-contract tests assert both branches. A fabricated, empty, copied, or provisional manifest is forbidden; absence is a normal source-only state, not something CI repairs.
 
 - [ ] **Step 4: Run the complete app-source verification locally**
 
@@ -1346,13 +1423,13 @@ $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:CUDA_VISIBLE_DEVICES = ''
 $env:PYTHONPATH = (Resolve-Path space)
 .venv-space\Scripts\python.exe -m pytest space/tests tests/test_hf_space_source_boundary.py tests/test_hf_space_supply_chain.py tests/test_hf_space_exporter.py tests/test_hf_space_live_review.py -p no:cacheprovider
-.venv-space\Scripts\ruff.exe check space scripts/build_hf_space_supply_chain.py scripts/export_hf_space.py scripts/review_hf_space_local.py tests/test_hf_space_source_boundary.py tests/test_hf_space_supply_chain.py tests/test_hf_space_exporter.py tests/test_hf_space_live_review.py
-.venv-space\Scripts\mypy.exe --strict space/carerisk_space scripts/build_hf_space_supply_chain.py scripts/export_hf_space.py scripts/review_hf_space_local.py
+.venv-space\Scripts\ruff.exe check space scripts/build_hf_space_supply_chain.py scripts/export_hf_space.py scripts/review_hf_space_local.py scripts/verify_hf_space_candidate.py tests/test_hf_space_source_boundary.py tests/test_hf_space_supply_chain.py tests/test_hf_space_exporter.py tests/test_hf_space_live_review.py
+.venv-space\Scripts\mypy.exe --strict space/carerisk_space scripts/build_hf_space_supply_chain.py scripts/export_hf_space.py scripts/review_hf_space_local.py scripts/verify_hf_space_candidate.py
 .venv-space\Scripts\python.exe -m pip check
-.venv-space\Scripts\pre-commit.exe run --files .github/workflows/space-ci.yml space/README.md space/Dockerfile space/requirements.lock space/requirements-dev.lock space/app.py space/carerisk_space/__init__.py space/carerisk_space/contracts.py space/carerisk_space/evidence.py space/carerisk_space/scenarios.py space/carerisk_space/ui.py space/SBOM.spdx.json space/THIRD_PARTY_LICENSES.json space/tests/test_claim_contract.py space/tests/test_evidence_contract.py space/tests/test_scenario_contract.py space/tests/test_gradio_contract.py space/tests/test_export_contract.py space/tests/test_container_contract.py tools/space/requirements-runtime.in tools/space/requirements-dev.in tools/space/lock-tooling.txt tools/space/base-image.json tools/space/license-policy.json scripts/build_hf_space_supply_chain.py scripts/export_hf_space.py scripts/review_hf_space_local.py tests/test_hf_space_source_boundary.py tests/test_hf_space_supply_chain.py tests/test_hf_space_exporter.py tests/test_hf_space_live_review.py
+git diff --check
 ```
 
-Expected: every app-source gate is green before defining its provenance SHA.
+Expected: every app-source gate is green before defining its provenance SHA. No unpinned `pre-commit` executable is invoked; Ruff, Mypy, pytest, the exact workflow/file-list tests, and `git diff --check` provide the equivalent source gates using already declared tooling.
 
 - [ ] **Step 5: Commit the workflow and designate the resulting commit**
 
@@ -1360,7 +1437,7 @@ Expected: every app-source gate is green before defining its provenance SHA.
 git add -- .github/workflows/space-ci.yml tests/test_hf_space_source_boundary.py tests/test_hf_space_supply_chain.py tests/test_hf_space_exporter.py
 git diff --cached --check
 git commit -m 'ci(space): verify clean public candidate'
-$appSourceSha = git rev-parse HEAD
+$appSourceSha = (git rev-parse HEAD).Trim()
 if ($appSourceSha -notmatch '^[0-9a-f]{40}$') { throw 'Invalid app source SHA' }
 ```
 
@@ -1378,11 +1455,11 @@ This commit is the app-source commit. No application, test, lock, SBOM, license,
 - [ ] **Step 1: Verify the source boundary is clean and immutable**
 
 ```powershell
-$appSourceSha = git rev-parse HEAD
+$appSourceSha = (git rev-parse HEAD).Trim()
 if (@(git status --porcelain=v1 --untracked-files=all).Count -ne 0) { throw 'Dirty source before manifest generation' }
-if ((git rev-parse 'v0.2.0^{tag}') -ne '2f1ddb0e2276fa894e124b856de488e31e21e88c') { throw 'Tag object mismatch' }
-if ((git rev-parse 'v0.2.0^{}') -ne 'f4c820cce953f401c1ec525bd8df3a3c1678bbf3') { throw 'Tag commit mismatch' }
-if ((git rev-parse 'v0.2.0:docs/final-result-receipt.json') -ne 'b13ec7655bbdb8db1079c3b4793a0bf5590ef69c') { throw 'Receipt blob mismatch' }
+if ((git rev-parse 'v0.2.0^{tag}').Trim() -cne '2f1ddb0e2276fa894e124b856de488e31e21e88c') { throw 'Tag object mismatch' }
+if ((git rev-parse 'v0.2.0^{}').Trim() -cne 'f4c820cce953f401c1ec525bd8df3a3c1678bbf3') { throw 'Tag commit mismatch' }
+if ((git rev-parse 'v0.2.0:docs/final-result-receipt.json').Trim() -cne 'b13ec7655bbdb8db1079c3b4793a0bf5590ef69c') { throw 'Receipt blob mismatch' }
 ```
 
 - [ ] **Step 2: Generate the real manifest from committed objects**
@@ -1413,45 +1490,56 @@ $staged = @(git diff --cached --name-only)
 if ($staged.Count -ne 1 -or $staged[0] -ne 'space/deployment-manifest.json') { throw 'Manifest commit scope mismatch' }
 git diff --cached --check
 git commit -m 'chore(space): bind deployment provenance manifest'
-$manifestSourceSha = git rev-parse HEAD
-if ((git rev-parse HEAD^) -ne $appSourceSha) { throw 'Manifest is not the immediate second commit' }
+$manifestSourceSha = (git rev-parse HEAD).Trim()
+if ((git rev-parse HEAD^).Trim() -cne $appSourceSha) { throw 'Manifest is not the immediate second commit' }
 ```
 
 ### Task 13: Run full final verification from a clean export
 
 **Files:**
 - Verify only: every file named above.
-- Temporary only: a new clean export directory and local review output outside the repository.
+- Temporary only: one ownership-marked GUID run root beneath the resolved OS temp root, containing candidate and review children.
 
 **Interfaces:**
 - Consumes: app-source SHA from `deployment-manifest.json` and current manifest-source SHA.
-- Produces: fresh local verification evidence; no tracked change and no commit.
+- Produces: a final JSON receipt on stdout after ownership-safe cleanup; no tracked change and no commit.
 
-- [ ] **Step 1: Create and verify the exact clean candidate**
+- [ ] **Step 1: Verify clean two-commit inputs before creating any temporary path**
 
 ```powershell
+$dirty = @(git status --porcelain=v1 --untracked-files=all)
+if ($dirty.Count -ne 0) { throw 'Final verification requires a clean worktree' }
 $manifest = Get-Content -Raw -LiteralPath space/deployment-manifest.json | ConvertFrom-Json
-$appSourceSha = $manifest.space_app_source_git_sha
-$manifestSourceSha = git rev-parse HEAD
-$candidate = Join-Path ([IO.Path]::GetTempPath()) ('carerisk-final-' + [guid]::NewGuid())
-if (Test-Path -LiteralPath $candidate) { throw 'Candidate destination already exists' }
-.venv-space\Scripts\python.exe scripts/export_hf_space.py export --repo-root . --app-source-sha $appSourceSha --manifest-source-sha $manifestSourceSha --destination $candidate
-.venv-space\Scripts\python.exe scripts/export_hf_space.py verify-export --destination $candidate
+$appSourceSha = ([string]$manifest.space_app_source_git_sha).Trim()
+$manifestSourceSha = (git rev-parse HEAD).Trim()
+if ($appSourceSha -notmatch '^[0-9a-f]{40}$' -or $manifestSourceSha -notmatch '^[0-9a-f]{40}$') { throw 'Invalid provenance SHA' }
+if ((git rev-parse "$manifestSourceSha^").Trim() -cne $appSourceSha) { throw 'Manifest is not the immediate second commit' }
+.venv-space\Scripts\python.exe scripts/export_hf_space.py verify-manifest --repo-root . --app-source-sha $appSourceSha --manifest space/deployment-manifest.json
 ```
 
-Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship.
+Expected: the worktree is clean, SHAs are exact 40-character values, the current commit immediately follows the app-source commit, and the committed manifest verifies before any export/build/review action.
 
-- [ ] **Step 2: Run tests from the destination, not the working tree**
+- [ ] **Step 2: Run the ownership-safe phased candidate verifier**
 
 ```powershell
-docker build --pull=false --target test --tag carerisk-space:test $candidate
-docker run --rm --network none --cpus=2 --entrypoint python carerisk-space:test -m pytest tests -p no:cacheprovider
-docker run --rm --network none --cpus=2 --entrypoint python carerisk-space:test -m pip check
+$output = @(.venv-space\Scripts\python.exe scripts/verify_hf_space_candidate.py --repo-root (Resolve-Path .).Path --app-source-sha $appSourceSha --manifest-source-sha $manifestSourceSha)
+if ($LASTEXITCODE -ne 0) { throw "Candidate verification failed: $($output -join [Environment]::NewLine)" }
+$receipt = $output[-1] | ConvertFrom-Json
+if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'Invalid final verification receipt' }
 ```
 
-Expected: all six public test modules pass in the supported Linux/Python target from the standalone candidate with no Git ancestry and no access to existing repository modules. The Windows host never attempts to install the Linux-only lock.
+`verify_hf_space_candidate.py` implements these ordered phases inside one ownership-marked GUID run root and a `try/finally`:
 
-- [ ] **Step 3: Re-run legacy baseline and source-only final gates**
+1. Re-check clean-worktree and two-commit preconditions. Create `candidate` and `review` children only beneath the owned run root. Run exporter and `verify-export` before any controlled acquisition/build command. Export code is restricted by source tests to local Git object reads and has no networking API/import/call path.
+2. Read both exact tag/platform-digest records from `base-image.json`. For each, run `docker image inspect` against the concatenated recorded tag and linux/amd64 digest and verify `RepoDigests`; if and only if that exact image is absent, perform a logged controlled `docker pull` of the same immutable reference, then re-inspect. Reject a tag-only or wrong-platform image. This is controlled supply-chain acquisition, not test execution.
+3. In the same controlled supply-chain/build phase, build `--target test` and `--target runtime` from the exact candidate. Network access is permitted only for digest/hash-pinned base and Python package acquisition and every accepted byte must match the image digest or lock hash. `--pull=false` may be used only after exact local image verification and is never evidence that the build was offline. Verify built image histories/inventories: test uses the reviewer base; runtime uses only the CPython base and contains no dev/browser/model package.
+4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`; run the final runtime UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. No command in these execution phases downloads a dependency.
+5. Create a GUID-labeled Docker `--internal` network and run the final app plus exact reviewer image for normal/five-failure, four-scenario, 1440×900/390×844, keyboard/focus, WCAG, console, and external-request review. Only reviewer-to-app traffic is possible; all egress is absent. Record reviewer image/tag/platform digest and browser revisions in the in-memory receipt.
+6. In `finally`, stop/remove only containers and the internal network carrying the current GUID label, then validate and delete only the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect directory untouched for manual inspection; it never broadens the delete target.
+
+Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest, both base/platform digests, lock/SBOM/license hashes, test counts, final runtime image digest, cold-start observations, viewport/state results, cleanup status, and no-egress observations.
+
+- [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'
@@ -1468,24 +1556,25 @@ $env:MKL_NUM_THREADS = '2'
 
 Expected: the existing repository suite and all Space source-only gates pass. No Set B, data, artifact, model, download, training, evaluation, or receipt-generation command is invoked.
 
-- [ ] **Step 4: Run final container and local live gates**
+- [ ] **Step 4: Assert the final receipt proves all container/live gates and cleanup**
 
 ```powershell
-docker build --pull=false --tag carerisk-space:final $candidate
-docker run --rm --cpus=2 --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m,mode=1777 -e CUDA_VISIBLE_DEVICES= --entrypoint python carerisk-space:final -c "import os,pwd; entry=pwd.getpwuid(os.geteuid()); assert os.geteuid()==10001; assert entry.pw_shell=='/usr/sbin/nologin'; from carerisk_space.ui import create_app; assert create_app() is not None"
-$reviewRoot = Join-Path ([IO.Path]::GetTempPath()) ('carerisk-final-review-' + [guid]::NewGuid())
-.venv-space\Scripts\python.exe scripts/review_hf_space_local.py container-cold-start --image carerisk-space:final --output $reviewRoot --cold-starts 3 --network none --cpus 2
-.venv-space\Scripts\python.exe scripts/review_hf_space_local.py browser-review --app-image carerisk-space:final --review-image carerisk-space:test --output $reviewRoot --docker-network internal --viewports 1440x900 390x844 --page-states validated_normal receipt_missing receipt_hash_mismatch receipt_schema_invalid release_relationship_invalid deployment_manifest_invalid
+$requiredTrue = @('public_tests_passed', 'runtime_inventory_clean', 'runtime_network_none', 'runtime_read_only', 'runtime_non_root_nologin', 'browser_network_internal', 'accessibility_passed', 'cleanup_passed')
+foreach ($field in $requiredTrue) {
+    if ($receipt.$field -ne $true) { throw "Final receipt gate failed: $field" }
+}
+if ($receipt.cold_starts -ne 3 -or $receipt.viewport_count -ne 2 -or $receipt.page_state_count -ne 6 -or $receipt.scenario_count -ne 4) { throw 'Final review matrix mismatch' }
+if ($receipt.external_request_count -ne 0 -or $receipt.console_error_count -ne 0) { throw 'Final browser evidence is not clean' }
 ```
 
-Expected: container mode proves non-root/nologin, read-only/tmpfs, CPU/no-network, container-loopback HTTP/claim, and three cold starts. Browser-review mode separately proves normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. The test does not require `/bin/sh` to be absent.
+Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, container-loopback HTTP/claim, and three cold starts. Browser evidence separately proves normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. Cleanup is proven. The test does not require `/bin/sh` to be absent.
 
 - [ ] **Step 5: Verify clean scope and provenance one final time**
 
 ```powershell
 $changed = @(git status --porcelain=v1 --untracked-files=all)
 if ($changed.Count -ne 0) { throw 'Final verification dirtied the repository' }
-if ((git rev-parse HEAD^) -ne $appSourceSha) { throw 'Two-commit provenance relationship changed' }
+if ((git rev-parse HEAD^).Trim() -cne $appSourceSha) { throw 'Two-commit provenance relationship changed' }
 git diff --check
 git log -2 --format='%H %P %s'
 ```
