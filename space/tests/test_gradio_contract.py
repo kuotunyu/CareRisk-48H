@@ -12,6 +12,7 @@ import re
 import socket
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Any, cast, get_args
 import carerisk_space.evidence as evidence_module
 import carerisk_space.ui as ui_module
 import gradio as gr
+import gradio.routes as gradio_routes
 import httpx
 import pytest
 import uvicorn
@@ -38,6 +40,92 @@ THEME_CSS_SHA256 = "8ad6f9b14414574fe6c6d9b4362dcdd63dfdc66d8c34cbef0982888dfc44
 THEME_QUERY = f"v={THEME_CSS_SHA256}"
 FAVICON_SHA256 = "3d131bff3fe15bcbb3e6e6552a8bee25377c3666723a9cbe68ceca953ea613df"
 MANIFEST_LOGO_SHA256 = "89fd7687072f6c1ab52be3348494f0410c270f453e8306105719b2e3f7091469"
+
+SAFE_INNER_ROUTES = (
+    ("GET", "/"),
+    ("HEAD", "/"),
+    ("GET", "/assets/{path:path}"),
+    ("GET", "/config"),
+    ("GET", "/favicon.ico"),
+    ("GET", "/manifest.json"),
+    ("GET", "/static/{path:path}"),
+    ("GET", "/theme.css"),
+)
+BLOCKED_INNER_ROUTES = (
+    ("GET", "/config/"),
+    ("GET", "/gradio_api/app_id"),
+    ("GET", "/gradio_api/app_id/"),
+    ("GET", "/gradio_api/call/v2/{api_name}/{event_id}"),
+    ("GET", "/gradio_api/call/{api_name}/{event_id}"),
+    ("GET", "/gradio_api/custom_component/{id}/{environment}/{type}/{file_name}"),
+    ("GET", "/gradio_api/deep_link"),
+    ("GET", "/gradio_api/dev/reload"),
+    ("GET", "/gradio_api/file/{path:path}"),
+    ("GET", "/gradio_api/file={path_or_url:path}"),
+    ("GET", "/gradio_api/heartbeat/{session_hash}"),
+    ("GET", "/gradio_api/info"),
+    ("GET", "/gradio_api/info/"),
+    ("GET", "/gradio_api/login_check"),
+    ("GET", "/gradio_api/login_check/"),
+    ("GET", "/gradio_api/openapi.json"),
+    ("GET", "/gradio_api/proxy={url_path:path}"),
+    ("GET", "/gradio_api/queue/data"),
+    ("GET", "/gradio_api/queue/status"),
+    ("GET", "/gradio_api/runs"),
+    ("GET", "/gradio_api/runs/"),
+    ("GET", "/gradio_api/startup-events"),
+    ("GET", "/gradio_api/stream/{session_hash}/{run}/{component_id}/playlist-file"),
+    ("GET", "/gradio_api/stream/{session_hash}/{run}/{component_id}/playlist.m3u8"),
+    ("GET", "/gradio_api/stream/{session_hash}/{run}/{component_id}/{segment_id}.{ext}"),
+    ("GET", "/gradio_api/theme.css"),
+    ("GET", "/gradio_api/token"),
+    ("GET", "/gradio_api/token/"),
+    ("GET", "/gradio_api/upload_progress"),
+    ("GET", "/gradio_api/user"),
+    ("GET", "/gradio_api/user/"),
+    ("GET", "/gradio_api/vibe-code"),
+    ("GET", "/gradio_api/vibe-code/"),
+    ("GET", "/logout"),
+    ("GET", "/monitoring"),
+    ("GET", "/monitoring/summary"),
+    ("GET", "/monitoring/{key}"),
+    ("GET", "/openapi.json"),
+    ("GET", "/pwa_icon"),
+    ("GET", "/pwa_icon/{size}"),
+    ("GET", "/robots.txt"),
+    ("GET", "/svelte/{path:path}"),
+    ("HEAD", "/gradio_api/file={path_or_url:path}"),
+    ("HEAD", "/gradio_api/proxy={url_path:path}"),
+    ("HEAD", "/openapi.json"),
+    ("POST", "/gradio_api/api/{api_name}"),
+    ("POST", "/gradio_api/api/{api_name}/"),
+    ("POST", "/gradio_api/call/v2/{api_name}"),
+    ("POST", "/gradio_api/call/v2/{api_name}/"),
+    ("POST", "/gradio_api/call/{api_name}"),
+    ("POST", "/gradio_api/call/{api_name}/"),
+    ("POST", "/gradio_api/cancel"),
+    ("POST", "/gradio_api/component_server"),
+    ("POST", "/gradio_api/component_server/"),
+    ("POST", "/gradio_api/process_recording"),
+    ("POST", "/gradio_api/queue/join"),
+    ("POST", "/gradio_api/reset"),
+    ("POST", "/gradio_api/reset/"),
+    ("POST", "/gradio_api/run/{api_name}"),
+    ("POST", "/gradio_api/run/{api_name}/"),
+    ("POST", "/gradio_api/stream/{event_id}"),
+    ("POST", "/gradio_api/stream/{event_id}/close"),
+    ("POST", "/gradio_api/undo-vibe-edit"),
+    ("POST", "/gradio_api/undo-vibe-edit/"),
+    ("POST", "/gradio_api/upload"),
+    ("POST", "/gradio_api/vibe-code"),
+    ("POST", "/gradio_api/vibe-code/"),
+    ("POST", "/gradio_api/vibe-edit"),
+    ("POST", "/gradio_api/vibe-edit/"),
+    ("POST", "/gradio_api/vibe-starter-queries"),
+    ("POST", "/gradio_api/vibe-starter-queries/"),
+    ("POST", "/login"),
+    ("POST", "/login/"),
+)
 
 
 def _write_valid_bundle(bundle: Path) -> Path:
@@ -142,6 +230,75 @@ def _compose(demo: gr.Blocks) -> Any:
     return ui_module.PublicSurfaceGuard(parent, ui_module.build_package_asset_membership())
 
 
+def _route_inventory(parent: FastAPI) -> list[tuple[str, str, str]]:
+    records: list[tuple[str, str, str]] = []
+    for route in parent.routes:
+        records.append(("parent", "MOUNT", cast(str, route.path)))
+        mounted = route.app
+
+        def collect(routes: list[Any]) -> None:
+            for inner in routes:
+                original = getattr(inner, "original_router", None)
+                if original is not None:
+                    collect(original.routes)
+                    continue
+                path = cast(str, inner.path)
+                for method in sorted(inner.methods or ()):
+                    records.append(("inner", method, path))
+
+        collect(mounted.routes)
+    return sorted(records)
+
+
+def _assert_route_inventory(records: list[tuple[str, str, str]]) -> None:
+    expected = [
+        ("parent", "MOUNT", ""),
+        *(("inner", method, path) for method, path in SAFE_INNER_ROUTES),
+        *(("inner", method, path) for method, path in BLOCKED_INNER_ROUTES),
+    ]
+    assert len(records) == len(expected)
+    assert Counter(records) == Counter(expected)
+    assert all(count == 1 for count in Counter(records).values())
+
+
+def _asset_tree_records() -> tuple[frozenset[str], bytes]:
+    records: list[bytes] = []
+    membership: set[str] = set()
+    for raw_root, prefix in (
+        (BUILD_PATH_LIB, "/assets/"),
+        (STATIC_PATH_LIB, "/static/"),
+    ):
+        root = Path(raw_root).resolve(strict=True)
+        for candidate in sorted(root.rglob("*")):
+            if not candidate.is_file():
+                continue
+            relative = candidate.resolve(strict=True).relative_to(root).as_posix()
+            url = prefix + relative
+            payload = candidate.read_bytes()
+            membership.add(url)
+            records.append(
+                f"{url}\t{len(payload)}\t{hashlib.sha256(payload).hexdigest()}\n".encode()
+            )
+    return frozenset(membership), b"".join(sorted(records))
+
+
+def _queue_state_snapshot(demo: gr.Blocks) -> tuple[tuple[str, int], ...]:
+    queue = demo._queue
+    state_holder = demo.state_holder
+    collections = {
+        "active_jobs": queue.active_jobs,
+        "asyncio_tasks": queue._asyncio_tasks,
+        "event_analytics": queue.event_analytics,
+        "event_ids": queue.event_ids_to_events,
+        "event_queues": queue.event_queue_per_concurrency_id,
+        "pending_ids": queue.pending_event_ids_session,
+        "pending_messages": queue.pending_messages_per_session,
+        "session_data": state_holder.session_data,
+        "time_last_used": state_holder.time_last_used,
+    }
+    return tuple(sorted((name, len(value)) for name, value in collections.items()))
+
+
 def _scope(
     method: str,
     path: str,
@@ -233,14 +390,17 @@ class AppEntryMarker:
 @dataclass(frozen=True)
 class RunningWireApp:
     marker: AppEntryMarker
+    demo: gr.Blocks
 
     def request(self, request_bytes: bytes) -> RawResponse:
         chunks: list[bytes] = []
         with socket.create_connection(("127.0.0.1", 7860), timeout=5) as connection:
             connection.sendall(request_bytes)
-            connection.shutdown(socket.SHUT_WR)
             while True:
-                chunk = connection.recv(65536)
+                try:
+                    chunk = connection.recv(65536)
+                except (ConnectionAbortedError, ConnectionResetError):
+                    break
                 if not chunk:
                     break
                 chunks.append(chunk)
@@ -258,7 +418,8 @@ class RunningWireApp:
 
 @pytest.fixture(scope="module")
 def running_wire_app(valid_bundle: Path) -> Iterator[RunningWireApp]:
-    guarded = _compose(ui_module.create_app(valid_bundle))
+    demo = ui_module.create_app(valid_bundle)
+    guarded = _compose(demo)
     marker = AppEntryMarker(guarded)
     config = uvicorn.Config(
         marker,
@@ -285,7 +446,7 @@ def running_wire_app(valid_bundle: Path) -> Iterator[RunningWireApp]:
         thread.join(timeout=5)
         raise AssertionError("programmatic Uvicorn+h11 did not start")
     try:
-        yield RunningWireApp(marker)
+        yield RunningWireApp(marker, demo)
     finally:
         server.should_exit = True
         thread.join(timeout=15)
@@ -448,7 +609,9 @@ def test_outer_guard_constructor_is_exact_and_rejects_empty_membership() -> None
         ),
         ("GET", "/config", b"CANARY_7419=1", [(b"host", b"127.0.0.1:7860")]),
         ("GET", "/", b"", []),
+        ("GET", "/", b"", [(b"Host", b"127.0.0.1:7860")]),
         ("GET", "/", b"", [(b"host", b"127.0.0.1:7860"), (b"host", b"localhost:7860")]),
+        ("GET", "/", b"", [(b"host", b"127.0.0.1:7860"), (b"Host", b"localhost:7860")]),
         ("GET", "/", b"", [(b"host", b"UNLISTED.invalid")]),
         ("GET", "/%2e%2e/config", b"", [(b"host", b"127.0.0.1:7860")]),
         ("GET", "//config", b"", [(b"host", b"127.0.0.1:7860")]),
@@ -621,6 +784,22 @@ def test_uvicorn_wire_unlisted_host_reaches_guard_and_head_body_is_suppressed(
     assert head.body == b""
 
 
+def test_uvicorn_wire_permitted_root_head_has_no_entity_body(
+    running_wire_app: RunningWireApp,
+) -> None:
+    before = running_wire_app.marker.calls
+    response = running_wire_app.request(
+        b"HEAD / HTTP/1.1\r\nHost: 127.0.0.1:7860\r\nConnection: close\r\n\r\n"
+    )
+    assert response.status == 200
+    assert response.body == b""
+    assert int(response.headers[b"content-length"]) > 0
+    assert response.headers[b"content-type"].startswith(b"text/html")
+    assert b"access-control-allow-origin" not in response.headers
+    assert b"content-encoding" not in response.headers
+    assert running_wire_app.marker.calls == before + 1
+
+
 def test_exact_read_only_method_table_uses_membership() -> None:
     membership = ui_module.build_package_asset_membership()
     asset = sorted(membership)[0]
@@ -683,6 +862,137 @@ def test_package_asset_missing_root_fails_closed(
         ui_module.build_package_asset_membership()
 
 
+def _fake_asset_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path]:
+    build = tmp_path / "build"
+    static = tmp_path / "static"
+    build.mkdir()
+    static.mkdir()
+    (build / "app.js").write_bytes(b"app")
+    (static / "logo.svg").write_bytes(b"logo")
+    monkeypatch.setattr(ui_module, "BUILD_PATH_LIB", build)
+    monkeypatch.setattr(ui_module, "STATIC_PATH_LIB", static)
+    return build, static
+
+
+def _symlink_or_skip(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable on this host: {exc}")
+
+
+def test_package_asset_root_symlink_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    real_build = tmp_path / "real-build"
+    real_build.mkdir()
+    (real_build / "app.js").write_bytes(b"app")
+    build_link = tmp_path / "build-link"
+    _symlink_or_skip(build_link, real_build, target_is_directory=True)
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "logo.svg").write_bytes(b"logo")
+    monkeypatch.setattr(ui_module, "BUILD_PATH_LIB", build_link)
+    monkeypatch.setattr(ui_module, "STATIC_PATH_LIB", static)
+    with pytest.raises(ValueError, match="package_asset_root_symlink"):
+        ui_module.build_package_asset_membership()
+
+
+@pytest.mark.parametrize("directory", (False, True))
+def test_package_asset_file_or_directory_symlink_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, directory: bool
+) -> None:
+    build, _ = _fake_asset_roots(monkeypatch, tmp_path)
+    target = tmp_path / ("target-dir" if directory else "target.js")
+    if directory:
+        target.mkdir()
+        (target / "nested.js").write_bytes(b"nested")
+    else:
+        target.write_bytes(b"target")
+    _symlink_or_skip(
+        build / ("linked-dir" if directory else "linked.js"),
+        target,
+        target_is_directory=directory,
+    )
+    with pytest.raises(ValueError, match="package_asset_symlink"):
+        ui_module.build_package_asset_membership()
+
+
+def test_package_asset_containment_escape_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    build, _ = _fake_asset_roots(monkeypatch, tmp_path)
+    outside = tmp_path / "outside.js"
+    outside.write_bytes(b"outside")
+    escape = build / "escape.js"
+    _symlink_or_skip(escape, outside)
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: False if path == escape else real_is_symlink(path),
+    )
+    with pytest.raises(ValueError, match="package_asset_containment_invalid"):
+        ui_module.build_package_asset_membership()
+
+
+def test_package_asset_special_file_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    build, _ = _fake_asset_roots(monkeypatch, tmp_path)
+    special = build / "special.sock"
+    unix_family = getattr(socket, "AF_UNIX", None)
+    if unix_family is None:
+        pytest.skip("filesystem special-file creation unavailable on this host")
+    unix_socket = socket.socket(unix_family, socket.SOCK_STREAM)
+    try:
+        unix_socket.bind(str(special))
+    except (AttributeError, OSError) as exc:
+        unix_socket.close()
+        pytest.skip(f"filesystem special-file creation unavailable on this host: {exc}")
+    try:
+        with pytest.raises(ValueError, match="package_asset_special_file"):
+            ui_module.build_package_asset_membership()
+    finally:
+        unix_socket.close()
+
+
+def test_package_asset_duplicate_url_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    build, _ = _fake_asset_roots(monkeypatch, tmp_path)
+    (build / "other.js").write_bytes(b"other")
+    monkeypatch.setattr(ui_module, "_canonical_asset_relative", lambda relative: "same.js")
+    with pytest.raises(ValueError, match="package_asset_duplicate_url"):
+        ui_module.build_package_asset_membership()
+
+
+def test_package_asset_case_alias_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    build, _ = _fake_asset_roots(monkeypatch, tmp_path)
+    upper = build / "CaseAlias.js"
+    lower = build / "casealias.js"
+    upper.write_bytes(b"upper")
+    lower.write_bytes(b"lower")
+    if upper.samefile(lower):
+        pytest.skip("case-sensitive alias fixture unavailable on this filesystem")
+    with pytest.raises(ValueError, match="package_asset_case_alias"):
+        ui_module.build_package_asset_membership()
+
+
+def test_package_asset_membership_has_sorted_content_tree_evidence() -> None:
+    membership, records = _asset_tree_records()
+    repeated_membership, repeated_records = _asset_tree_records()
+    assert membership == ui_module.build_package_asset_membership()
+    assert repeated_membership == membership
+    assert repeated_records == records
+    assert records == b"".join(sorted(records.splitlines(keepends=True)))
+    assert len(records.splitlines()) == len(membership)
+    assert all(len(record.split(b"\t")) == 3 for record in records.splitlines())
+    assert hashlib.sha256(records).digest() == hashlib.sha256(repeated_records).digest()
+
+
 def test_theme_manifest_favicon_and_default_logo_are_exact(valid_bundle: Path) -> None:
     demo = ui_module.create_app(valid_bundle)
     guarded_app = _compose(demo)
@@ -733,49 +1043,164 @@ def test_theme_manifest_favicon_and_default_logo_are_exact(valid_bundle: Path) -
         assert response.content == b"Not Found"
 
 
+def test_direct_outer_boundary_blocks_file_and_upload_before_receive(
+    valid_bundle: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    demo = ui_module.create_app(valid_bundle)
+    guarded = _compose(demo)
+    bomb_calls: list[str] = []
+
+    def bomb(*args: object, **kwargs: object) -> None:
+        bomb_calls.append(repr((args, kwargs)))
+        raise AssertionError("inner fetch/temp capability reached")
+
+    monkeypatch.setattr(gradio_routes, "secure_url_stream_response", bomb)
+    monkeypatch.setattr(gradio_routes, "file_fetch", bomb)
+    monkeypatch.setattr(gradio_routes.tempfile, "NamedTemporaryFile", bomb)
+    monkeypatch.setattr(gradio_routes.tempfile, "TemporaryDirectory", bomb)
+    temp_root = tmp_path / "owned-temp"
+    temp_root.mkdir()
+    monkeypatch.setattr(gradio_routes.tempfile, "tempdir", str(temp_root))
+    before_temp = tuple(temp_root.iterdir())
+    before_state = _queue_state_snapshot(demo)
+    probes = (
+        ("GET", "/gradio_api/file=http://CANARY_7419.invalid/a", [], b""),
+        ("GET", "/gradio_api/file=/tmp/CANARY_7419", [], b""),
+        ("POST", "/gradio_api/upload", [(b"content-length", b"0")], b""),
+        ("POST", "/gradio_api/upload", [(b"content-length", b"11")], b"CANARY_7419"),
+        (
+            "POST",
+            "/gradio_api/upload",
+            [(b"content-length", b"1048577")],
+            b"CANARY_7419" * 8192,
+        ),
+    )
+    for method, path, extra_headers, payload in probes:
+        scope = _scope(
+            method,
+            path,
+            headers=[(b"host", b"127.0.0.1:7860"), *extra_headers],
+        )
+        messages, receive_calls = _run_asgi(guarded, scope)
+        assert receive_calls == 0
+        assert messages == [
+            {
+                "type": "http.response.start",
+                "status": 404,
+                "headers": [
+                    (b"content-type", b"text/plain; charset=utf-8"),
+                    (b"content-length", b"9"),
+                ],
+            },
+            {"type": "http.response.body", "body": b"Not Found", "more_body": False},
+        ]
+        serialized = repr(messages).encode()
+        assert b"CANARY_7419" not in serialized
+        if payload:
+            assert payload not in serialized
+    assert bomb_calls == []
+    assert tuple(temp_root.iterdir()) == before_temp
+    assert _queue_state_snapshot(demo) == before_state
+
+
+def test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp(
+    running_wire_app: RunningWireApp,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bomb_calls: list[str] = []
+
+    def bomb(*args: object, **kwargs: object) -> None:
+        bomb_calls.append(repr((args, kwargs)))
+        raise AssertionError("inner fetch/temp capability reached")
+
+    monkeypatch.setattr(gradio_routes, "secure_url_stream_response", bomb)
+    monkeypatch.setattr(gradio_routes, "file_fetch", bomb)
+    monkeypatch.setattr(gradio_routes.tempfile, "NamedTemporaryFile", bomb)
+    monkeypatch.setattr(gradio_routes.tempfile, "TemporaryDirectory", bomb)
+    temp_root = tmp_path / "owned-wire-temp"
+    temp_root.mkdir()
+    monkeypatch.setattr(gradio_routes.tempfile, "tempdir", str(temp_root))
+    before_temp = tuple(temp_root.iterdir())
+    before_state = _queue_state_snapshot(running_wire_app.demo)
+    oversized = b"X" * 1_048_577 + b"CANARY_7419"
+    probes = (
+        (
+            b"GET /gradio_api/file=http://CANARY_7419.invalid/a HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:7860\r\nConnection: close\r\n\r\n",
+            b"CANARY_7419",
+        ),
+        (
+            b"GET /gradio_api/file=/tmp/CANARY_7419 HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:7860\r\nConnection: close\r\n\r\n",
+            b"CANARY_7419",
+        ),
+        (
+            b"POST /gradio_api/upload HTTP/1.1\r\nHost: 127.0.0.1:7860\r\n"
+            b"Content-Length: 0\r\nConnection: close\r\n\r\n",
+            b"CANARY_7419",
+        ),
+        (
+            b"POST /gradio_api/upload HTTP/1.1\r\nHost: 127.0.0.1:7860\r\n"
+            b"Content-Length: 11\r\nConnection: close\r\n\r\nCANARY_7419",
+            b"CANARY_7419",
+        ),
+        (
+            b"POST /gradio_api/upload HTTP/1.1\r\nHost: 127.0.0.1:7860\r\n"
+            + f"Content-Length: {len(oversized)}\r\n".encode()
+            + b"Connection: close\r\n\r\n"
+            + oversized,
+            b"CANARY_7419",
+        ),
+    )
+    before_entry = running_wire_app.marker.calls
+    for request, canary in probes:
+        response = running_wire_app.request(request)
+        assert response.status == 404
+        assert response.headers[b"content-length"] == b"9"
+        assert response.body == b"Not Found"
+        assert canary not in response.raw
+        assert b"access-control-allow-origin" not in response.raw.lower()
+        assert b"content-encoding" not in response.raw.lower()
+    assert running_wire_app.marker.calls == before_entry + len(probes)
+    assert bomb_calls == []
+    assert tuple(temp_root.iterdir()) == before_temp
+    assert _queue_state_snapshot(running_wire_app.demo) == before_state
+
+
 def test_registered_gradio_routes_are_exactly_inventoried_and_classified(
     valid_bundle: Path,
 ) -> None:
     guarded_app = _compose(ui_module.create_app(valid_bundle))
     parent = guarded_app.downstream
-    mounted = parent.routes[0].app
-    records: set[tuple[str, str]] = set()
-
-    def collect(routes: list[Any]) -> None:
-        for route in routes:
-            original = getattr(route, "original_router", None)
-            if original is not None:
-                collect(original.routes)
-                continue
-            path = getattr(route, "path", None)
-            for method in getattr(route, "methods", set()) or set():
-                records.add((method, path))
-
-    collect(mounted.routes)
-    serialized = "".join(
-        f"{method}\t{path}\n" for method, path in sorted(records)
-    ).encode()
-    assert len(records) == 81
+    records = _route_inventory(parent)
+    _assert_route_inventory(records)
+    serialized = "".join(f"{layer}\t{method}\t{path}\n" for layer, method, path in records).encode()
+    assert len(records) == 82
     assert hashlib.sha256(serialized).hexdigest() == (
-        "832697792e92dd8f11200a458f8b259780308ed15b4a7ab5137d4aab8509c2e9"
+        "726e9c3304cafc0d5f06c8752bfa916ebf76ca625ef7fe2493144a8145130843"
     )
-    safe_required = {
-        ("GET", "/"),
-        ("HEAD", "/"),
-        ("GET", "/config"),
-        ("GET", "/theme.css"),
-        ("GET", "/manifest.json"),
-        ("GET", "/favicon.ico"),
-        ("GET", "/assets/{path:path}"),
-        ("GET", "/static/{path:path}"),
-    }
-    assert safe_required <= records
-    blocked = records - safe_required
-    assert blocked
-    assert ("POST", "/gradio_api/upload") in blocked
-    assert ("GET", "/gradio_api/info") in blocked
-    assert ("GET", "/monitoring") in blocked
-    assert ("GET", "/openapi.json") in blocked
+    assert set(SAFE_INNER_ROUTES).isdisjoint(BLOCKED_INNER_ROUTES)
+    assert ("POST", "/gradio_api/upload") in BLOCKED_INNER_ROUTES
+    assert ("GET", "/gradio_api/info") in BLOCKED_INNER_ROUTES
+    assert ("GET", "/monitoring") in BLOCKED_INNER_ROUTES
+    assert ("GET", "/openapi.json") in BLOCKED_INNER_ROUTES
+
+
+def test_route_inventory_rejects_duplicate_unknown_and_missing_records() -> None:
+    expected = [
+        ("parent", "MOUNT", ""),
+        *(("inner", method, path) for method, path in SAFE_INNER_ROUTES),
+        *(("inner", method, path) for method, path in BLOCKED_INNER_ROUTES),
+    ]
+    mutations = (
+        [*expected, expected[-1]],
+        [*expected, ("inner", "GET", "/CANARY_7419")],
+        expected[:-1],
+    )
+    for mutation in mutations:
+        with pytest.raises(AssertionError):
+            _assert_route_inventory(sorted(mutation))
 
 
 def test_failure_log_contains_only_bounded_reason(
@@ -813,6 +1238,7 @@ def test_entrypoint_mount_and_uvicorn_contract_are_exact(
     assert spec is not None and spec.loader is not None
     entrypoint = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(entrypoint)
+
     def fake_run(app: Any, **kwargs: object) -> None:
         uvicorn_capture.update(kwargs)
 

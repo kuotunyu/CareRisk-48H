@@ -282,6 +282,7 @@ def build_package_asset_membership() -> frozenset[str]:
     """Derive the immutable URL membership from the two pinned Gradio roots."""
 
     urls: set[str] = set()
+    casefold_urls: dict[str, str] = {}
     for raw_root, prefix in (
         (BUILD_PATH_LIB, "/assets/"),
         (STATIC_PATH_LIB, "/static/"),
@@ -310,7 +311,11 @@ def build_package_asset_membership() -> frozenset[str]:
             url = prefix + _canonical_asset_relative(relative)
             if url in urls:
                 raise ValueError("package_asset_duplicate_url")
+            folded_url = url.casefold()
+            if folded_url in casefold_urls:
+                raise ValueError("package_asset_case_alias")
             urls.add(url)
+            casefold_urls[folded_url] = url
     if not urls:
         raise ValueError("package_asset_membership_empty")
     return frozenset(urls)
@@ -368,10 +373,11 @@ def _selected_authority(headers: object) -> tuple[bytes, Authority] | None:
         ):
             return None
         typed_headers.append(header)
-    host_values = [value for name, value in typed_headers if name == b"host"]
-    if len(host_values) != 1:
+    host_headers = [(name, value) for name, value in typed_headers if name.lower() == b"host"]
+    if len(host_headers) != 1 or host_headers[0][0] != b"host":
         return None
-    selected = AUTHORITY_MAP.get(host_values[0])
+    host = host_headers[0][1]
+    selected = AUTHORITY_MAP.get(host)
     if selected is None:
         return None
     lowered_names = [name.lower() for name, _ in typed_headers]
@@ -380,7 +386,7 @@ def _selected_authority(headers: object) -> tuple[bytes, Authority] | None:
     lengths = [value for (name, value) in typed_headers if name.lower() == b"content-length"]
     if len(lengths) > 1 or (lengths and lengths[0] != b"0"):
         return None
-    return host_values[0], selected
+    return host, selected
 
 
 async def _not_found(send: Send) -> None:
