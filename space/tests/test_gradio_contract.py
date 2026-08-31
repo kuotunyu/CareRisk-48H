@@ -428,6 +428,8 @@ class RunningWireApp:
     marker: AppEntryMarker
     demo: gr.Blocks
     log_capture: BoundedLogCapture
+    pre_health_state: tuple[tuple[str, int], ...]
+    post_health_state: tuple[tuple[str, int], ...] | None
 
     def logs(self) -> str:
         return self.log_capture.snapshot()
@@ -543,15 +545,22 @@ def running_wire_app(valid_bundle: Path) -> Iterator[RunningWireApp]:
         for logger in captured_loggers:
             logger.removeHandler(log_capture)
         raise AssertionError("programmatic Uvicorn+h11 did not start")
-    running = RunningWireApp(marker, demo, log_capture)
+    pre_health_state = _queue_state_snapshot(demo)
+    health_runner = RunningWireApp(
+        marker,
+        demo,
+        log_capture,
+        pre_health_state,
+        None,
+    )
     try:
-        root = running.request(
+        root = health_runner.request(
             b"GET / HTTP/1.1\r\nHost: 127.0.0.1:7860\r\nConnection: close\r\n\r\n"
         )
-        config_response = running.request(
+        config_response = health_runner.request(
             b"GET /config HTTP/1.1\r\nHost: 127.0.0.1:7860\r\nConnection: close\r\n\r\n"
         )
-        theme = running.request(
+        theme = health_runner.request(
             f"GET /theme.css?{THEME_QUERY} HTTP/1.1\r\n"
             "Host: 127.0.0.1:7860\r\nConnection: close\r\n\r\n".encode()
         )
@@ -560,6 +569,13 @@ def running_wire_app(valid_bundle: Path) -> Iterator[RunningWireApp]:
         assert hashlib.sha256(theme.body).hexdigest() == THEME_CSS_SHA256
         assert b"access-control-allow-origin" not in root.raw.lower()
         assert b"content-encoding" not in root.raw.lower()
+        running = RunningWireApp(
+            marker,
+            demo,
+            log_capture,
+            pre_health_state,
+            _queue_state_snapshot(demo),
+        )
         yield running
     finally:
         server.should_exit = True
@@ -616,6 +632,30 @@ def test_claim_dom_precedes_first_focusable_control(valid_bundle: Path) -> None:
     assert claim < first_radio
     assert document.index(EXPECTED_ZH_TW) < document.index(EXPECTED_EN) < first_radio
     assert "<legend>選擇固定 synthetic gate state</legend>" in document
+
+
+def test_all_app_owned_visible_text_css_respects_sixteen_pixel_floor() -> None:
+    declarations = re.findall(
+        r"(?:^|[;{}])\s*(font-size|font)\s*:\s*([^;}]+)", ui_module.APP_CSS
+    )
+    assert declarations
+    violations = [
+        (property_name, value, size)
+        for property_name, value in declarations
+        for size in (int(match) for match in re.findall(r"(\d+)px", value))
+        if size < 16
+    ]
+    assert violations == []
+    for selector in (
+        ".eyebrow",
+        "#claim-ceiling p+p",
+        ".scenario-state h3",
+        ".provenance-list",
+    ):
+        rule = re.search(rf"{re.escape(selector)}\s*\{{([^}}]+)\}}", ui_module.APP_CSS)
+        assert rule is not None
+        assert "16px" in rule.group(1)
+    assert ".evidence-ledger{font-size:16px}" in ui_module.APP_CSS
 
 
 @pytest.mark.parametrize("failure_code", ALL_FAILURE_CODES)
@@ -1369,6 +1409,8 @@ def test_running_fixture_health_gate_and_snapshots_are_bounded(
     )
     assert len(requests) <= 128
     assert len(running_wire_app.logs()) <= 65_536
+    assert running_wire_app.post_health_state is not None
+    assert running_wire_app.pre_health_state == running_wire_app.post_health_state
 
 
 def test_registered_gradio_routes_are_exactly_inventoried_and_classified(
@@ -1418,11 +1460,26 @@ def test_failure_log_contains_only_bounded_reason(
     assert repr({"secret": "CANARY_7419"}) not in captured
 
 
+def _assert_entrypoint_positional_identity(
+    entrypoint: Any,
+    mounted_parent: FastAPI,
+    mounted_demo: gr.Blocks,
+    served_app: Any,
+) -> None:
+    assert mounted_parent is entrypoint.parent
+    assert mounted_demo is entrypoint.demo
+    assert served_app is entrypoint.app
+    assert isinstance(served_app, ui_module.PublicSurfaceGuard)
+    assert served_app.downstream is mounted_parent
+
+
 def test_entrypoint_mount_and_uvicorn_contract_are_exact(
     valid_bundle: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     mount_capture: dict[str, object] = {}
     uvicorn_capture: dict[str, object] = {}
+    mount_positional: list[tuple[FastAPI, gr.Blocks]] = []
+    uvicorn_positional: list[Any] = []
     demo = ui_module.create_app(valid_bundle)
     membership = ui_module.build_package_asset_membership()
 
@@ -1430,6 +1487,7 @@ def test_entrypoint_mount_and_uvicorn_contract_are_exact(
     monkeypatch.setattr(ui_module, "build_package_asset_membership", lambda: membership)
 
     def fake_mount(parent: FastAPI, mounted_demo: gr.Blocks, **kwargs: object) -> FastAPI:
+        mount_positional.append((parent, mounted_demo))
         mount_capture.update(kwargs)
         assert mounted_demo is demo
         return parent
@@ -1443,6 +1501,7 @@ def test_entrypoint_mount_and_uvicorn_contract_are_exact(
     spec.loader.exec_module(entrypoint)
 
     def fake_run(app: Any, **kwargs: object) -> None:
+        uvicorn_positional.append(app)
         uvicorn_capture.update(kwargs)
 
     monkeypatch.setattr(entrypoint.uvicorn, "run", fake_run)
@@ -1470,6 +1529,24 @@ def test_entrypoint_mount_and_uvicorn_contract_are_exact(
     assert isinstance(entrypoint.app, ui_module.PublicSurfaceGuard)
     assert entrypoint.app.downstream is entrypoint.parent
     assert entrypoint.app.package_asset_urls == membership
+    assert len(mount_positional) == len(uvicorn_positional) == 1
+    _assert_entrypoint_positional_identity(
+        entrypoint,
+        mount_positional[0][0],
+        mount_positional[0][1],
+        uvicorn_positional[0],
+    )
+    for wrong_parent, wrong_app in (
+        (FastAPI(), entrypoint.app),
+        (entrypoint.parent, entrypoint.parent),
+    ):
+        with pytest.raises(AssertionError):
+            _assert_entrypoint_positional_identity(
+                entrypoint,
+                wrong_parent,
+                entrypoint.demo,
+                wrong_app,
+            )
     assert uvicorn_capture == {
         "host": "0.0.0.0",
         "port": 7860,
