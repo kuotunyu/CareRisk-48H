@@ -44,6 +44,7 @@ SCENARIOS: tuple[ScenarioViewModel, ...] = (
 )
 
 SCENARIO_IDS: tuple[str, ...] = tuple(item.id for item in SCENARIOS)
+MAX_SCENARIO_ID_CHARS = max(len(item) for item in SCENARIO_IDS)
 
 UNKNOWN_SCENARIO = ScenarioViewModel(
     id="unknown_synthetic_scenario",
@@ -59,7 +60,7 @@ UNKNOWN_SCENARIO = ScenarioViewModel(
 def select_scenario(value: object) -> ScenarioViewModel:
     """Return an exact fixed scenario, or the bounded fail-closed state."""
 
-    if type(value) is not str:
+    if type(value) is not str or len(value) > MAX_SCENARIO_ID_CHARS:
         return UNKNOWN_SCENARIO
     for scenario in SCENARIOS:
         if value == scenario.id:
@@ -84,8 +85,7 @@ def render_bounded_scenario_html(scenario: ScenarioViewModel) -> str:
         ("value_pattern", scenario.value_pattern),
     )
     gates = "".join(
-        f"<li>{name}: {'pass' if enabled else 'withheld'}</li>"
-        for name, enabled in gate_values
+        f"<li>{name}: {'pass' if enabled else 'withheld'}</li>" for name, enabled in gate_values
     )
     return (
         f'<article class="scenario-state" data-scenario-id="{scenario_id}">'

@@ -4,6 +4,7 @@ from carerisk_space.contracts import (
     PRIMARY_CLAIM_ZH_TW,
     SAFETY_SUBTITLE_EN,
 )
+from carerisk_space.ui import render_claim_header
 
 SPACE_ROOT = Path(__file__).parents[1]
 EXPECTED_ZH_TW = (
@@ -27,3 +28,15 @@ def test_claim_copy_is_exact_and_card_places_it_first() -> None:
     assert "sdk: docker" in card
     assert "app_port: 7860" in card
     assert "license: apache-2.0" in card
+
+
+def test_rendered_claim_header_has_exact_copy_and_no_focusable_content() -> None:
+    html = render_claim_header()
+    assert html.index("<header") < html.index('id="claim-ceiling"')
+    assert html.index(EXPECTED_ZH_TW) < html.index(EXPECTED_EN)
+    assert html.count(EXPECTED_ZH_TW) == 1
+    assert html.count(EXPECTED_EN) == 1
+    assert all(
+        marker not in html.lower()
+        for marker in ("<a ", "<button", "<input", "<select", "<textarea", "tabindex=")
+    )

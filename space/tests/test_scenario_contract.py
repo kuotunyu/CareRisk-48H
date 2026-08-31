@@ -1,10 +1,13 @@
 import json
 import re
 from dataclasses import FrozenInstanceError, asdict, fields
+from typing import NoReturn
 
+import carerisk_space.scenarios as scenarios_module
 import pytest
 from carerisk_space.contracts import ScenarioViewModel
 from carerisk_space.scenarios import (
+    MAX_SCENARIO_ID_CHARS,
     SCENARIO_IDS,
     SCENARIOS,
     UNKNOWN_SCENARIO,
@@ -176,6 +179,18 @@ def test_adversarial_callback_fails_closed_without_coercion_or_echo(value: objec
         assert str(value) not in html
 
 
+def test_oversized_scenario_id_stops_before_registry_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ExplodingRegistry:
+        def __iter__(self) -> NoReturn:
+            raise AssertionError("oversized input reached registry lookup")
+
+    monkeypatch.setattr(scenarios_module, "SCENARIOS", ExplodingRegistry())
+    value = "x" * (MAX_SCENARIO_ID_CHARS + 1)
+    assert select_scenario(value) == UNKNOWN_SCENARIO
+
+
 def test_bounded_renderer_escapes_every_text_field() -> None:
     hostile = ScenarioViewModel(
         id='<script id="hostile">',
@@ -200,10 +215,12 @@ def test_registry_rendering_is_fixed_bounded_and_contains_only_gate_statuses() -
     for scenario_id in EXPECTED_IDS:
         html = render_scenario(scenario_id)
         assert len(html) < 2_048
+        assert html.startswith('<article class="scenario-state"')
+        assert html.endswith("</article>")
+        assert 'id="scenario-result"' not in html
         assert html.count("<li>") == 3
         assert all(
-            gate in html
-            for gate in ("schema_contract", "measurement_coverage", "value_pattern")
+            gate in html for gate in ("schema_contract", "measurement_coverage", "value_pattern")
         )
         assert "pass" in html
         assert scenario_id in html

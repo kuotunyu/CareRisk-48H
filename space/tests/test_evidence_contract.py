@@ -19,6 +19,7 @@ from carerisk_space.evidence import (
     validate_receipt,
     validate_release,
 )
+from carerisk_space.ui import render_evidence
 
 SPACE_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = SPACE_ROOT.parent
@@ -221,7 +222,7 @@ def test_each_consumed_receipt_numeric_leaf_rejects_lexical_exponent_overflow(
 
 @pytest.mark.parametrize(
     "raw",
-    [b"{", b'{} trailing', b'{"x": 1, "x": 2}', b"\xff", b"[]"],
+    [b"{", b"{} trailing", b'{"x": 1, "x": 2}', b"\xff", b"[]"],
 )
 def test_release_parse_failures_use_release_relationship_code(raw: bytes) -> None:
     receipt = validate_receipt(receipt_raw())
@@ -575,6 +576,28 @@ def test_normal_state_returns_receipt_backed_view(candidate_bundle: Path) -> Non
     assert isinstance(result, contracts_module.EvidenceViewModel)
     assert set(result.receipt.metrics) == {"auprc", "auroc", "brier", "ece"}
     assert result.manifest.destination_repository == "steven0226/carerisk-48h"
+
+
+def test_evidence_html_formats_only_approved_receipt_and_provenance_fields(
+    candidate_bundle: Path,
+) -> None:
+    result = evidence_module.load_evidence(candidate_bundle)
+    assert isinstance(result, contracts_module.EvidenceViewModel)
+    html = render_evidence(result)
+    receipt = result.receipt
+    assert f"{receipt.prevalence:.1%}" in html
+    assert str(receipt.n) in html
+    assert str(receipt.events) in html
+    for metric in receipt.metrics.values():
+        assert f"{metric.estimate:.3f}" in html
+        assert f"{metric.lower:.3f}" in html
+        assert f"{metric.upper:.3f}" in html
+    assert receipt.use_limitation in html
+    assert result.manifest.space_app_source_git_sha in html
+    assert result.manifest.evidence_tag_commit in html
+    assert "threshold_changed=false" in html
+    assert "0.297" not in html
+    assert "confusion" not in html.lower()
 
 
 def apply_mutation(
