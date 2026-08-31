@@ -435,6 +435,25 @@ class RunningWireApp:
     def requests(self) -> tuple[tuple[str, str], ...]:
         return self.marker.snapshots()
 
+    @staticmethod
+    def parse_raw_response(raw: bytes, *, context: str) -> RawResponse:
+        if not raw:
+            raise AssertionError(f"empty HTTP response: {context}")
+        head, separator, body = raw.partition(b"\r\n\r\n")
+        if not separator:
+            raise AssertionError(f"incomplete HTTP response headers: {context}")
+        lines = head.split(b"\r\n")
+        status_parts = lines[0].split(b" ", 2)
+        if len(status_parts) < 2 or not status_parts[1].isdigit():
+            raise AssertionError(f"invalid HTTP status line: {context}")
+        headers: dict[bytes, bytes] = {}
+        for line in lines[1:]:
+            if b":" not in line:
+                raise AssertionError(f"invalid HTTP response header: {context}")
+            name, value = line.split(b":", 1)
+            headers[name.lower()] = value.strip()
+        return RawResponse(int(status_parts[1]), headers, body, raw)
+
     def request(self, request_bytes: bytes) -> RawResponse:
         chunks: list[bytes] = []
         with socket.create_connection(("127.0.0.1", 7860), timeout=5) as connection:
@@ -448,15 +467,41 @@ class RunningWireApp:
                     break
                 chunks.append(chunk)
         raw = b"".join(chunks)
-        head, _, body = raw.partition(b"\r\n\r\n")
-        lines = head.split(b"\r\n")
-        status = int(lines[0].split(b" ", 2)[1])
-        headers = {
-            name.lower(): value.strip()
-            for line in lines[1:]
-            for name, value in [line.split(b":", 1)]
-        }
-        return RawResponse(status, headers, body, raw)
+        return self.parse_raw_response(raw, context="complete-request")
+
+    def request_early_response(self, request_headers: bytes, body_prefix: bytes) -> RawResponse:
+        if not request_headers.endswith(b"\r\n\r\n"):
+            raise AssertionError("early-response request headers are incomplete")
+        if len(body_prefix) > 4096:
+            raise AssertionError("early-response body prefix exceeds bound")
+        chunks: list[bytes] = []
+        with socket.create_connection(("127.0.0.1", 7860), timeout=5) as connection:
+            connection.sendall(request_headers)
+            if body_prefix:
+                connection.sendall(body_prefix)
+            while True:
+                try:
+                    chunk = connection.recv(65536)
+                except (ConnectionAbortedError, ConnectionResetError):
+                    break
+                except TimeoutError:
+                    break
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                raw = b"".join(chunks)
+                _, separator, body = raw.partition(b"\r\n\r\n")
+                if not separator:
+                    continue
+                partial = self.parse_raw_response(raw, context="early-response")
+                content_length = partial.headers.get(b"content-length")
+                if (
+                    content_length is not None
+                    and content_length.isdigit()
+                    and len(body) >= int(content_length)
+                ):
+                    break
+        return self.parse_raw_response(b"".join(chunks), context="early-response")
 
 
 @pytest.fixture(scope="module")
@@ -1237,43 +1282,55 @@ def test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp(
     before_state = _queue_state_snapshot(running_wire_app.demo)
     before_logs = running_wire_app.logs()
     before_requests = running_wire_app.requests()
-    oversized = b"X" * 1_048_577 + b"CANARY_7419"
     probes = (
         (
             b"GET /gradio_api/file=http://CANARY_7419.invalid/a HTTP/1.1\r\n"
             b"Host: 127.0.0.1:7860\r\nConnection: close\r\n\r\n",
             b"CANARY_7419",
+            b"",
+            False,
         ),
         (
             b"GET /gradio_api/file=/tmp/CANARY_7419 HTTP/1.1\r\n"
             b"Host: 127.0.0.1:7860\r\nConnection: close\r\n\r\n",
             b"CANARY_7419",
+            b"",
+            False,
         ),
         (
             b"POST /gradio_api/upload HTTP/1.1\r\nHost: 127.0.0.1:7860\r\n"
             b"Content-Length: 0\r\nConnection: close\r\n\r\n",
             b"CANARY_7419",
+            b"",
+            False,
         ),
         (
             b"POST /gradio_api/upload HTTP/1.1\r\nHost: 127.0.0.1:7860\r\n"
-            b"Content-Length: 11\r\nConnection: close\r\n\r\nCANARY_7419",
+            b"Content-Length: 11\r\nX-Payload-Name: CANARY_7419\r\n"
+            b"Connection: keep-alive\r\n\r\n",
             b"CANARY_7419",
+            b"",
+            True,
         ),
         (
             b"POST /gradio_api/upload HTTP/1.1\r\nHost: 127.0.0.1:7860\r\n"
-            + f"Content-Length: {len(oversized)}\r\n".encode()
-            + b"Connection: close\r\n\r\n"
-            + oversized,
+            b"Content-Length: 1048588\r\n"
+            b"Content-Type: multipart/form-data; boundary=CANARY_7419\r\n"
+            b"Connection: keep-alive\r\n\r\n",
             b"CANARY_7419",
+            b"--CANARY_7419\r\nContent-Disposition: form-data; name=\"file\"; ",
+            True,
         ),
     )
     before_entry = running_wire_app.marker.calls
     payload_reprs: list[str] = []
-    for request, canary in probes:
-        _, _, payload = request.partition(b"\r\n\r\n")
-        if payload:
-            payload_reprs.append(repr(payload))
-        response = running_wire_app.request(request)
+    for request, canary, bounded_prefix, early_response in probes:
+        if bounded_prefix:
+            payload_reprs.append(repr(bounded_prefix))
+        if early_response:
+            response = running_wire_app.request_early_response(request, bounded_prefix)
+        else:
+            response = running_wire_app.request(request)
         assert response.status == 404
         assert response.headers[b"content-length"] == b"9"
         assert response.body == b"Not Found"
@@ -1292,6 +1349,13 @@ def test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp(
     assert repr({"secret": "CANARY_7419"}) not in captured
     assert all(payload_repr not in captured for payload_repr in payload_reprs)
     assert "Traceback" not in captured
+
+
+def test_raw_wire_parser_reports_empty_response_without_index_error(
+    running_wire_app: RunningWireApp,
+) -> None:
+    with pytest.raises(AssertionError, match="empty HTTP response: oversized-header-first"):
+        running_wire_app.parse_raw_response(b"", context="oversized-header-first")
 
 
 def test_running_fixture_health_gate_and_snapshots_are_bounded(
