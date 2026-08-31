@@ -8,7 +8,7 @@
 
 **Tech Stack:** CPython 3.11 slim-bookworm runtime image pinned by patch tag and OCI digest; an official Playwright Python test/reviewer image pinned by matching Playwright patch tag plus OCI index/linux-amd64 digests; Gradio `6.26.0`; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
 
-**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. The seventh Task 5 docs-only executable-correction gate starts from exact parent `3d29dbc1a00833a339e273a6eafc6b3f3ee6dfa2`; Task 5 may resume only after a fresh review of the resulting design/plan commit reports Critical=0, Important=0, and Minor=0. No provisional self-SHA is fabricated in this document.
+**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. The current Task 5 docs-only executable-correction gate starts from exact parent `b7f33f332505ec92c8f0cf14e54cf74fa7462bc5`; Task 5 may resume only after a fresh review of the resulting design/plan commit reports Critical=0, Important=0, and Minor=0. No provisional self-SHA is fabricated in this document.
 
 ## Global Constraints
 
@@ -49,7 +49,7 @@
 
 ## Task 5 Authority and Pinned-Source Evidence
 
-- Central authorized local implementation at plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is currently held at exact docs parent `3d29dbc1a00833a339e273a6eafc6b3f3ee6dfa2`; this seventh executable correction changes only the governing design and plan. Product/test files remain byte-frozen until a fresh authority review reports Critical=0, Important=0, and Minor=0.
+- Central authorized local implementation at plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is currently held at exact docs parent `b7f33f332505ec92c8f0cf14e54cf74fa7462bc5`; this executable correction changes only the governing design and plan. Product/test files remain byte-frozen until a fresh authority review reports Critical=0, Important=0, and Minor=0.
 - Pinned `.venv-space` reports Gradio `6.26.0`. `inspect.signature(gr.mount_gradio_app)` contains every fixed Task 5 mount argument, including `favicon_path`; `inspect.signature(uvicorn.run)` contains the fixed programmatic options, including `http`; no `launch` or CLI path is required. The server call fixes `http="h11"` independently of whether `httptools` happens to be installed.
 - Direct composition `app = PublicSurfaceGuard(parent, build_package_asset_membership())` after `gr.mount_gradio_app(...)` was probed with hostile headers: permitted root/config requests remained healthy after scope sanitization, while `OPTIONS` and upload paths returned the fixed 404 outside Gradio with no canary, CORS, or compression. Every implementation and test construction uses this exact two-argument interface with the nonempty membership derived from the two pinned roots; there is no optional default or empty-set substitute.
 - Pinned source registers both `GET` and `HEAD` for root, but GET-only handlers for config, theme, manifest, favicon, and package routes. The governing outer method table therefore allows root GET/HEAD, allows only GET for the other exact read-only resources, and returns its own fixed 404 for all other methods before Gradio.
@@ -794,7 +794,21 @@ def test_schema_failure_controlled_unit_seam_is_fail_closed_through_asgi(
     app = compose_in_memory_outer_app(demo, exact_package_asset_urls())
     response = run_permitted_root_asgi(app)
     assert response.status == 200
+    assert response.heading == "Evidence unavailable"
+    assert response.zh_tw_explanation == (
+        "公開 evidence 未通過完整性驗證，因此本頁不顯示 metrics 或 synthetic gate states。"
+    )
+    assert response.english_explanation == (
+        "Evidence integrity checks failed; metrics and scenarios are disabled."
+    )
     assert response.visible_failure_code == "receipt_schema_invalid"
+    assert response.visible_bounded_codes == ("receipt_schema_invalid",)
+    assert ordered_visible_failure_text(response.document) == (
+        "Evidence unavailable",
+        "公開 evidence 未通過完整性驗證，因此本頁不顯示 metrics 或 synthetic gate states。",
+        "Evidence integrity checks failed; metrics and scenarios are disabled.",
+        "receipt_schema_invalid",
+    )
     assert response.radio_count == response.control_count == response.scenario_panel_count == 0
     assert response.visible_metric_count == response.visible_canonical_value_count == 0
     assert demo.get_config_file()["dependencies"] == []
@@ -1129,6 +1143,7 @@ def test_entrypoint_mount_and_uvicorn_contract_are_exact_under_poisoned_environm
     assert captured_composition.parent.user_middleware == []
     assert captured_composition.uvicorn == {
         "host": "0.0.0.0", "port": 7860, "workers": 1,
+        "http": "h11",
         "proxy_headers": False, "forwarded_allow_ips": "",
         "access_log": False, "server_header": False, "date_header": False,
         "reload": False, "factory": False, "env_file": None, "log_config": None,
@@ -1180,7 +1195,7 @@ def test_running_outer_guard_precedes_fastapi_gradio_fetch_temp_and_body_capabil
     assert public_interaction_state_delta(running_local_app) == empty_state_delta()
 ```
 
-The static config is the app-owned transport proof: it contains zero inputs, dependencies, functions, or API endpoints, while recording pinned `config.enable_queue == true` and framework internal queue/state initialization. The outer guard blocks every Gradio API/queue/event/session route. In-process API metadata is empty; `/gradio_api/info` is not a public endpoint. Browser radio transitions are native HTML/CSS; the request graph remains inside the exact read-only method/path/query table with zero API, POST, event, queue, or session request and zero public-interaction state delta. The evidence-failure startup probe separately requires exactly the bounded reason and no manifest sentinel in captured logs.
+The static config is the app-owned transport proof: it contains zero inputs, dependencies, functions, or API endpoints, while recording pinned `config.enable_queue == true` and framework internal queue/state initialization. The outer guard blocks every Gradio API/queue/event/session route. In-process API metadata is empty; `/gradio_api/info` is not a public endpoint. Browser radio transitions are native HTML/CSS; the request graph remains inside the exact read-only method/path/query table with zero API, POST, event, queue, or session request and zero public-interaction state delta. The controlled-seam `receipt_schema_invalid` unit/component/direct-ASGI probe must assert heading `Evidence unavailable`, zh-TW explanation `公開 evidence 未通過完整性驗證，因此本頁不顯示 metrics 或 synthetic gate states。`, English explanation `Evidence integrity checks failed; metrics and scenarios are disabled.`, and the sole bounded code `receipt_schema_invalid`, plus zero controls/metrics/scenarios/API/event/echo; it is never labeled live-reviewed. The evidence-failure startup probe separately requires exactly the bounded reason and no manifest sentinel in captured logs.
 
 The poisoned-environment fixture covers application construction, exact telemetry value after Blocks, mount capture, exact two-argument direct wrapper identity, Uvicorn capture, and a running server. Pure-ASGI matrices always derive a nonempty package membership from the pinned roots and cover every non-allowlisted method; API/queue/file/upload/proxy/component/monitoring/auth/docs/vibe routes; hostile body framing/authority/query/cookie/header/raw path; URL/local file and multipart canaries; encoded/traversal/case/slash variants; WebSocket; and unknown scopes. Direct-ASGI blocked-response tests assert the exact 9-byte body message and `content-length: 9`. Running integration replaces Gradio outbound fetch and temporary-file construction with bombs and proves guard interception occurs outside FastAPI and Gradio with no downstream, receive, CORS, Brotli, temp delta, network call, response/log echo, or traceback. Separate raw-wire tests leave the pinned Uvicorn+h11 parser untouched, require exact 400 and zero ASGI app-entry marker delta for missing/duplicate Host, require valid unlisted Host to reach the guard's 404, and require blocked `HEAD` responses to expose zero entity bytes with `content-length: 9`. Permitted requests deliver only the selected constant sanitized scope to the inner app.
 
@@ -1653,7 +1668,7 @@ git commit -m 'build(space): harden CPU-only container runtime'
 
 **Interfaces:**
 - Consumes: the inspected exact local final-image digest plus an owned GUID-named temporary run root outside the repository. No caller supplies a registry, remote image, bind mount, failure-state environment variable, evidence path, Dockerfile, mutation command, local tag, push/save/export destination, or other injection surface.
-- Produces: `ReviewPlan`, split-invariant `LiveReviewRecord`, `FailureVariantRecord`, `EvidenceReachabilityRecord`, `WireBoundaryRecord`, and ownership-safe orchestration that Task 13 exercises against the final clean candidate. Normal records always come from the exact final image; live failure records always come from one of four final-image-derived, local-only, labeled `NEVER_DEPLOY` images. The fifth taxonomy code is represented only by its explicit unit/component/ASGI precedence record.
+- Produces: `ReviewPlan`, split-invariant `LiveReviewRecord`, `FailureVariantRecord`, `EvidenceReachabilityRecord`, `WireBoundaryRecord`, `CleanupTarget`, and ownership-safe orchestration that Task 13 exercises against the final clean candidate. Normal records always come from the exact final image; live failure records always come from one of four final-image-derived, local-only, labeled `NEVER_DEPLOY` images. The fifth taxonomy code is represented only by its explicit unit/component/ASGI precedence record. Every task-owned Docker resource carries exact run GUID plus a role-specific complete ownership schema: normal container=`normal` plus exact final digest, reviewer container=`reviewer` plus exact reviewer digest, shared internal network=`network`, and only the four failure images/containers=`failure_variant` plus exact base digest/code/`NEVER_DEPLOY=true`.
 
 - [ ] **Step 1: Write failing review-contract tests**
 
@@ -1687,11 +1702,16 @@ def test_failure_taxonomy_reachability_and_precedence_are_explicit() -> None:
     assert schema.live_review_status == "not_live_reviewed"
 
 def test_container_cold_start_command_is_hardened() -> None:
-    command = build_container_command("sha256:" + "a" * 64)
+    final_digest = "sha256:" + "a" * 64
+    guid = "00000000-0000-0000-0000-000000000001"
+    command = build_container_command(final_digest, run_guid=guid)
     joined = " ".join(command)
     for required in ("--cpus=2", "--network=none", "--read-only", "--tmpfs"):
         assert required in joined
     assert "mode=1777" in joined
+    assert docker_ownership_labels(command) == ownership_labels(
+        "normal", guid, final_digest=final_digest,
+    )
 
 def test_failure_variant_build_is_local_digest_derived_and_network_disabled() -> None:
     final_digest = "sha256:" + "a" * 64
@@ -1707,7 +1727,10 @@ def test_failure_variant_build_is_local_digest_derived_and_network_disabled() ->
     assert "USER 0" in dockerfile
     assert 'RUN ["rm", "--", "/app/evidence/final-result-receipt.json"]' in dockerfile
     assert dockerfile.rstrip().endswith("USER 10001:10001")
-    assert_never_deploy_labels(command, final_digest, "receipt_missing")
+    assert docker_ownership_labels(command) == ownership_labels(
+        "failure_variant", "00000000-0000-0000-0000-000000000001",
+        base_digest=final_digest, failure_code="receipt_missing",
+    )
 
 @pytest.mark.parametrize("forbidden", [
     "registry.example/x", "--push", "--output", "--save", "--mount", "--env",
@@ -1717,9 +1740,81 @@ def test_failure_variant_interface_rejects_remote_or_injection_inputs(forbidden:
         parse_failure_variant_arguments([forbidden])
 
 def test_reviewer_app_uses_exact_internal_network_alias() -> None:
-    command = build_reviewer_app_command("sha256:" + "a" * 64)
-    assert option_value(command, "--network-alias") == "carerisk-app"
-    assert reviewer_base_url(command) == "http://carerisk-app:7860"
+    final_digest = "sha256:" + "a" * 64
+    reviewer_digest = "sha256:" + "b" * 64
+    guid = "00000000-0000-0000-0000-000000000001"
+    app_command = build_reviewed_app_command(final_digest, run_guid=guid)
+    assert option_value(app_command, "--network-alias") == "carerisk-app"
+    assert docker_ownership_labels(app_command) == ownership_labels(
+        "normal", guid, final_digest=final_digest,
+    )
+    reviewer_command = build_reviewer_command(
+        reviewer_digest, run_guid=guid, base_url="http://carerisk-app:7860",
+    )
+    assert reviewer_base_url(reviewer_command) == "http://carerisk-app:7860"
+    assert docker_ownership_labels(reviewer_command) == ownership_labels(
+        "reviewer", guid, reviewer_digest=reviewer_digest,
+    )
+    network_command = build_internal_network_command(run_guid=guid)
+    assert docker_ownership_labels(network_command) == ownership_labels("network", guid)
+
+def test_cleanup_ownership_labels_are_exact_and_role_specific() -> None:
+    guid = "00000000-0000-0000-0000-000000000001"
+    final_digest = "sha256:" + "a" * 64
+    reviewer_digest = "sha256:" + "b" * 64
+    assert ownership_labels("normal", guid, final_digest=final_digest) == {
+        "carerisk.run_guid": guid,
+        "carerisk.resource_role": "normal",
+        "carerisk.final_image_digest": final_digest,
+    }
+    assert ownership_labels("reviewer", guid, reviewer_digest=reviewer_digest) == {
+        "carerisk.run_guid": guid,
+        "carerisk.resource_role": "reviewer",
+        "carerisk.reviewer_image_digest": reviewer_digest,
+    }
+    assert ownership_labels("network", guid) == {
+        "carerisk.run_guid": guid,
+        "carerisk.resource_role": "network",
+    }
+    assert ownership_labels(
+        "failure_variant", guid, base_digest=final_digest,
+        failure_code="receipt_missing",
+    ) == {
+        "carerisk.run_guid": guid,
+        "carerisk.resource_role": "failure_variant",
+        "carerisk.base_digest": final_digest,
+        "carerisk.failure_code": "receipt_missing",
+        "carerisk.never_deploy": "true",
+    }
+    failure_container = build_failure_app_command(
+        variant_digest="sha256:" + "c" * 64,
+        run_guid=guid,
+        base_digest=final_digest,
+        failure_code="receipt_missing",
+    )
+    assert docker_ownership_labels(failure_container) == ownership_labels(
+        "failure_variant", guid, base_digest=final_digest,
+        failure_code="receipt_missing",
+    )
+
+@pytest.mark.parametrize("mutation", [
+    "missing_role", "extra_ownership_label", "contradictory_role",
+    "duplicate_ownership_label", "wrong_guid", "wrong_digest", "ambiguous_reference",
+])
+def test_cleanup_preserves_resource_when_type_specific_ownership_is_not_exact(
+    mutation: str,
+) -> None:
+    target = mutate_cleanup_target(sample_normal_cleanup_target(), mutation)
+    remover = RemovalSpy()
+    with pytest.raises(ReviewFailure, match="cleanup ownership"):
+        cleanup_owned_target(target, sample_run_guid(), remover)
+    assert remover.calls == ()
+
+def test_cleanup_validates_each_role_and_resource_type_before_literal_remove() -> None:
+    for target in sample_exact_cleanup_targets_for_all_roles_and_types():
+        remover = RemovalSpy()
+        cleanup_owned_target(target, sample_run_guid(), remover)
+        assert remover.calls == ((target.resource_type, target.resource_id),)
 
 def test_failed_live_record_cannot_be_reported_as_green() -> None:
     record = sample_record(serious_accessibility_findings=1)
@@ -1904,6 +1999,24 @@ class WireBoundaryRecord:
     wire_blocked_head_entity_bytes: int
     wire_blocked_head_content_length: int
 
+ResourceRole = Literal["normal", "reviewer", "network", "failure_variant"]
+
+@dataclass(frozen=True)
+class CleanupTarget:
+    resource_type: Literal["container", "image", "network"]
+    resource_id: str
+    inspected_reference: str
+    inspected_digest: str | None
+    labels: tuple[tuple[str, str], ...]
+    expected_role: ResourceRole
+    expected_final_digest: str | None = None
+    expected_reviewer_digest: str | None = None
+    expected_base_digest: str | None = None
+    expected_failure_code: str | None = None
+
+class LiteralResourceRemover(Protocol):
+    def remove_literal(self, resource_type: str, resource_id: str) -> None: ...
+
 def assert_wire_boundary_passed(record: WireBoundaryRecord) -> None:
     if record.pure_asgi_invalid_host_statuses != (404, 404, 404):
         raise ReviewFailure("pure-ASGI Host gate")
@@ -1998,6 +2111,7 @@ def assert_failure_variant_passed(record: FailureVariantRecord) -> None:
     expected_labels = {
         "carerisk.never_deploy": "true",
         "carerisk.run_guid": record.run_guid,
+        "carerisk.resource_role": "failure_variant",
         "carerisk.base_digest": record.base_final_image_digest,
         "carerisk.failure_code": record.expected_failure_code,
     }
@@ -2015,6 +2129,24 @@ def assert_failure_variant_passed(record: FailureVariantRecord) -> None:
         raise ReviewFailure("NEVER_DEPLOY failure-code isolation")
     if record.remote_or_export_input_count:
         raise ReviewFailure("NEVER_DEPLOY remote/export input")
+
+def validate_cleanup_target(target: CleanupTarget, current_run_guid: str) -> None:
+    labels = dict(target.labels)
+    if len(labels) != len(target.labels):
+        raise ReviewFailure("cleanup ownership duplicate labels")
+    expected = ownership_labels_for_target(target, current_run_guid)
+    ownership_labels_found = {
+        key: value for key, value in labels.items() if key.startswith("carerisk.")
+    }
+    if ownership_labels_found != expected:
+        raise ReviewFailure("cleanup ownership labels")
+    assert_exact_resource_type_identity_reference_and_digest(target)
+
+def cleanup_owned_target(
+    target: CleanupTarget, current_run_guid: str, remover: LiteralResourceRemover,
+) -> None:
+    validate_cleanup_target(target, current_run_guid)
+    remover.remove_literal(target.resource_type, target.resource_id)
 
 def assert_evidence_reachability_passed(
     records: tuple[EvidenceReachabilityRecord, ...],
@@ -2043,7 +2175,7 @@ def assert_evidence_reachability_passed(
 
 The Python runner has two explicit execution modes plus one local derivation phase. Container cold-start mode starts the exact inspected final-image digest with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` with Host `127.0.0.1:7860` to probe exact root/config/theme/manifest/favicon/package-member responses and claim copy on loopback. It records the exact `uvicorn.run(..., http="h11", ...)` source/config/runtime identity, locked package membership/content-tree digest, and authoritative blocked matrix, including method-table HEAD probes, nonexistent-valid asset names, authority mutations, metadata/PWA paths, and downstream/receive/fetch/temp bombs. Every direct pure-ASGI helper constructs `PublicSurfaceGuard(downstream, exact_package_asset_urls())`, where the helper derives and asserts the nonempty pinned-root membership. `WireBoundaryRecord` then keeps those deterministic ASGI messages separate from raw HTTP/1.1 observations against that explicit h11 Uvicorn server: missing/duplicate Host must return `(400, 400)` before the app-entry marker, a valid unlisted single Host must increment that marker and receive guard 404, and every blocked non-root wire `HEAD` must have zero entity bytes with `content-length: 9` even though the pure-ASGI response body message is `b"Not Found"`. All records require zero CORS/compression/canary/reflection and preserve exact selected sanitized downstream scope and defense-in-depth state separately.
 
-Only after final-image inspection, a derivation phase creates four task-owned local images for runtime-reachable failure review. The verifier itself generates a literal Dockerfile and minimal context beneath its validated GUID temp root for each exact reachable failure code. Every Dockerfile begins `FROM <exact inspected local final digest>`, uses `USER 0` only around one package-relative evidence mutation, and ends `USER 10001:10001`. `receipt_missing` uses exec-form `RUN ["rm", "--", "/app/evidence/final-result-receipt.json"]`; the other variants `COPY` one generated mutated artifact over exactly `/app/evidence/final-result-receipt.json`, `/app/evidence/release-v0.2.0.json`, or `/app/deployment-manifest.json` to produce `receipt_hash_mismatch`, `release_relationship_invalid`, or `deployment_manifest_invalid`. Each variant has exactly one intended path delta; no manifest compensation or secondary mutation is allowed. The build command is exact `docker build --pull=false --network=none`, with no remote registry or output/export option. The verifier chooses a local name containing `NEVER_DEPLOY` and exact labels `carerisk.never_deploy=true`, `carerisk.run_guid=<GUID>`, `carerisk.base_digest=<digest>`, and `carerisk.failure_code=<code>`. It rejects caller-controlled image names, paths, Dockerfile content, mutation commands, remote/tag/push/save/export inputs, bind mounts, runtime environment/path switches, and monkeypatches.
+Only after final-image inspection, a derivation phase creates four task-owned local images for runtime-reachable failure review. The verifier itself generates a literal Dockerfile and minimal context beneath its validated GUID temp root for each exact reachable failure code. Every Dockerfile begins `FROM <exact inspected local final digest>`, uses `USER 0` only around one package-relative evidence mutation, and ends `USER 10001:10001`. `receipt_missing` uses exec-form `RUN ["rm", "--", "/app/evidence/final-result-receipt.json"]`; the other variants `COPY` one generated mutated artifact over exactly `/app/evidence/final-result-receipt.json`, `/app/evidence/release-v0.2.0.json`, or `/app/deployment-manifest.json` to produce `receipt_hash_mismatch`, `release_relationship_invalid`, or `deployment_manifest_invalid`. Each variant has exactly one intended path delta; no manifest compensation or secondary mutation is allowed. The build command is exact `docker build --pull=false --network=none`, with no remote registry or output/export option. The verifier chooses a local name containing `NEVER_DEPLOY` and exact reserved ownership labels `carerisk.never_deploy=true`, `carerisk.run_guid=<GUID>`, `carerisk.resource_role=failure_variant`, `carerisk.base_digest=<digest>`, and `carerisk.failure_code=<code>`. It rejects caller-controlled image names, paths, Dockerfile content, mutation commands, remote/tag/push/save/export inputs, bind mounts, runtime environment/path switches, and monkeypatches.
 
 `receipt_schema_invalid` deliberately has no derived image. The canonical receipt SHA-256 and Git-blob checks precede strict JSON/schema validation, so any live byte mutation is owned by `receipt_hash_mismatch`. The existing explicit controlled anchor seam is allowed only in unit tests to isolate downstream strict-parser/schema behavior; component and direct-ASGI tests then require its exact bounded message and zero controls, metrics, scenarios, dependency/function/API surface, app-owned event/API traffic, or echo. The permitted root GET still enters the mounted static document and is not counted as an event. A running container, final image, derived image, browser record, or cold-start record must never patch those anchors or describe schema failure as live evidence. `EvidenceReachabilityRecord` makes this precedence and `not_live_reviewed` status machine-verifiable instead of silently omitting the code.
 
@@ -2051,7 +2183,7 @@ Image inspection and filesystem comparison bind each derived image to the final 
 
 If the normal Gradio `6.26.0` browser needs a route/query/method not in the approved table, emits any POST/event/session/queue traffic, changes framework public-interaction state, cannot use the exact `carerisk-app:7860` authority-selected sanitized scope behind the reviewer network, produces an asset inventory mismatch, or if outer ordering lets a blocked probe reach FastAPI/Gradio/body receive, the runner raises a load-bearing incompatibility and stops. If an authorized Hugging Face candidate or iframe Host is not exactly `steven0226-carerisk-48h.hf.space`, publication stops and reports centrally. The implementation must source-audit the exact issue, add a RED test, and report centrally; it must not accept a generic prefix, method, static, upload, file, header, host, authority suffix, or query wildcard.
 
-`verify_hf_space_candidate.py` owns final orchestration. It creates exactly one GUID-named run directory beneath `Path(tempfile.gettempdir()).resolve(strict=True)` and writes an ownership marker containing that GUID and canonical root. Candidate, review, and `NEVER_DEPLOY` build-context directories are children of that run root and contain that literal marker in their names. A `try/finally` stops/removes only containers, internal networks, and derived local images whose complete label set matches the current GUID/base digest/expected code/`NEVER_DEPLOY=true`; it then calls a cleanup function that re-resolves the OS temp root, rejects symlinks/reparse points, requires the exact GUID prefix plus matching ownership marker/canonical root, and applies `shutil.rmtree` only to that one run directory. It never deletes by name prefix alone, dangling image list, broad Docker filter, or unverified path. Unowned, missing-label/marker, mismatched, symlink/reparse-point, workspace, temp-root itself, or outside-temp resources are a hard stop and are left untouched for manual inspection. The script emits its final verification receipt to stdout after cleanup; it persists no review or derived-image artifact and exposes no remote/upload/tag/push/save/export path.
+`verify_hf_space_candidate.py` owns final orchestration. It creates exactly one GUID-named run directory beneath `Path(tempfile.gettempdir()).resolve(strict=True)` and writes an ownership marker containing that GUID and canonical root. Candidate, review, and `NEVER_DEPLOY` build-context directories are children of that run root and contain that literal marker in their names. Each task-owned Docker resource has exact `carerisk.run_guid=<GUID>` and one explicit role: the normal final-image container has `resource_role=normal` plus exact final-image digest; the reviewer container has `resource_role=reviewer` plus exact reviewer-image digest; the shared internal network has `resource_role=network`; and only the four failure containers/images have `resource_role=failure_variant` plus exact base digest, expected code, and `NEVER_DEPLOY=true`. A `try/finally` dispatches by Docker resource type and validates the complete exact reserved ownership-label set, literal resource ID/reference, inspected image/base/reviewer/final digest as applicable, expected failure code as applicable, and current GUID before issuing one literal removal for that exact resource. A missing, duplicate, additional, contradictory, ambiguous, stale, or mismatched ownership value is a hard stop and leaves the resource untouched. It then calls a cleanup function that re-resolves the OS temp root, rejects symlinks/reparse points, requires the exact GUID prefix plus matching ownership marker/canonical root, and applies `shutil.rmtree` only to that one run directory. It never deletes by name prefix alone, dangling image list, broad Docker filter, or unverified path. Unowned, missing-label/marker, mismatched, symlink/reparse-point, workspace, temp-root itself, or outside-temp resources are a hard stop and are left untouched for manual inspection. The script emits its final verification receipt to stdout after cleanup; it persists no review or derived-image artifact and exposes no remote/upload/tag/push/save/export path.
 
 - [ ] **Step 4: Run orchestration/config GREEN before the final candidate exists**
 
@@ -2059,7 +2191,7 @@ If the normal Gradio `6.26.0` browser needs a route/query/method not in the appr
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_live_review.py space/tests/test_gradio_contract.py -q -m 'not integration'
 ```
 
-Expected: orchestration, exact 10-record live viewport/state matrix, final-digest-only normal command, four local-only `NEVER_DEPLOY` variant build/inspect/label/delta/code/cleanup contracts, five-code reachability/precedence records, split shared/normal/failure assertions, hardened command construction, Gradio config, exact `http="h11"` identity, distinct pure-ASGI/wire boundary records, and failure-reporting contracts pass. Unit records require the nonempty pinned-root membership and prove no result can pass through constructor `TypeError`; schema failure is unit/component/ASGI evidence and is explicitly not live-reviewed. Do not claim a built variant, live Uvicorn parser, HEAD wire, viewport, container, accessibility, or cold-start success here, because those require the clean candidate in Task 13. Thirty seconds remains a recorded soft local target, never a public SLA.
+Expected: orchestration, exact 10-record live viewport/state matrix, final-digest-only normal command, four local-only `NEVER_DEPLOY` variant build/inspect/label/delta/code/cleanup contracts, role-specific normal/reviewer/network/failure ownership schemas and fail-closed preservation tests, five-code reachability/precedence records, split shared/normal/failure assertions, hardened command construction, Gradio config, exact `http="h11"` identity, distinct pure-ASGI/wire boundary records, and failure-reporting contracts pass. Unit records require the nonempty pinned-root membership and prove no result can pass through constructor `TypeError`; schema failure asserts the exact three-part failure copy, sole bounded code, and zero surface/echo as unit/component/ASGI evidence and is explicitly not live-reviewed. Do not claim a built variant, live Uvicorn parser, HEAD wire, viewport, container, accessibility, or cold-start success here, because those require the clean candidate in Task 13. Thirty seconds remains a recorded soft local target, never a public SLA.
 
 - [ ] **Step 5: Commit exact review files**
 
@@ -2250,11 +2382,11 @@ if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'In
 2. Read both exact tag/platform-digest records from `base-image.json`. For each, run `docker image inspect` against the concatenated recorded tag and linux/amd64 digest and verify `RepoDigests`; if and only if that exact image is absent, perform a logged controlled `docker pull` of the same immutable reference, then re-inspect. Reject a tag-only or wrong-platform image. This is controlled supply-chain acquisition, not test execution.
 3. In the same controlled supply-chain/build phase, build `--target test` and `--target runtime` from the exact candidate. Network access is permitted only for digest/hash-pinned base and Python package acquisition and every accepted byte must match the image digest or lock hash. `--pull=false` may be used only after exact local image verification and is never evidence that the build was offline. Verify built image histories/inventories: test uses the reviewer base; runtime uses only the CPython base and contains no dev/browser/model package.
 4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start passes adversarial values for the exact Gradio `6.26.0` source-derived environment-read inventory. The required named matrix includes `GRADIO_ANALYTICS_ENABLED`, `HF_HUB_DISABLE_TELEMETRY`, `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `GRADIO_ROOT_PATH`, `GRADIO_SHARE`, `GRADIO_MONITORING_ENABLED`, `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, plus `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect pre-import state, post-Blocks state, `/proc/1/environ`, and every runtime child environment and require exact equality with the fixed `ENTRYPOINT` allowlist, including `HF_HUB_DISABLE_TELEMETRY=True`; poison values `0` and hostile strings must be absent. Prove fixed port 7860, zero app-owned input/dependency/function/API config, pinned `enable_queue == true`, zero public state delta, mount mapping, exact two-argument direct outer-wrapper identity with nonempty pinned-root membership, and exact programmatic Uvicorn `http="h11"`; reject `auto`, `httptools`, CLI/environment selection, or inference from an absent package. Derive sorted package membership/content-tree digests from the exact runtime wheel and compare them with the reviewer image; require only regular non-symlink root-contained members. Against loopback Host `127.0.0.1:7860`, require healthy exact root/config/theme/manifest/favicon/package members and logo digests plus unavailable API/queue/history/monitoring. Direct pure-ASGI probes require the fixed guard 404 message sequence with `b"Not Found"` and `content-length: 9` before FastAPI/Gradio/downstream/body receive for the complete hostile method/path/query/authority/header/cookie/raw-path/WebSocket matrix, including `HEAD` on every non-root path, syntactically valid nonexistent assets, metadata/PWA variants, and missing/duplicate/combined/whitespace/unlisted Host scopes. Separately send raw HTTP/1.1 bytes to the untouched explicitly configured Uvicorn+h11 server: missing and duplicate Host must each return exact 400 with no ASGI app-entry marker delta, while a valid unlisted single Host must enter the guard and return 404. Wire-level blocked non-root `HEAD` must return 404 with zero entity bytes and `content-length: 9`; root `HEAD` remains the sole allowed HEAD and also has zero wire entity bytes. Record zero CORS/compression, canary/reflection, outbound fetches, temp delta, and echo at each layer. Sentinel/root-block/max-upload remain separate defense-in-depth observations. No execution-phase command downloads a dependency.
-5. Inspect and record the exact final runtime image digest before creating any variant. Generate four literal task-owned Dockerfiles and minimal contexts for only `receipt_missing`, `receipt_hash_mismatch`, `release_relationship_invalid`, and `deployment_manifest_invalid`. Each uses `FROM <exact local final digest>`, `--pull=false --network=none`, exact GUID/base/code/`NEVER_DEPLOY=true` labels, a name containing `NEVER_DEPLOY`, temporary `USER 0`, one literal package-relative evidence removal/replacement, and final `USER 10001:10001`. Reject remote registries, caller-controlled images/paths/Dockerfiles/commands, bind mounts, environment/path injection, push, save, export/output, or any fifth variant. Inspect each derived image and require exactly one intended evidence-path delta, exact entrypoint/CMD/app-source/lock/asset/other-path byte parity with the final image, and exactly its own expected failure code. `receipt_schema_invalid` receives no image: its strict-parser/UI/ASGI behavior is exercised only with the existing explicit unit test anchor seam, while the final receipt records that live bytes are dominated by the immutable receipt identity gate and marks it `not_live_reviewed`.
-6. Create a GUID-labeled Docker `--internal` network. Run the exact final image with network alias `carerisk-app` for normal review, then separately run each of the four inspected `NEVER_DEPLOY` images with the same alias, entrypoint, command, environment scrub, runtime flags, and no-egress network. Run the exact reviewer image against `http://carerisk-app:7860` for all five live page states at 1440×900 and 390×844. Apply shared assertions to all ten records; apply four-radio/panel/keyboard/focus/visibility/normal-claims assertions only to the two normal records; apply zero-control/panel/transition/metric/canonical-value plus exact code/message assertions only to the eight reachable-failure records. Verify root/config/exact theme/manifest/favicon/package members, exact membership/tree digest parity, zero app-owned inputs/dependencies/functions/API, pinned `enable_queue == true`, exact request method/path/query, zero outer blocks/POST/event/session/queue/public-state delta/external/console errors, and no partial evidence/download/model initialization. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile authority/query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, metadata/PWA, absent-asset, encoded, traversal, case, and slash probes. Missing/duplicate raw-wire Host and blocked-wire-HEAD evidence remains layer-separated. Any route, parser, variant, delta, authority, asset, state, or assertion drift stops verification for exact source audit, RED test, and central review; no wildcard or fifth live failure is added.
-7. In `finally`, stop/remove only containers, the internal network, and the four derived images whose complete current GUID/base-digest/code/`NEVER_DEPLOY=true` label set matches. Then validate and delete only the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect resource/path untouched for manual inspection; it never broadens the delete target.
+5. Inspect and record the exact final runtime image digest before creating any variant. Generate four literal task-owned Dockerfiles and minimal contexts for only `receipt_missing`, `receipt_hash_mismatch`, `release_relationship_invalid`, and `deployment_manifest_invalid`. Each uses `FROM <exact local final digest>`, `--pull=false --network=none`, the complete exact ownership labels GUID/`resource_role=failure_variant`/base digest/code/`NEVER_DEPLOY=true`, a name containing `NEVER_DEPLOY`, temporary `USER 0`, one literal package-relative evidence removal/replacement, and final `USER 10001:10001`. Reject remote registries, caller-controlled images/paths/Dockerfiles/commands, bind mounts, environment/path injection, push, save, export/output, or any fifth variant. Inspect each derived image and require exactly one intended evidence-path delta, exact entrypoint/CMD/app-source/lock/asset/other-path byte parity with the final image, and exactly its own expected failure code. `receipt_schema_invalid` receives no image: its strict-parser/UI/ASGI behavior is exercised only with the existing explicit unit test anchor seam, while the final receipt records that live bytes are dominated by the immutable receipt identity gate and marks it `not_live_reviewed`.
+6. Create the Docker `--internal` network with the complete ownership labels exact current GUID plus `resource_role=network`. Run the exact final image with network alias `carerisk-app` in a normal container labeled exact GUID/`resource_role=normal`/exact final-image digest, then separately run each of the four inspected `NEVER_DEPLOY` images in containers labeled exact GUID/`resource_role=failure_variant`/exact base digest/code/`NEVER_DEPLOY=true`, all with the same alias, entrypoint, command, environment scrub, runtime flags, and no-egress network. Run the exact reviewer image in a container labeled exact GUID/`resource_role=reviewer`/exact reviewer-image digest against `http://carerisk-app:7860` for all five live page states at 1440×900 and 390×844. Apply shared assertions to all ten records; apply four-radio/panel/keyboard/focus/visibility/normal-claims assertions only to the two normal records; apply zero-control/panel/transition/metric/canonical-value plus exact code/message assertions only to the eight reachable-failure records. Verify root/config/exact theme/manifest/favicon/package members, exact membership/tree digest parity, zero app-owned inputs/dependencies/functions/API, pinned `enable_queue == true`, exact request method/path/query, zero outer blocks/POST/event/session/queue/public-state delta/external/console errors, and no partial evidence/download/model initialization. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile authority/query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, metadata/PWA, absent-asset, encoded, traversal, case, and slash probes. Missing/duplicate raw-wire Host and blocked-wire-HEAD evidence remains layer-separated. Any route, parser, variant, delta, authority, asset, state, or assertion drift stops verification for exact source audit, RED test, and central review; no wildcard or fifth live failure is added.
+7. In `finally`, enumerate only the literal resource IDs recorded by the current run; for each, dispatch by Docker resource type and validate the complete exact reserved ownership-label schema, current GUID, role, identity/reference, and applicable final/reviewer/base digest and failure code before one literal removal. Normal, reviewer, and network resources never carry or are validated as failure variants. Missing or extra contradictory labels, ambiguous reference/identity, stale GUID, digest/code mismatch, or type/role mismatch fails closed and preserves that resource. Only after every Docker resource passes its own schema may the verifier validate and delete the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect resource/path untouched for manual inspection; it never uses broad filters or broadens the delete target.
 
-Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime and four derived image digests; exact parser identity `h11`; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; normal-only static radio visibility transitions; failure-only zero-surface counts; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; three normal cold starts; ten viewport/state records; four variant label/base/delta/code records; five-code owning-gate/live-reachability/evidence-type/precedence/status records; cleanup; and no-egress observations. `receipt_schema_invalid` is recorded as unit/component/ASGI evidence, dominated by the immutable receipt anchor, and `not_live_reviewed`, never as a passed live state. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the explicit h11 parser, direct outer ASGI/authority boundary, exact package membership, or accepted Host identity is absent, ineffective, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
+Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime and four derived image digests; exact parser identity `h11`; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; normal-only static radio visibility transitions; failure-only zero-surface counts; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; three normal cold starts; ten viewport/state records; four variant label/base/delta/code records; five-code owning-gate/live-reachability/evidence-type/precedence/status records; exact role-specific normal/reviewer/network/failure cleanup records; and no-egress observations. `receipt_schema_invalid` is recorded as unit/component/ASGI evidence with its exact three-part failure copy and sole bounded code, dominated by the immutable receipt anchor, and `not_live_reviewed`, never as a passed live state. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the explicit h11 parser, direct outer ASGI/authority boundary, exact package membership, accepted Host identity, or role-specific cleanup identity is absent, ineffective, ambiguous, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
 
 - [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
 
@@ -2293,6 +2425,9 @@ $requiredTrue = @(
     'browser_reviewer_alias_exact', 'browser_metadata_requests_observed',
     'failure_variants_final_digest_derived', 'failure_variant_single_deltas_exact',
     'failure_variant_labels_exact', 'failure_taxonomy_precedence_exact',
+    'cleanup_normal_role_exact', 'cleanup_reviewer_role_exact',
+    'cleanup_network_role_exact', 'cleanup_failure_variant_roles_exact',
+    'cleanup_ambiguous_resources_preserved',
     'accessibility_passed', 'cleanup_passed'
 )
 foreach ($field in $requiredTrue) {
@@ -2303,6 +2438,11 @@ $expectedLiveStates = @('validated_normal', 'receipt_missing', 'receipt_hash_mis
 if ([string]::Join('|', [string[]]@($receipt.live_page_states)) -cne [string]::Join('|', [string[]]$expectedLiveStates)) { throw 'Live page-state matrix mismatch' }
 $expectedVariantCodes = @('receipt_missing', 'receipt_hash_mismatch', 'release_relationship_invalid', 'deployment_manifest_invalid')
 if ([string]::Join('|', [string[]]@($receipt.failure_variant_codes)) -cne [string]::Join('|', [string[]]$expectedVariantCodes)) { throw 'Failure variant matrix mismatch' }
+$expectedCleanupRoles = @('normal', 'reviewer', 'network', 'failure_variant')
+if ([string]::Join('|', [string[]]@($receipt.cleanup_resource_roles)) -cne [string]::Join('|', [string[]]$expectedCleanupRoles)) { throw 'Cleanup role matrix mismatch' }
+if ([string]$receipt.cleanup_normal_final_image_digest -cne [string]$receipt.runtime_image_digest) { throw 'Normal cleanup digest mismatch' }
+if ([string]$receipt.cleanup_reviewer_image_digest -cne [string]$receipt.reviewer_image_digest) { throw 'Reviewer cleanup digest mismatch' }
+if ($receipt.cleanup_failure_variant_resource_count -ne 8) { throw 'Failure cleanup resource count mismatch' } # four images + four containers
 $expectedReachability = @(
     'receipt_missing|literal_receipt_path|true|final_image_variant|runtime_reachable|reviewed',
     'receipt_hash_mismatch|immutable_receipt_sha256_git_blob|true|final_image_variant|runtime_reachable|reviewed',
@@ -2319,7 +2459,7 @@ foreach ($field in @('blocked_downstream_call_count', 'blocked_receive_call_coun
 }
 ```
 
-Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact `HF_HUB_DISABLE_TELEMETRY=True` before import/after Blocks/in PID 1/children, fixed port, explicit Uvicorn `http="h11"`, zero app-owned input/dependency/function/API config, recorded framework `enable_queue == true`, exact two-argument outer-ASGI composition with nonempty pinned-root membership, direct guard interception before FastAPI/Gradio/downstream/body receive, all four authority-selected sanitized scopes, runtime/reviewer package membership-tree equality, exact metadata/logo bytes, zero CORS/compression/network/temp/echo side effects, unavailable API/queue/history/monitoring, and three normal cold starts. Direct-ASGI evidence proves missing/duplicate/invalid Host guard 404 and deterministic blocked HEAD messages; raw-wire evidence separately proves the explicitly selected Uvicorn+h11 missing/duplicate Host 400 before ASGI, zero app-entry/canary/reflection delta, valid unlisted single Host guard 404, and zero wire HEAD entity bytes with `content-length: 9`. Browser evidence separately proves normal plus four runtime-reachable failures at both viewports, exact GET/root-HEAD traffic, fixed `carerisk-app` alias, zero public interaction/state delta, normal-only four-radio transitions, failure-only zero-surface counts, accessibility, console, and external-request gates. Four final-digest-derived `NEVER_DEPLOY` images have exact labels and one path delta each. The receipt's five-code matrix explicitly marks `receipt_schema_invalid` as unit/component/ASGI-only, anchor-dominated, and not live-reviewed. Sentinel/root-block/max-size evidence remains defense in depth. Cleanup is proven. The test does not require `/bin/sh` to be absent.
+Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact `HF_HUB_DISABLE_TELEMETRY=True` before import/after Blocks/in PID 1/children, fixed port, explicit Uvicorn `http="h11"`, zero app-owned input/dependency/function/API config, recorded framework `enable_queue == true`, exact two-argument outer-ASGI composition with nonempty pinned-root membership, direct guard interception before FastAPI/Gradio/downstream/body receive, all four authority-selected sanitized scopes, runtime/reviewer package membership-tree equality, exact metadata/logo bytes, zero CORS/compression/network/temp/echo side effects, unavailable API/queue/history/monitoring, and three normal cold starts. Direct-ASGI evidence proves missing/duplicate/invalid Host guard 404 and deterministic blocked HEAD messages; raw-wire evidence separately proves the explicitly selected Uvicorn+h11 missing/duplicate Host 400 before ASGI, zero app-entry/canary/reflection delta, valid unlisted single Host guard 404, and zero wire HEAD entity bytes with `content-length: 9`. Browser evidence separately proves normal plus four runtime-reachable failures at both viewports, exact GET/root-HEAD traffic, fixed `carerisk-app` alias, zero public interaction/state delta, normal-only four-radio transitions, failure-only zero-surface counts, accessibility, console, and external-request gates. Four final-digest-derived `NEVER_DEPLOY` images have exact labels and one path delta each. The receipt's five-code matrix explicitly marks `receipt_schema_invalid` as unit/component/ASGI-only, anchor-dominated, not live-reviewed, and covered by the exact failure copy/code/zero-surface assertions. Cleanup proves exact type-specific labels and identities for the normal container, reviewer container, shared network, four failure containers, and four failure images; any ambiguous or mismatched resource remains preserved. Sentinel/root-block/max-size evidence remains defense in depth. The test does not require `/bin/sh` to be absent.
 
 - [ ] **Step 5: Verify clean scope and provenance one final time**
 
