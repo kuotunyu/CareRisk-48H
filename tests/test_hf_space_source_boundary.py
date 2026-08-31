@@ -202,7 +202,7 @@ def _ui_framework_violations(tree: ast.Module) -> list[str]:
     """Allow only the named Gradio and Starlette imports with their exact aliases."""
 
     violations: set[str] = set()
-    for node in tree.body:
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == "gradio" and alias.asname == "gr":
@@ -277,10 +277,26 @@ def _entrypoint_violations(tree: ast.Module) -> list[str]:
         ]
         if len(guard_calls) != 1 or uvicorn_calls[0] not in ast.walk(main_functions[0]):
             violations.add("uvicorn_main_guard")
+    module_main_calls = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and _call_name(node.value.func) == "main"
+    ]
+    if module_main_calls:
+        violations.add("uvicorn_main_guard")
     mounts = _calls(tree, "gr.mount_gradio_app")
     if len(mounts) != 1:
         violations.add("mount_count")
     for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign)
+            and node.targets
+            and isinstance(node.targets[0], ast.Attribute)
+            and _call_name(node.targets[0]) in {"gr.mount_gradio_app", "uvicorn.run"}
+        ):
+            violations.add("framework_monkeypatch")
         if not isinstance(node, ast.Call):
             continue
         name = _call_name(node.func)
@@ -499,6 +515,12 @@ def test_ui_framework_import_scanner_rejects_extra_members_and_aliases() -> None
     mutated.body.insert(
         0,
         ast.ImportFrom(module="starlette.responses", names=[ast.alias(name="Response")], level=0),
+    )
+    _function(mutated, "render_claim_header").body.insert(
+        0,
+        ast.ImportFrom(
+            module="gradio", names=[ast.alias(name="Radio", asname="LocalRadio")], level=0
+        ),
     )
     assert _ui_framework_violations(mutated) == [
         "gradio_import",
