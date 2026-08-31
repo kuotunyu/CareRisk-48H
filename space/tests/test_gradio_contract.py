@@ -634,6 +634,64 @@ def test_claim_dom_precedes_first_focusable_control(valid_bundle: Path) -> None:
     assert "<legend>選擇固定 synthetic gate state</legend>" in document
 
 
+def test_app_owned_root_is_not_a_nested_main_landmark(
+    valid_bundle: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    documents = (
+        _only_document(ui_module.create_app(valid_bundle)),
+        _only_document(
+            ui_module.create_app(
+                make_unit_failure_bundle(tmp_path, "receipt_missing", monkeypatch)
+            )
+        ),
+    )
+    for document in documents:
+        assert '<section id="carerisk-space-root" lang="zh-TW">' in document
+        assert document.count('id="carerisk-space-root"') == 1
+        assert not re.search(r"<main\b", document, re.IGNORECASE)
+        assert "</main>" not in document.casefold()
+
+
+def test_app_owned_text_and_mobile_shell_css_is_specific_and_bounded() -> None:
+    css = re.sub(r"\s+", " ", ui_module.APP_CSS)
+    visible_text_selector = (
+        "#carerisk-space-root "
+        ":where(p,legend,label,li,dt,dd,th,td,a,code,span,strong,em,div)"
+    )
+    assert re.search(
+        rf"{re.escape(visible_text_selector)}\s*\{{[^}}]*font-size:16px!important",
+        css,
+    )
+    assert re.search(
+        r"#carerisk-space-root :where\(h2,h3,h4,h5,h6\)\s*\{[^}]*"
+        r"font-size:20px!important",
+        css,
+    )
+    for selector in ("html,body", ".gradio-container", ".gradio-container main"):
+        rule = re.search(rf"(?:^|\}})\s*{re.escape(selector)}\s*\{{([^}}]+)\}}", css)
+        assert rule is not None
+        assert "box-sizing:border-box!important" in rule.group(1)
+        assert "max-width:100%!important" in rule.group(1)
+        assert "min-width:0!important" in rule.group(1)
+    app_root = re.search(r"#carerisk-space-root\s*\{([^}]+)\}", css)
+    assert app_root is not None
+    for declaration in (
+        "box-sizing:border-box",
+        "max-width:100%",
+        "min-width:0",
+        "width:100%",
+    ):
+        assert declaration in app_root.group(1)
+    assert "overflow-x:hidden" not in css
+    assert "overflow-x:clip" not in css
+    assert re.search(
+        r"\.gradio-container \*\s*\{[^}]*box-sizing:border-box!important;"
+        r"[^}]*min-width:0!important",
+        css,
+    )
+    assert re.search(r"\.gradio-container>\*\s*\{[^}]*max-width:100%!important", css)
+
+
 def test_all_app_owned_visible_text_css_respects_sixteen_pixel_floor() -> None:
     declarations = re.findall(
         r"(?:^|[;{}])\s*(font-size|font)\s*:\s*([^;}]+)", ui_module.APP_CSS

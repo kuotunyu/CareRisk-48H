@@ -56,17 +56,31 @@ _NOT_FOUND_HEADERS: Final = [
 APP_CSS = """
 :root { --ink:#14273a; --muted:#536878; --paper:#f4f0e7; --sheet:#fffdf8;
   --line:#c8d3d3; --teal:#0d6f6b; --teal-soft:#dceceb; --amber:#9a6426; }
+html,body { box-sizing:border-box!important; margin:0!important; max-width:100%!important;
+  min-width:0!important; width:100%!important; }
 body,.gradio-container { background:var(--paper)!important; color:var(--ink)!important;
   font-family:Georgia,"Noto Serif TC","Microsoft JhengHei",serif!important;
   font-size:17px!important; }
-.gradio-container { max-width:1120px!important; margin:0 auto!important; }
+.gradio-container { box-sizing:border-box!important; margin:0 auto!important;
+  max-width:100%!important; min-width:0!important; padding:0!important;
+  width:min(1120px,100%)!important; }
+.gradio-container * { box-sizing:border-box!important; min-width:0!important; }
+.gradio-container>* { max-width:100%!important; }
+.gradio-container main { box-sizing:border-box!important; margin-inline:0!important;
+  max-width:100%!important; min-width:0!important; width:100%!important; }
 #carerisk-space-root { background:var(--sheet); border:1px solid var(--line);
   border-top:7px solid var(--teal); box-shadow:0 20px 50px rgba(20,39,58,.08);
-  padding:clamp(20px,4vw,52px); }
+  box-sizing:border-box; max-width:100%; min-width:0; padding:clamp(20px,4vw,52px);
+  width:100%; }
+#carerisk-space-root *,#carerisk-space-root *::before,#carerisk-space-root *::after {
+  box-sizing:border-box; min-width:0; }
+#carerisk-space-root :where(p,legend,label,li,dt,dd,th,td,a,code,span,strong,em,div) {
+  font-size:16px!important; }
+#carerisk-space-root :where(h2,h3,h4,h5,h6) { font-size:20px!important; }
 .masthead { display:grid; gap:8px; border-bottom:1px solid var(--line); padding-bottom:20px; }
 .eyebrow { color:var(--teal); font:700 16px/1.4 ui-monospace,Consolas,monospace;
   letter-spacing:.14em; text-transform:uppercase; margin:0; }
-.masthead h1 { font-size:clamp(31px,5vw,52px); letter-spacing:-.035em;
+.masthead h1 { font-size:clamp(31px,5vw,52px)!important; letter-spacing:-.035em;
   line-height:1.02; margin:0; }
 .deck { color:var(--muted); font-size:18px; line-height:1.65; margin:0; max-width:790px; }
 #claim-ceiling { background:var(--teal-soft); border-left:5px solid var(--teal);
@@ -98,16 +112,16 @@ body,.gradio-container { background:var(--paper)!important; color:var(--ink)!imp
 .scenario-state ul { display:grid; gap:6px; list-style:none; padding:0; }
 .scenario-state li { background:#eef3f1; font-family:ui-monospace,Consolas,monospace;
   padding:8px 10px; }
-.evidence-ledger { border-collapse:collapse; width:100%; }
+.evidence-ledger { border-collapse:collapse; table-layout:fixed; width:100%; }
 .evidence-ledger th,.evidence-ledger td { border-bottom:1px solid var(--line); padding:12px 8px;
-  text-align:left; }
+  overflow-wrap:anywhere; text-align:left; }
 .receipt-facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px;
   background:var(--line); }
 .receipt-facts div { background:var(--sheet); padding:14px; }
 .receipt-facts dd { font-weight:700; margin:5px 0 0; overflow-wrap:anywhere; }
 .provenance-list { font:16px/1.6 ui-monospace,Consolas,monospace; overflow-wrap:anywhere; }
 .provenance-links { display:flex; flex-wrap:wrap; gap:12px 20px; }
-.provenance-links a { color:var(--teal); text-underline-offset:3px; }
+.provenance-links a { color:var(--teal); overflow-wrap:anywhere; text-underline-offset:3px; }
 .evidence-failure { border-left-color:var(--amber); margin-top:24px; }
 .evidence-failure code { background:#f3eadc; color:#6d431a; display:inline-block; padding:7px 9px; }
 @media(max-width:620px) {
@@ -228,7 +242,7 @@ def _render_static_explorer(view: EvidenceViewModel) -> str:
         )
     return (
         f"<style>{APP_CSS}</style>"
-        '<main id="carerisk-space-root" lang="zh-TW">'
+        '<section id="carerisk-space-root" lang="zh-TW">'
         f"{render_claim_header()}"
         '<section id="scenario-explorer"><h2>Fixed synthetic gate-state explorer</h2>'
         "<p>選擇一個固定抽象情境，只檢視 evidence available / withheld 與原因；不產生分數。</p>"
@@ -236,15 +250,15 @@ def _render_static_explorer(view: EvidenceViewModel) -> str:
         f"{''.join(controls)}"
         '<section id="scenario-result" aria-live="polite">'
         f"{''.join(panels)}</section></fieldset></section>"
-        f"{render_evidence(view)}</main>"
+        f"{render_evidence(view)}</section>"
     )
 
 
 def _render_static_failure(failure: EvidenceFailure) -> str:
     return (
         f"<style>{APP_CSS}</style>"
-        '<main id="carerisk-space-root" lang="zh-TW">'
-        f"{render_claim_header()}{render_evidence_failure(failure)}</main>"
+        '<section id="carerisk-space-root" lang="zh-TW">'
+        f"{render_claim_header()}{render_evidence_failure(failure)}</section>"
     )
 
 
