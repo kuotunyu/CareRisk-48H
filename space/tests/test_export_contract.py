@@ -115,7 +115,7 @@ DENY_PATH_PATTERNS = (
     ),
     re.compile(r"(^|/)(?:plot|plots|screenshot|screenshots)(?:/|$)", re.IGNORECASE),
     re.compile(r"(^|/)docs/assets/final-evaluation-overview\.png$", re.IGNORECASE),
-    re.compile(r"(^|/)(?:app/dashboard\.py|app\.py|src/carerisk48h)(?:/|$)", re.IGNORECASE),
+    re.compile(r"(^|/)(?:app/dashboard\.py|src/carerisk48h)(?:/|$)", re.IGNORECASE),
     re.compile(r"(^|/)configs/inference_schema\.json$", re.IGNORECASE),
     re.compile(
         r"(^|/)(?:training|downloader|evaluation|synthetic.*scoring.*bundle)(?:/|$)", re.IGNORECASE
@@ -218,6 +218,7 @@ def test_existing_application_and_private_paths_are_absent_from_source_or_destin
         assert not is_public_path(path)
     assert "app.py" in PUBLIC_PATHS
     assert "space/app.py" in PUBLIC_SOURCE_PATHS
+    assert is_public_path("app.py") is True
 
 
 def test_public_source_paths_are_exact_and_align_one_to_one_with_destinations() -> None:
