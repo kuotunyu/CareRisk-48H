@@ -167,7 +167,11 @@ def scan_capabilities(paths: Iterable[Path]) -> list[str]:
             if attr in _WRITE_METHODS:
                 violations.append(f"{path.name}:{attr}")
             if attr in _READ_METHODS:
-                if attr == "read_bytes" and path.name == "evidence.py":
+                if (
+                    attr == "read_bytes"
+                    and path == SPACE_ROOT / "carerisk_space" / "evidence.py"
+                    and name == "path.read_bytes"
+                ):
                     continue
                 violations.append(f"{path.name}:{attr}")
             if name in _DYNAMIC_OR_PROCESS_CALLS or name == "importlib.import_module":
@@ -504,6 +508,14 @@ os.path.join('a', 'b')
         "synthetic.py:glob",
         "synthetic.py:os_path",
     } <= violations
+
+
+def test_evidence_named_source_does_not_receive_a_filename_wide_read_exception(
+    tmp_path: Path,
+) -> None:
+    synthetic_evidence = tmp_path / "evidence.py"
+    synthetic_evidence.write_text("Path('private').read_bytes()", encoding="utf-8")
+    assert scan_capabilities((synthetic_evidence,)) == ["evidence.py:read_bytes"]
 
 
 def test_ui_framework_import_scanner_rejects_extra_members_and_aliases() -> None:
