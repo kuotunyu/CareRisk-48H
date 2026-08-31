@@ -4,11 +4,11 @@
 
 **Goal:** Build a public-safe, synthetic-only Gradio Docker Space that explains receipt-backed evidence and four fixed abstention gate states without accepting patient data or producing case-level scores or decisions.
 
-**Architecture:** Keep the new application isolated under `space/` as a small `carerisk_space` package. Pure standard-library contracts parse three committed JSON artifacts and fail closed before Gradio is constructed; Gradio presents one pre-rendered static HTML/CSS explorer with native radios and zero server events. An empty FastAPI parent mounts Gradio, a direct pure-ASGI wrapper forms the truly outer public-surface firewall, and fixed programmatic Uvicorn serves it. A source-only exporter reads exact Git blobs into a fresh directory, with application files from an app-source commit, evidence and legal files from the annotated `v0.2.0` tag commit, and `deployment-manifest.json` from the immediately following manifest commit.
+**Architecture:** Keep the new application isolated under `space/` as a small `carerisk_space` package. Pure standard-library contracts parse three committed JSON artifacts and fail closed before Gradio is constructed; Gradio presents one pre-rendered static HTML/CSS explorer with native radios and zero app-owned inputs, dependencies, functions, or API endpoints. An empty FastAPI parent mounts Gradio, a direct pure-ASGI wrapper forms the truly outer public-surface firewall with a closed authority map and exact locked-package asset membership, and fixed programmatic Uvicorn serves it. A source-only exporter reads exact Git blobs into a fresh directory, with application files from an app-source commit, evidence and legal files from the annotated `v0.2.0` tag commit, and `deployment-manifest.json` from the immediately following manifest commit.
 
 **Tech Stack:** CPython 3.11 slim-bookworm runtime image pinned by patch tag and OCI digest; an official Playwright Python test/reviewer image pinned by matching Playwright patch tag plus OCI index/linux-amd64 digests; Gradio `6.26.0`; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
 
-**Approved design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md` at commit `10a85171afeb9fafb531b3bca1128cddc987619e`.
+**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. The current Task 5 docs-only authority gate starts from parent `07550dfb40d15801b6677a4b785a63f5e654af6f`; Task 5 may resume only after a fresh review of the resulting design/plan commit is clean. No provisional self-SHA is fabricated in this document.
 
 ## Global Constraints
 
@@ -22,11 +22,13 @@
 - Do not read, modify, copy, or stage `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation working assets, private scientific ledgers/final locks, unapproved private evaluation outputs, or Set C. This prohibition does not cover the approved public `v0.2.0` receipt/release Git objects or the dependency lockfiles created and verified by this plan. Never run the receipt exporter or final evaluation.
 - Do not import, copy, package, or execute existing `app/dashboard.py`, root `app.py`, `src/carerisk48h`, joblib, scoring, guard, inference, schema, model, calibrator, or synthetic-patient paths in the public application.
 - Product code does not import `os`, reads no environment variable, and performs no network request, process spawn, shell call, filesystem write, persistence, analytics, telemetry, or dynamic import. Gradio exact-version instance/mount values and Uvicorn values are explicit programmatic configuration, never framework-global monkeypatches.
-- Gradio is fixed exactly at `6.26.0`. The normal and five failure Blocks have zero input components, dependencies, and functions and empty in-process API metadata. Four scenarios are pre-rendered through `render_scenario`; there is no POST, callback, queue, event, session, or server-side scenario state.
+- Gradio is fixed exactly at `6.26.0`. The normal and five failure Blocks have zero app-owned input components, dependencies, functions, or API endpoints and empty in-process API metadata. Four scenarios are pre-rendered through `render_scenario`; normal browser interaction sends zero POST, callback, queue, event, or session traffic. Pinned `config.enable_queue == true` and Gradio's internal queue/state initialization are recorded facts, not failures and not monkeypatch targets; queue/event/session routes remain outer-blocked and public-interaction state delta must stay zero.
 - `create_app` fixes `dev_mode=False`, `vibe_mode=False`, `root_path=""`, `api_open=False`, and `space_id=None`. `gr.mount_gradio_app` receives only the supported fixed mount arguments listed in Task 5. `uvicorn.run` receives the wrapped application object plus fixed host/port/single-worker/no-proxy/no-access-log arguments; no Gradio `launch` path exists.
-- `space/carerisk_space/ui.py` owns pure-ASGI `PublicSurfaceGuard`. `space/app.py` creates an empty FastAPI parent without docs/OpenAPI, mounts Gradio, and directly wraps the resulting parent as `app = PublicSurfaceGuard(parent)` before Uvicorn. The guard is outside parent error handling and mounted Gradio Brotli/CORS/router/body parsing. It is not placed in `app_kwargs` or a framework middleware list.
+- `space/carerisk_space/ui.py` owns pure-ASGI `PublicSurfaceGuard` and the immutable locked-package asset membership builder. `space/app.py` creates an empty FastAPI parent without docs/OpenAPI, mounts Gradio, and directly wraps the resulting parent as `app = PublicSurfaceGuard(parent, build_package_asset_membership())` before Uvicorn. The guard is outside parent error handling and mounted Gradio Brotli/CORS/router/body parsing. It is not placed in `app_kwargs` or a framework middleware list.
+- The guard accepts exactly four Host authorities: `127.0.0.1:7860` and `localhost:7860` over HTTP, the reviewer-only Docker alias `carerisk-app:7860` over HTTP, and `steven0226-carerisk-48h.hf.space` over HTTPS. It rebuilds a constant downstream scope/header tuple for the selected authority and rejects every missing, duplicate, combined, whitespace-padded, case-variant, trailing-dot, userinfo, or extra-port Host. Uvicorn never trusts forwarded headers. A different real Hugging Face Host is a publication stop, not permission to broaden the map.
+- At startup, `ui.py` reads only the source-audited locked-wheel constants `gradio.routes.BUILD_PATH_LIB` and `STATIC_PATH_LIB`, derives an immutable URL set from canonical regular non-symlink root-contained package files, and authorizes `/assets` and `/static` only by exact membership. Linux runtime and reviewer images independently record and compare sorted membership/content-tree digests. No unknown-valid filename or user/site/evidence/temp path reaches Gradio.
 - Because Gradio `6.26.0` consults environment variables for falsy path lists, the mount retains truthy exact sentinels `allowed_paths=["/__carerisk_no_allowed_files__"]` and `blocked_paths=["/"]`; the allowed sentinel is an absolute nonexistent path. These and `max_file_size=0` are defense in depth only. The truly outer firewall, sanitized permitted scopes, and no-downstream/no-receive probes establish the public boundary.
-- The final Docker exec-form `ENTRYPOINT` uses `/usr/bin/env -i` before Python import and rebuilds only the reviewed fixed environment allowlist. Its exec-form `CMD` remains `["python", "app.py"]`; neither `SPACE_ID`, `PORT`, secrets, nor arbitrary injected variables survive. Candidate verification poisons Docker `GRADIO_*`, `SPACE_ID`, and `PORT` values and proves PID 1/children and runtime behavior cannot drift.
+- The final Docker exec-form `ENTRYPOINT` uses `/usr/bin/env -i` before Python import and rebuilds only the reviewed fixed environment allowlist, including the exact canonical `HF_HUB_DISABLE_TELEMETRY=True`. Its exec-form `CMD` remains `["python", "app.py"]`; neither `SPACE_ID`, `PORT`, secrets, nor arbitrary injected variables survive. Candidate verification poisons Docker `GRADIO_*`, `HF_HUB_DISABLE_TELEMETRY`, `SPACE_ID`, and `PORT` values and proves the pre-import, post-Blocks, PID 1, child, and runtime values cannot drift.
 - Runtime is CPU-only, non-root, and read-only except framework-owned operations in bounded ephemeral `/tmp`. No persistent service is started during ordinary unit tests.
 - The approved “no shell” interpretation is precise: the runtime account is non-login with `/usr/sbin/nologin`, the app uses exec-form startup and never invokes a shell, and unnecessary shell utilities are excluded. Do not assert that Debian slim physically lacks `/bin/sh`.
 - `requirements.lock` contains the complete runtime closure. `requirements-dev.lock` contains the complete runtime-plus-development union closure; every normalized runtime package/version pair is present unchanged in the development lock. Both locks contain exact versions and accepted target-distribution hashes. Docker installation uses `python -m pip install --require-hashes --no-deps` against the appropriate complete closure.
@@ -44,6 +46,16 @@
 - Repeating with `PYTHONNOUSERSITE=1` collected the existing suite and produced one failure: `tests/test_dashboard.py::test_create_app_uses_zh_tw_progressive_disclosure`, because the current global Python does not have the optional Gradio package. Running the same marker selection while deselecting that one dependency-bound test passed the other 154 tests.
 - Ruff and Mypy executables are absent from the current global Python. `pip check` reports unrelated global Anaconda conflicts. Implementation must therefore use isolated, lock-installed verification environments and must not repair or rely on the global environment.
 - Baseline commands used `PYTHONDONTWRITEBYTECODE=1`, disabled pytest cache, used two CPU threads, and left the worktree clean.
+
+## Task 5 Authority and Pinned-Source Evidence
+
+- Central authorized local implementation at plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is currently held at docs parent `07550dfb40d15801b6677a4b785a63f5e654af6f`; this correction changes only the governing design and plan. Product/test files remain byte-frozen until a fresh authority review is clean.
+- Pinned `.venv-space` reports Gradio `6.26.0`. `inspect.signature(gr.mount_gradio_app)` contains every fixed Task 5 mount argument, including `favicon_path`; `inspect.signature(uvicorn.run)` contains the fixed programmatic options; no `launch` or CLI path is required.
+- Direct composition `app = PublicSurfaceGuard(parent)` after `gr.mount_gradio_app(...)` was probed with hostile headers: permitted root/config requests remained healthy after scope sanitization, while `OPTIONS` and upload paths returned the fixed 404 outside Gradio with no canary, CORS, or compression. The final implementation additionally passes immutable package membership into the guard.
+- Pinned source registers both `GET` and `HEAD` for root, but GET-only handlers for config, theme, manifest, favicon, and package routes. The governing outer method table therefore allows root GET/HEAD, allows only GET for the other exact read-only resources, and returns its own fixed 404 for all other methods before Gradio.
+- `gr.HTML` defaults `js_on_load` to a click-trigger script; explicit `js_on_load=None` removes that config key without creating dependencies. The pinned static config retains `enable_queue == true`, `dependencies == []`, `len(app.fns) == 0`, and empty API metadata. These are recorded as separate framework and app-owned facts.
+- Pinned `gradio.routes.BUILD_PATH_LIB` and `STATIC_PATH_LIB` are the only authorized package roots. The local wheel audit found 916 and 50 regular files respectively and zero symlinks; counts are evidence only. One packaged member, `__vite-browser-external-B0RrT0g9.js`, requires the explicitly audited leading-underscore segment form; exact membership remains authoritative. Locked `STATIC_PATH_LIB/img/logo.svg` is 1,107 bytes/SHA-256 `3d131bff3fe15bcbb3e6e6552a8bee25377c3666723a9cbe68ceca953ea613df`, and `img/logo_nosize.svg` is 1,082 bytes/SHA-256 `89fd7687072f6c1ab52be3348494f0410c270f453e8306105719b2e3f7091469`.
+- Pinned `Blocks(analytics_enabled=False)` writes `HF_HUB_DISABLE_TELEMETRY=True`. The entrypoint uses that exact value so pre-import, post-Blocks, PID 1, and child environments have one canonical representation.
 
 ## File and Interface Map
 
@@ -690,9 +702,9 @@ git commit -m 'feat(space): add fixed synthetic gate states'
 
 **Interfaces:**
 - Consumes: `EvidenceLoadResult`, `SCENARIOS`, and `render_scenario`.
-- Produces: `create_app(bundle_root: Path | None = None) -> gr.Blocks`, a one-document static HTML/CSS explorer, `PublicSurfaceGuard(app: ASGIApp)`, exact outer-ASGI public allowlist/scope sanitization, fixed FastAPI mount/Uvicorn composition, and a static evidence-failure page.
+- Produces: `create_app(bundle_root: Path | None = None) -> gr.Blocks`, a one-document static HTML/CSS explorer, `build_package_asset_membership() -> frozenset[str]`, `PublicSurfaceGuard(app: ASGIApp, package_asset_urls: frozenset[str])`, exact outer-ASGI authority/path/membership/scope sanitization, fixed FastAPI mount/Uvicorn composition, and a static evidence-failure page.
 
-- [ ] **Step 1: Write failing static-document and zero-event config tests**
+- [ ] **Step 1: Write failing static-document and zero-app-owned-capability config tests**
 
 ```python
 THEME_CSS_SHA256 = "8ad6f9b14414574fe6c6d9b4362dcdd63dfdc66d8c34cbef0982888dfc44ff04"
@@ -706,8 +718,14 @@ def test_gradio_version_and_normal_config_are_static_and_event_free(
     config = app.get_config_file()
     assert [item["type"] for item in config["components"]] == ["html"]
     assert config["dependencies"] == []
+    assert config["enable_queue"] is True  # pinned framework fact, not app capability
     assert len(app.fns) == 0
     assert app.get_api_info() == {"named_endpoints": {}, "unnamed_endpoints": {}}
+    props = config["components"][0]["props"]
+    assert "js_on_load" not in props
+    assert "server_functions" not in props
+    assert props["buttons"] == []
+    assert props["_selectable"] is False
     assert not {item["type"] for item in config["components"]} & {
         "radio",
         "textbox", "code", "file", "uploadbutton", "dataframe", "json",
@@ -734,6 +752,9 @@ def test_static_document_prerenders_four_exact_scenarios_once(
     assert parsed.panel_html == tuple(render_scenario(item) for item in EXPECTED_IDS)
     assert "<script" not in document.casefold()
     assert not re.search(r"\bon[a-z]+\s*=", document, re.IGNORECASE)
+    assert all_gr_html_calls_explicitly_disable_js_on_load(
+        Path("space/carerisk_space/ui.py")
+    )
 
 def test_claim_dom_precedes_first_focusable_control(valid_bundle: Path) -> None:
     document = only_html_value(create_app(valid_bundle))
@@ -751,6 +772,7 @@ def test_failure_page_is_one_static_document_with_no_inputs_or_functions(
     config = app.get_config_file()
     assert [item["type"] for item in config["components"]] == ["html"]
     assert config["dependencies"] == []
+    assert config["enable_queue"] is True
     assert len(app.fns) == 0
     document = only_html_value(app)
     assert "Evidence unavailable" in document
@@ -791,6 +813,7 @@ def test_exact_instance_state_ignores_poisoned_framework_environment(
     for name, value in POISONED_FRAMEWORK_ENV.items():
         monkeypatch.setenv(name, value)
     app = create_app(valid_bundle)
+    assert os.environ["HF_HUB_DISABLE_TELEMETRY"] == "True"
     assert app.dev_mode is False
     assert app.vibe_mode is False
     assert app.root_path == ""
@@ -806,7 +829,7 @@ $env:PYTHONPATH = (Resolve-Path space)
 .venv-space\Scripts\python.exe -m pytest space/tests/test_gradio_contract.py space/tests/test_claim_contract.py -q
 ```
 
-Expected: FAIL because the one-document renderer, zero-event config, outer guard, and fixed mount/server composition do not exist.
+Expected: FAIL because the one-document renderer, explicit `js_on_load=None`, zero app-owned-capability config, asset membership, authority-aware outer guard, and fixed mount/server composition do not exist.
 
 - [ ] **Step 3: Implement the minimal pre-rendered Blocks and direct outer composition**
 
@@ -822,8 +845,12 @@ def create_app(bundle_root: Path | None = None) -> gr.Blocks:
             tuple((item, render_scenario(item.id)) for item in SCENARIOS),
         )
     )
-    with gr.Blocks(analytics_enabled=False) as app:
-        gr.HTML(document, elem_id="carerisk-static-document")
+    with gr.Blocks(analytics_enabled=False, title=PRODUCT_NAME) as app:
+        gr.HTML(
+            document,
+            elem_id="carerisk-static-document",
+            js_on_load=None,
+        )
     app.dev_mode = False
     app.vibe_mode = False
     app.root_path = ""
@@ -832,15 +859,32 @@ def create_app(bundle_root: Path | None = None) -> gr.Blocks:
     return app
 ```
 
-The one HTML document owns `#carerisk-space-root`, the complete claim ceiling, fixed evidence, the native `fieldset` radio explorer, every pre-rendered result panel, and provenance links. No link or focusable element precedes the claim. CSS uses exact ID/sibling selectors to reveal only the checked panel; it contains no `url(...)`, import, or external reference. Failure HTML includes one bounded code and no raw exception.
+The one HTML document owns `#carerisk-space-root`, the complete claim ceiling, fixed evidence, the native `fieldset` radio explorer, every pre-rendered result panel, and provenance links. No link or focusable element precedes the claim. CSS uses exact ID/sibling selectors to reveal only the checked panel; it contains no `url(...)`, import, or external reference. Failure HTML includes one bounded code and no raw exception. `js_on_load=None` is explicit on every `gr.HTML`; source/config mutation tests reject its omission, any `js_on_load` or `server_functions` config entry, nonempty `buttons`, selectability, or event dependency. “No inline JavaScript” applies to app-authored HTML/config, not to Gradio's pinned shell JavaScript.
 
-`PublicSurfaceGuard` remains in this same `ui.py`; no eighth Task 5 file is added. It is a pure ASGI wrapper that stores only the downstream app. It passes only lifespan. WebSocket sends exactly `{"type": "websocket.close", "code": 1008, "reason": ""}` without downstream or receive; unknown scope types return with no downstream, receive, or output. For HTTP it may inspect method/path/raw path/query/headers only for classification and never reads the body or logs client values.
+`PublicSurfaceGuard` and `build_package_asset_membership` remain in this same `ui.py`; no eighth Task 5 file is added. The guard is a pure ASGI wrapper that stores only the downstream app and immutable asset URL set. It passes only lifespan. WebSocket sends exactly `{"type": "websocket.close", "code": 1008, "reason": ""}` without downstream or receive; unknown scope types return with no downstream, receive, or output. For HTTP it may inspect method/path/raw path/query/headers only for classification and never reads the body or logs client values.
 
-The allowlist is exactly `GET`/`HEAD` for `/` and `/config` with empty query; `/theme.css` with exact query `v=8ad6f9b14414574fe6c6d9b4362dcdd63dfdc66d8c34cbef0982888dfc44ff04`; and canonical package assets below `/assets/` or `/static/` ending in `.js`, `.css`, `.svg`, `.ttf`, `.woff`, or `.woff2` with empty query. The frozen theme value must equal both `app.get_config_file()["theme_hash"]` and `sha256(app.theme_css.encode("utf-8"))`. Every other method/path/query, including every Gradio API or metadata route, is blocked.
+The method/path/query table is exact: only `/` accepts `GET` and `HEAD` with empty query because pinned Gradio explicitly registers both root methods. `/config`, `/manifest.json`, `/favicon.ico`, and every exact immutable package member accept `GET` only with empty query. `/theme.css` accepts `GET` only with exact query `v=8ad6f9b14414574fe6c6d9b4362dcdd63dfdc66d8c34cbef0982888dfc44ff04`. The frozen theme value must equal both `app.get_config_file()["theme_hash"]` and `sha256(app.theme_css.encode("utf-8"))`. Every other method/path/query, including `HEAD` for any non-root path, every Gradio API, and every non-allowlisted metadata route, is outer-blocked with the fixed 404.
 
-The canonical predicate is global: `raw_path == path.encode("ascii")`; no percent/backslash/control/NUL/non-ASCII, dot/empty segment, duplicate slash, normalization, case alias, or alternate separator. Asset segments match `[A-Za-z0-9][A-Za-z0-9._@+~-]*` and the source test binds the two route families to Gradio's installed package asset roots. A suffix cannot authorize another path.
+The canonical predicate is global: `raw_path == path.encode("ascii")`; no percent/backslash/control/NUL/non-ASCII, dot/empty segment, duplicate slash, normalization, case alias, or alternate separator. Asset segments match `[A-Za-z0-9_][A-Za-z0-9._@+~-]*`; the leading underscore exists solely because the pinned package contains `__vite-browser-external-B0RrT0g9.js`. Suffixes are exactly `.css`, `.js`, `.svg`, `.ttf`, `.wasm`, `.woff`, or `.woff2`, and exact URL membership remains authoritative. A valid suffix or grammar cannot authorize an absent or differently cased package file.
 
-An otherwise permitted request is still rejected when `Transfer-Encoding` exists or `Content-Length` is malformed, duplicated, or nonzero. Before downstream, construct a fresh sanitized HTTP scope with fixed `scheme="http"`, `root_path=""`, `server=("127.0.0.1", 7860)`, `client=("127.0.0.1", 0)`, and sole header `(b"host", b"127.0.0.1:7860")`; preserve only validated method/path/raw path/query and protocol versions. Do not forward Origin, Cookie, Authorization, `X-*`, Forwarded, User-Agent, or any other client header. Blocked HTTP sends exact 404 `Not Found` with fixed content headers and no CORS/compression/echo, without downstream or receive.
+At startup, enumerate only `gradio.routes.BUILD_PATH_LIB` as URL prefix `/assets/` and `gradio.routes.STATIC_PATH_LIB` as `/static/`. Resolve each source-audited root strictly; reject a missing, non-directory, or symlink root. Walk read-only with `pathlib`, accept only regular non-symlink files, and prove each strict resolution remains beneath its exact root with `Path.relative_to`; reject special files, symlink files/directories, containment escapes, duplicate URLs, noncanonical relative names, and case aliases. No argument, environment, working directory, user path, other site-package root, evidence path, or temporary path can extend the roots. Build a `frozenset[str]`. Tests derive sorted `url<TAB>size<TAB>sha256<LF>` records and compare membership/content-tree digest between the exact locked Linux runtime and reviewer images; the observed local 916/50 counts are evidence only, not assertions across wheels.
+
+An otherwise permitted request is still rejected when `Transfer-Encoding` exists or `Content-Length` is malformed, duplicated, or nonzero. It also requires exactly one header entry with name bytes `b"host"` and value bytes exactly matching this immutable map:
+
+```python
+AUTHORITY_MAP = MappingProxyType({
+    b"127.0.0.1:7860": ("http", ("127.0.0.1", 7860), ("127.0.0.1", 0)),
+    b"localhost:7860": ("http", ("localhost", 7860), ("127.0.0.1", 0)),
+    b"carerisk-app:7860": ("http", ("carerisk-app", 7860), ("127.0.0.1", 0)),
+    b"steven0226-carerisk-48h.hf.space": (
+        "https", ("steven0226-carerisk-48h.hf.space", 443), ("127.0.0.1", 0)
+    ),
+})
+```
+
+Missing, duplicated, comma-combined, whitespace-padded, uppercase, trailing-dot, userinfo, extra/default-port, IPv6-alias, or unlisted Host is blocked. For a listed Host, construct a fresh sanitized HTTP scope with the selected constant scheme/server/client, `root_path=""`, and sole header `(b"host", selected_host_bytes)`; preserve only validated method/path/raw path/query and protocol versions. Do not forward Origin, Cookie, Authorization, `X-*`, Forwarded, User-Agent, or any other client header. `proxy_headers=False` remains load-bearing. Blocked HTTP sends exact 404 `Not Found` with fixed content headers and no CORS/compression/echo, without downstream or receive.
+
+With `title=PRODUCT_NAME` and mount `favicon_path=None`, running tests require exact GET `/manifest.json` media type and body `{"name": PRODUCT_NAME, "icons": [{"src": "static/img/logo_nosize.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}], "start_url": "./", "display": "standalone"}`. GET `/favicon.ico` must equal the locked `STATIC_PATH_LIB/img/logo.svg` blob (1,107 bytes, SHA-256 `3d131bff3fe15bcbb3e6e6552a8bee25377c3666723a9cbe68ceca953ea613df`); `/static/img/logo_nosize.svg` must equal 1,082 bytes and SHA-256 `89fd7687072f6c1ab52be3348494f0410c270f453e8306105719b2e3f7091469`. Responses contain no canary and trigger no network/write. Every `/pwa_icon` variant is blocked. HEAD for metadata/config/theme/package paths is blocked by the outer guard with the fixed 404 and must not reach Gradio; no inner 405 or fake GET-content parity is accepted.
 
 The existing `select_scenario`/`render_scenario` functions remain pure startup-only render helpers. They are never bound to Gradio or exposed as endpoints. Task 5 removes no Task 4 input-hardening, but the public proof no longer depends on accepting or rejecting a transport value because no transport exists.
 
@@ -848,7 +892,7 @@ When startup evidence is invalid, `create_app` logs exactly one structured bound
 
 The assignments after the `Blocks` context are exact Gradio `6.26.0` per-instance configuration, not framework-global monkeypatching. Product modules do not import `os` or read environment variables. Tests poison every listed framework variable before construction and prove the exact instance, mount, Uvicorn, static config, and outer-wrapper state remain unchanged.
 
-`space/app.py` imports only pinned `fastapi`, `gradio`, `uvicorn`, `create_app`, and `PublicSurfaceGuard`. It builds `parent = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, mounts with exact `gr.mount_gradio_app(parent, demo, path="/", server_name="0.0.0.0", server_port=7860, footer_links=[], run_history=False, root_path="", allowed_paths=["/__carerisk_no_allowed_files__"], blocked_paths=["/"], show_error=False, max_file_size=0, ssr_mode=False, enable_monitoring=False, pwa=False, mcp_server=False)`, then assigns `app = PublicSurfaceGuard(parent)`. It calls `uvicorn.run(app, host="0.0.0.0", port=7860, workers=1, proxy_headers=False, forwarded_allow_ips="", access_log=False, server_header=False, date_header=False, reload=False, factory=False, env_file=None, log_config=None)` only under the main guard. There is no `launch`, `app_kwargs`, CLI/config file, authentication, user mount, or environment read.
+`space/app.py` imports only pinned `fastapi`, `gradio`, `uvicorn`, `create_app`, `build_package_asset_membership`, and `PublicSurfaceGuard`. It builds `parent = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, mounts with exact `gr.mount_gradio_app(parent, demo, path="/", server_name="0.0.0.0", server_port=7860, footer_links=[], run_history=False, root_path="", allowed_paths=["/__carerisk_no_allowed_files__"], blocked_paths=["/"], favicon_path=None, show_error=False, max_file_size=0, ssr_mode=False, enable_monitoring=False, pwa=False, mcp_server=False)`, then assigns `app = PublicSurfaceGuard(parent, build_package_asset_membership())`. It calls `uvicorn.run(app, host="0.0.0.0", port=7860, workers=1, proxy_headers=False, forwarded_allow_ips="", access_log=False, server_header=False, date_header=False, reload=False, factory=False, env_file=None, log_config=None)` only under the main guard. There is no `launch`, `app_kwargs`, CLI/config file, authentication, user mount, or environment read.
 
 - [ ] **Step 4: Add outer-ASGI, composition, route-inventory, and running probes**
 
@@ -876,14 +920,73 @@ def test_outer_guard_rejects_websocket_and_unknown_scope_without_inner_calls() -
         assert messages == fixed_rejection_messages_for(scope["type"])
 
 def test_permitted_http_is_canonical_bodyless_and_sanitized() -> None:
-    for scope in allowed_scopes_with_hostile_headers():
+    for scope, expected in allowed_scopes_with_hostile_headers_for_each_authority():
         recorder = ScopeRecorder()
         receive = ReceiveBomb()
-        run_asgi(PublicSurfaceGuard(recorder), scope, receive)
+        run_asgi(PublicSurfaceGuard(recorder, exact_package_asset_urls()), scope, receive)
         assert receive.calls == 0
-        assert recorder.scope == expected_sanitized_scope(scope)
-        assert recorder.scope["headers"] == [(b"host", b"127.0.0.1:7860")]
+        assert recorder.scope == expected
+        assert recorder.scope["headers"] == [(b"host", expected_host(scope))]
         assert not attacker_headers(recorder.scope)
+
+def test_host_must_be_one_exact_canonical_authority() -> None:
+    for headers in missing_duplicate_combined_whitespace_case_dot_userinfo_port_hosts():
+        downstream = DownstreamBomb()
+        receive = ReceiveBomb()
+        messages = run_asgi(
+            PublicSurfaceGuard(downstream, exact_package_asset_urls()),
+            make_scope("GET", "/", headers=headers),
+            receive,
+        )
+        assert messages == fixed_not_found_messages()
+        assert downstream.calls == receive.calls == 0
+
+def test_exact_read_only_method_table_is_outer_enforced() -> None:
+    assert guard_status("GET", "/") == 200
+    assert guard_status("HEAD", "/") == 200
+    for path, query in exact_get_only_paths_and_queries():
+        assert guard_status("GET", path, query) == 200
+        assert guard_status("HEAD", path, query) == 404
+        assert guard_status("OPTIONS", path, query) == 404
+        assert guard_status("POST", path, query) == 404
+    assert all_fixed_404s_have_no_downstream_or_receive()
+
+def test_package_asset_membership_is_exact_regular_and_root_contained() -> None:
+    membership = build_package_asset_membership()
+    audit = audit_locked_package_roots(BUILD_PATH_LIB, STATIC_PATH_LIB)
+    assert membership == audit.urls
+    assert audit.duplicates == ()
+    assert audit.special_files == ()
+    assert audit.symlinks == ()
+    assert audit.containment_failures == ()
+    assert all(url.startswith(("/assets/", "/static/")) for url in membership)
+    assert unknown_valid_suffix_url(membership) not in membership
+
+@pytest.mark.parametrize("mutation", [
+    "missing_root", "symlink_root", "symlink_file", "symlink_directory",
+    "case_alias", "containment_escape", "special_file", "duplicate_url",
+])
+def test_package_asset_membership_mutations_fail_closed(mutation: str) -> None:
+    with source_root_mutation(mutation):
+        with pytest.raises(PackageAssetContractError):
+            build_package_asset_membership()
+
+def test_exact_manifest_favicon_and_default_logo_are_locked(
+    running_local_app: RunningLocalApp,
+) -> None:
+    manifest = get(running_local_app.base_url, "/manifest.json")
+    assert manifest.status_code == 200
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    assert manifest.json() == expected_manifest(PRODUCT_NAME)
+    assert b"CANARY_7419" not in manifest.content
+    favicon = get(running_local_app.base_url, "/favicon.ico")
+    assert len(favicon.content) == 1107
+    assert sha256(favicon.content).hexdigest() == FAVICON_SHA256
+    logo = get(running_local_app.base_url, "/static/img/logo_nosize.svg")
+    assert len(logo.content) == 1082
+    assert sha256(logo.content).hexdigest() == MANIFEST_LOGO_SHA256
+    assert no_network_or_write_delta()
+    assert every_pwa_icon_variant_is_outer_blocked(running_local_app)
 
 def test_theme_query_and_content_hash_are_exact(valid_bundle: Path) -> None:
     demo = create_app(valid_bundle)
@@ -929,6 +1032,7 @@ def test_entrypoint_mount_and_uvicorn_contract_are_exact_under_poisoned_environm
         "root_path": "",
         "allowed_paths": ["/__carerisk_no_allowed_files__"],
         "blocked_paths": ["/"],
+        "favicon_path": None,
         "show_error": False,
         "max_file_size": 0,
         "ssr_mode": False,
@@ -938,6 +1042,7 @@ def test_entrypoint_mount_and_uvicorn_contract_are_exact_under_poisoned_environm
     }
     assert isinstance(captured_composition.served_app, PublicSurfaceGuard)
     assert captured_composition.served_app.app is captured_composition.parent
+    assert captured_composition.served_app.package_asset_urls == build_package_asset_membership()
     assert captured_composition.parent.user_middleware == []
     assert captured_composition.uvicorn == {
         "host": "0.0.0.0", "port": 7860, "workers": 1,
@@ -966,14 +1071,14 @@ def test_running_outer_guard_precedes_fastapi_gradio_fetch_temp_and_body_capabil
 ) -> None:
     assert get(running_local_app.base_url, "/").status_code == 200
     assert get(running_local_app.base_url, "/config").status_code == 200
-    assert_exact_theme_and_packaged_assets_load(running_local_app.base_url)
+    assert_exact_theme_metadata_and_packaged_assets_load(running_local_app.base_url)
     sentinel = Path("/__carerisk_no_allowed_files__").resolve(strict=False)
     assert sentinel.is_absolute()
     assert not sentinel.exists()
     assert_capability_unavailable(running_local_app.base_url, "run_history")
     assert_capability_unavailable(running_local_app.base_url, "monitoring")
     before = temp_entry_snapshot()
-    for probe in url_local_upload_query_header_cookie_cors_brotli_and_ambiguity_probes():
+    for probe in url_local_upload_authority_query_header_cookie_cors_brotli_and_ambiguity_probes():
         response = send_probe(running_local_app.base_url, probe)
         assert response.status_code == 404
         assert response.content == b"Not Found"
@@ -985,13 +1090,14 @@ def test_running_outer_guard_precedes_fastapi_gradio_fetch_temp_and_body_capabil
     assert gradio_tempfile_bomb.calls == 0
     assert running_local_app.request_graph.posts == ()
     assert running_local_app.request_graph.event_or_session_requests == ()
+    assert public_interaction_state_delta(running_local_app) == empty_state_delta()
 ```
 
-The static config is the transport proof: it contains zero dependencies and functions, and the outer guard blocks every Gradio API route. In-process API metadata is empty; `/gradio_api/info` is not a public endpoint. The browser radio transitions are native HTML/CSS and the request graph must remain all-GET/HEAD with zero API, POST, event, queue, or session request. The evidence-failure startup probe separately requires exactly the bounded reason and no manifest sentinel in captured logs.
+The static config is the app-owned transport proof: it contains zero inputs, dependencies, functions, or API endpoints, while recording pinned `config.enable_queue == true` and framework internal queue/state initialization. The outer guard blocks every Gradio API/queue/event/session route. In-process API metadata is empty; `/gradio_api/info` is not a public endpoint. Browser radio transitions are native HTML/CSS; the request graph remains inside the exact read-only method/path/query table with zero API, POST, event, queue, or session request and zero public-interaction state delta. The evidence-failure startup probe separately requires exactly the bounded reason and no manifest sentinel in captured logs.
 
-The poisoned-environment fixture covers application construction, mount capture, direct wrapper identity, Uvicorn capture, and a running server. Pure-ASGI matrices cover every non-read method; API/queue/file/upload/proxy/component/monitoring/auth/docs/vibe routes; hostile body framing/query/cookie/header/raw path; URL/local file and multipart canaries; encoded/traversal/case/slash variants; WebSocket; and unknown scopes. Running integration replaces Gradio outbound fetch and temporary-file construction with bombs and proves interception occurs outside FastAPI and Gradio with no downstream, receive, CORS, Brotli, temp delta, network call, response/log echo, or traceback. Permitted requests deliver only the exact sanitized scope to the inner app.
+The poisoned-environment fixture covers application construction, exact telemetry value after Blocks, mount capture, direct wrapper identity, Uvicorn capture, and a running server. Pure-ASGI matrices cover every non-allowlisted method; API/queue/file/upload/proxy/component/monitoring/auth/docs/vibe routes; hostile body framing/authority/query/cookie/header/raw path; URL/local file and multipart canaries; encoded/traversal/case/slash variants; WebSocket; and unknown scopes. Running integration replaces Gradio outbound fetch and temporary-file construction with bombs and proves interception occurs outside FastAPI and Gradio with no downstream, receive, CORS, Brotli, temp delta, network call, response/log echo, or traceback. Permitted requests deliver only the selected constant sanitized scope to the inner app.
 
-The route test expands the parent mount and inner Gradio `_IncludedRouter.original_router`. Every Gradio `6.26.0` method/route is explicitly classified as exact required packaged read-only surface or outer-boundary-blocked; a new or unclassified item fails. Tests also prove the package routes resolve only beneath Gradio's installed asset roots and the allowed suffix tuple is exact. Sentinel/root-block/max-size remain defense-in-depth state. If mount signature, outer order, fixed sanitized scope, normal browser route use, or later HF Docker behavior requires anything else, stop for exact source audit, a RED test, and central written review; do not add a wildcard.
+The route test expands the parent mount and inner Gradio `_IncludedRouter.original_router`. Every Gradio `6.26.0` method/route is explicitly classified as exact required read-only surface or outer-boundary-blocked; a new or unclassified item fails. Tests bind the package routes to only `BUILD_PATH_LIB` and `STATIC_PATH_LIB`, exercise root/symlink/case/containment mutations, block a syntactically valid nonexistent filename before Gradio, and record sorted membership/content-tree digests. Sentinel/root-block/max-size remain defense-in-depth state. If mount signature, outer order, authority map, sanitized scope, asset membership, normal browser route use, or later HF Docker behavior requires anything else, stop for exact source audit, a RED test, and central written review; do not add a wildcard.
 
 - [ ] **Step 5: Run GREEN and all six UI states**
 
@@ -1000,7 +1106,7 @@ $env:PYTHONPATH = (Resolve-Path space)
 .venv-space\Scripts\python.exe -m pytest space/tests/test_claim_contract.py space/tests/test_evidence_contract.py space/tests/test_scenario_contract.py space/tests/test_gradio_contract.py -q
 ```
 
-Expected: validated normal state plus all five bounded evidence-failure states pass; every Blocks has zero inputs/dependencies/functions; outer-ASGI unit/integration bombs prove pre-FastAPI/pre-Gradio/pre-receive interception and sanitized permitted scopes; and every exact Gradio `6.26.0` route/method is classified.
+Expected: validated normal state plus all five bounded evidence-failure states pass; every Blocks has zero app-owned inputs/dependencies/functions/API and explicit no-component-JS config, while preserving the recorded `enable_queue == true` fact; outer-ASGI unit/integration bombs prove pre-FastAPI/pre-Gradio/pre-receive interception, exact authority sanitization, exact package membership and metadata; and every exact Gradio `6.26.0` route/method is classified.
 
 - [ ] **Step 6: Commit the exact files**
 
@@ -1025,7 +1131,7 @@ git commit -m 'feat(space): present bounded evidence explorer'
 ```python
 ALLOWED_IMPORT_ROOTS = {
     "__future__", "dataclasses", "hashlib", "html", "json", "logging", "math",
-    "pathlib", "types", "typing", "fastapi", "gradio", "starlette", "uvicorn",
+    "pathlib", "re", "types", "typing", "fastapi", "gradio", "starlette", "uvicorn",
     "carerisk_space",
 }
 FORBIDDEN_IMPORT_ROOTS = {
@@ -1045,9 +1151,9 @@ def test_application_has_no_write_env_process_network_or_dynamic_code_capability
     assert violations == []
 ```
 
-`scan_capabilities` must identify write/append/update `open`, `Path.write_text`, `Path.write_bytes`, mkdir, rename, replace, delete, environment reads, `eval`, `exec`, dynamic import, process spawn, shell execution, network client construction, file watchers, and arbitrary absolute/current/home path discovery.
+`scan_capabilities` must identify write/append/update `open`, `Path.write_text`, `Path.write_bytes`, mkdir, rename, replace, delete, environment reads, `eval`, `exec`, dynamic import, process spawn, shell execution, network client construction, file watchers, and arbitrary absolute/current/home path discovery. The only additional filesystem-capability exception is in `ui.py`: read-only `pathlib` root resolution, `rglob`/iteration, `stat`/`is_file`/`is_dir`/`is_symlink`, `relative_to`, byte-size reads, and hash reads against the two fixed imported Gradio package roots. Calls accepting a runtime path argument, current/home/user/site discovery, `os.path`, globbing outside those roots, or any write remain forbidden.
 
-`space/app.py` alone may import `FastAPI`, pinned `gradio`, and `uvicorn`; `space/carerisk_space/ui.py` alone may import Starlette `ASGIApp`, `Scope`, `Receive`, and `Send` type interfaces. No product file may import Starlette `Middleware`, request/body parsing, response/file/static helpers, network clients, temporary-file APIs, background tasks, environment access, or filesystem writes. The source test requires exactly one empty `FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, one `gr.mount_gradio_app` call with the full exact Task 5 mapping, direct `PublicSurfaceGuard(parent)` composition, and one fixed programmatic `uvicorn.run` under the main guard. It rejects route decorators, `add_middleware`, `app_kwargs`, `Blocks.launch`, Gradio `Radio` or event binding, any second mount/router, and framework monkeypatching.
+`space/app.py` may import only `FastAPI`, pinned Gradio's mount API, `uvicorn`, and the two named local UI interfaces. `space/carerisk_space/ui.py` may import only Gradio `Blocks`/`HTML`, Starlette `ASGIApp`/`Scope`/`Receive`/`Send` type interfaces, and exactly `gradio.routes.BUILD_PATH_LIB`/`gradio.routes.STATIC_PATH_LIB` from framework code. Importing any other Gradio route/function/internal, Starlette `Middleware`, request/body parsing, response/file/static helpers, network clients, temporary-file APIs, background tasks, environment access, or filesystem writes is forbidden. Source and mutation tests prove the two roots are the only inputs, are resolved strictly, are non-symlink directories, and every accepted file is regular/non-symlink and passes strict resolved-root `Path.relative_to` containment. URL membership preserves the wheel's exact case and is compared case-sensitively, including on Windows where filesystem containment semantics alone are not a case proof. Missing roots, root/file/directory symlinks, request case aliases, special files, and escapes fail closed. The source test requires exactly one empty `FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, one `gr.mount_gradio_app` call with the full exact Task 5 mapping including `favicon_path=None`, direct `PublicSurfaceGuard(parent, build_package_asset_membership())` composition, and one fixed programmatic `uvicorn.run` under the main guard. It rejects route decorators, `add_middleware`, `app_kwargs`, `Blocks.launch`, Gradio `Radio` or event binding, any second mount/router, and framework monkeypatching.
 
 - [ ] **Step 2: Run RED**
 
@@ -1396,7 +1502,7 @@ def test_runtime_entrypoint_clears_injected_environment_before_python_import() -
         "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
         "LANG=C.UTF-8", "LC_ALL=C.UTF-8",
         "PYTHONUNBUFFERED=1", "PYTHONDONTWRITEBYTECODE=1",
-        "GRADIO_ANALYTICS_ENABLED=False", "HF_HUB_DISABLE_TELEMETRY=1",
+        "GRADIO_ANALYTICS_ENABLED=False", "HF_HUB_DISABLE_TELEMETRY=True",
         "GRADIO_WATCH_DIRS=", "GRADIO_VIBE_MODE=", "GRADIO_HOT_RELOAD=false",
         "GRADIO_RUN_HISTORY=False", "GRADIO_SSR_MODE=False",
         "GRADIO_MCP_SERVER=False", "GRADIO_ALLOWED_PATHS=",
@@ -1420,7 +1526,7 @@ Expected: FAIL because the Space Dockerfile and smoke contract do not exist.
 
 The generated Dockerfile must expose named `test` and `runtime` stages with no ancestry between them. `test` starts from the exact official Playwright Python reviewer tag plus recorded linux/amd64 digest, installs the complete `requirements-dev.lock` union closure with hashes and no dependency resolution, and contains the six public test modules. Its Playwright Python version is exactly the one matched by the reviewer image and it uses only the Chromium/Firefox/WebKit bytes already embedded in that pinned image; it runs no browser download, `playwright install`, or unrecorded `apt` acquisition. This stage never becomes or contributes a filesystem layer to the deployed stage.
 
-`runtime` starts independently from the exact CPython 3.11 slim-bookworm runtime tag plus recorded linux/amd64 digest. It uses explicit `COPY` for runtime files only, creates numeric UID/GID `10001`, assigns `/usr/sbin/nologin`, retains no writable home, installs `requirements.lock` with hashes and no dependency resolution, excludes tests/dev tools/browser/reviewer layers from the final image, and uses `USER 10001:10001`. The image inventory must prove `/usr/bin/env` exists and record its owning Debian package/version. The exec-form `ENTRYPOINT` is exactly `/usr/bin/env -i` followed by the fixed assignments `PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin`, `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`, `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1`, `GRADIO_ANALYTICS_ENABLED=False`, `HF_HUB_DISABLE_TELEMETRY=1`, `GRADIO_WATCH_DIRS=`, `GRADIO_VIBE_MODE=`, `GRADIO_HOT_RELOAD=false`, `GRADIO_RUN_HISTORY=False`, `GRADIO_SSR_MODE=False`, `GRADIO_MCP_SERVER=False`, `GRADIO_ALLOWED_PATHS=`, and `GRADIO_BLOCKED_PATHS=/`; exec-form `CMD ["python", "app.py"]` follows it. This clears Docker/Hugging Face environment injection before any Python or Gradio import while retaining only the reviewed runtime variables. No `SPACE_ID`, `PORT`, Secret, Variable, or credential is required or preserved. Tests inspect final image history/package inventory and fail if Playwright, pytest, browser files, or a reviewer-layer digest appears.
+`runtime` starts independently from the exact CPython 3.11 slim-bookworm runtime tag plus recorded linux/amd64 digest. It uses explicit `COPY` for runtime files only, creates numeric UID/GID `10001`, assigns `/usr/sbin/nologin`, retains no writable home, installs `requirements.lock` with hashes and no dependency resolution, excludes tests/dev tools/browser/reviewer layers from the final image, and uses `USER 10001:10001`. The image inventory must prove `/usr/bin/env` exists and record its owning Debian package/version. The exec-form `ENTRYPOINT` is exactly `/usr/bin/env -i` followed by the fixed assignments `PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin`, `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`, `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1`, `GRADIO_ANALYTICS_ENABLED=False`, `HF_HUB_DISABLE_TELEMETRY=True`, `GRADIO_WATCH_DIRS=`, `GRADIO_VIBE_MODE=`, `GRADIO_HOT_RELOAD=false`, `GRADIO_RUN_HISTORY=False`, `GRADIO_SSR_MODE=False`, `GRADIO_MCP_SERVER=False`, `GRADIO_ALLOWED_PATHS=`, and `GRADIO_BLOCKED_PATHS=/`; exec-form `CMD ["python", "app.py"]` follows it. This clears Docker/Hugging Face environment injection before any Python or Gradio import while retaining only the reviewed runtime variables. Gradio `Blocks(analytics_enabled=False)` writes the same exact value `True`, so tests require pre-import, post-Blocks, PID 1, and every child to agree without a two-value exception. Poison runs inject `0` and secret-shaped alternatives and prove they are scrubbed. No `SPACE_ID`, `PORT`, Secret, Variable, or credential is required or preserved. Tests inspect final image history/package inventory and fail if Playwright, pytest, browser files, or a reviewer-layer digest appears.
 
 Do not add an assertion or removal step for `/bin/sh`. The accepted proof is non-login passwd metadata plus absence of shell calls in application AST and exec-form startup.
 
@@ -1478,6 +1584,11 @@ def test_container_cold_start_command_is_hardened() -> None:
     for required in ("--cpus=2", "--network=none", "--read-only", "--tmpfs"):
         assert required in joined
     assert "mode=1777" in joined
+
+def test_reviewer_app_uses_exact_internal_network_alias() -> None:
+    command = build_reviewer_app_command("carerisk-space:final")
+    assert option_value(command, "--network-alias") == "carerisk-app"
+    assert reviewer_base_url(command) == "http://carerisk-app:7860"
 
 def test_failed_live_record_cannot_be_reported_as_green() -> None:
     record = sample_record(serious_accessibility_findings=1)
@@ -1553,7 +1664,12 @@ class LiveReviewRecord:
     outer_guard_blocked_count: int
     post_request_count: int
     event_or_session_request_count: int
+    queue_request_count: int
+    public_interaction_state_delta: int
     sanitized_scope_compatible: bool
+    package_asset_membership_digest: str
+    accepted_manifest_count: int
+    accepted_favicon_count: int
     first_http_200_seconds: float
     claim_visible_seconds: float
     partial_metrics: bool
@@ -1577,10 +1693,16 @@ def assert_review_passed(record: LiveReviewRecord) -> None:
         raise ReviewFailure("console or external request")
     if record.outer_guard_blocked_count:
         raise ReviewFailure("normal browser request blocked by public-surface guard")
-    if record.post_request_count or record.event_or_session_request_count:
+    if record.post_request_count or record.event_or_session_request_count or record.queue_request_count:
         raise ReviewFailure("static explorer emitted server interaction")
+    if record.public_interaction_state_delta:
+        raise ReviewFailure("public interaction changed framework state")
+    if record.accepted_manifest_count < 1 or record.accepted_favicon_count < 1:
+        raise ReviewFailure("required metadata request was not observed")
+    if not is_expected_package_membership_digest(record.package_asset_membership_digest):
+        raise ReviewFailure("package asset membership drift")
     if not record.sanitized_scope_compatible:
-        raise ReviewFailure("fixed sanitized scope is incompatible")
+        raise ReviewFailure("authority-selected sanitized scope is incompatible")
     if not all(
         is_expected_public_scope(method, path, query)
         for method, path, query in record.app_request_method_path_queries
@@ -1590,9 +1712,9 @@ def assert_review_passed(record: LiveReviewRecord) -> None:
         raise ReviewFailure("partial evidence or runtime download")
 ```
 
-The Python runner has two explicit modes. Container cold-start mode starts the app image with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` to probe exact root/config/theme/package-asset responses and claim copy on loopback. It submits the authoritative blocked matrix and records outer-guard-first status/body, downstream/receive/fetch/temp zeroes, no CORS/compression/echo, exact sanitized downstream scope, and defense-in-depth state separately. Browser-review mode creates a temporary Docker `--internal` network, starts the final app image and pinned Playwright reviewer, drives both viewports, selects all four native radios by keyboard, records before/after checked-panel visibility, tests normal plus five failure bundles, runs WCAG checks, and records every exact app method/path/query plus block, POST, event/session, console, and external-request counts. Normal traffic must be GET/HEAD only and exactly allowlisted; guard blocks, POSTs, event/session requests, external requests, and console errors are each zero. The internal network permits reviewer-to-app traffic but has no external route and no dependency download. Browser review never substitutes for `--network none` smoke.
+The Python runner has two explicit modes. Container cold-start mode starts the app image with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` with Host `127.0.0.1:7860` to probe exact root/config/theme/manifest/favicon/package-member responses and claim copy on loopback. It records the locked package membership/content-tree digest and submits the authoritative blocked matrix, including method-table HEAD probes, nonexistent-valid asset names, authority mutations, metadata/PWA paths, and downstream/receive/fetch/temp bombs. Records include outer-guard-first status/body, zero CORS/compression/echo, exact selected sanitized downstream scope, and defense-in-depth state separately. Browser-review mode creates a temporary Docker `--internal` network, starts the final app image with the exact network alias `carerisk-app`, starts the pinned Playwright reviewer against `http://carerisk-app:7860`, drives both viewports, selects all four native radios by keyboard, records before/after checked-panel visibility, tests normal plus five failure bundles, runs WCAG checks, and records every exact app method/path/query plus block, POST, event/session/queue, state-delta, console, and external-request counts. Normal traffic must follow the exact method table (`GET` except root may also use `HEAD`), must include the observed manifest/favicon/static-logo requests, and must be exactly allowlisted; guard blocks, POSTs, event/session/queue requests, public state delta, external requests, and console errors are each zero. The internal network permits reviewer-to-app traffic but has no external route and no dependency download. Browser review never substitutes for `--network none` smoke.
 
-If the normal Gradio `6.26.0` browser needs a route/query not in the approved list, emits any POST/event/session traffic, cannot use the fixed sanitized scope/header contract behind the local/container proxy, or if outer ordering lets a blocked probe reach FastAPI/Gradio/body receive, the runner raises a load-bearing incompatibility and stops. The implementation must source-audit the exact issue, add a RED test, and report centrally; it must not accept a generic prefix, method, static, upload, file, header, host, or query wildcard.
+If the normal Gradio `6.26.0` browser needs a route/query/method not in the approved table, emits any POST/event/session/queue traffic, changes framework public-interaction state, cannot use the exact `carerisk-app:7860` authority-selected sanitized scope behind the reviewer network, produces an asset inventory mismatch, or if outer ordering lets a blocked probe reach FastAPI/Gradio/body receive, the runner raises a load-bearing incompatibility and stops. If an authorized Hugging Face candidate or iframe Host is not exactly `steven0226-carerisk-48h.hf.space`, publication stops and reports centrally. The implementation must source-audit the exact issue, add a RED test, and report centrally; it must not accept a generic prefix, method, static, upload, file, header, host, authority suffix, or query wildcard.
 
 `verify_hf_space_candidate.py` owns final orchestration. It creates exactly one GUID-named run directory beneath `Path(tempfile.gettempdir()).resolve(strict=True)` and writes an ownership marker containing that GUID and canonical root. Candidate and review directories are children of that run root. A `try/finally` always stops only containers/networks labeled with the same GUID and calls a cleanup function that re-resolves the OS temp root, rejects symlinks/reparse points, requires the exact GUID prefix plus matching ownership marker/canonical root, and then applies `shutil.rmtree` only to that one run directory. Unowned, missing-marker, mismatched, symlink/reparse-point, workspace, temp-root itself, or outside-temp paths are a hard stop and are never deleted. The script emits its final verification receipt to stdout after cleanup; it persists no review file unless central later provides a separately authorized, explicit outside-repository retention path.
 
@@ -1792,11 +1914,11 @@ if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'In
 1. Re-check clean-worktree and two-commit preconditions. Create `candidate` and `review` children only beneath the owned run root. Run exporter and `verify-export` before any controlled acquisition/build command. Export code is restricted by source tests to local Git object reads and has no networking API/import/call path.
 2. Read both exact tag/platform-digest records from `base-image.json`. For each, run `docker image inspect` against the concatenated recorded tag and linux/amd64 digest and verify `RepoDigests`; if and only if that exact image is absent, perform a logged controlled `docker pull` of the same immutable reference, then re-inspect. Reject a tag-only or wrong-platform image. This is controlled supply-chain acquisition, not test execution.
 3. In the same controlled supply-chain/build phase, build `--target test` and `--target runtime` from the exact candidate. Network access is permitted only for digest/hash-pinned base and Python package acquisition and every accepted byte must match the image digest or lock hash. `--pull=false` may be used only after exact local image verification and is never evidence that the build was offline. Verify built image histories/inventories: test uses the reviewer base; runtime uses only the CPython base and contains no dev/browser/model package.
-4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start passes adversarial values for the exact Gradio `6.26.0` source-derived environment-read inventory. The required named matrix includes `GRADIO_ANALYTICS_ENABLED`, `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `GRADIO_ROOT_PATH`, `GRADIO_SHARE`, `GRADIO_MONITORING_ENABLED`, `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, plus `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect `/proc/1/environ` and every runtime child environment and require exact equality with the fixed `ENTRYPOINT` allowlist. Prove fixed port 7860, exact zero-event instance/config, mount mapping, direct outer-wrapper identity, and programmatic Uvicorn values do not drift. Against loopback, require healthy exact root/config/theme/package assets; unavailable API/queue/history/monitoring; and fixed 404 before FastAPI/Gradio/downstream/body receive for the complete hostile method/path/query/header/cookie/raw-path/WebSocket matrix. Record zero CORS/compression, outbound fetches, temp delta, and echo. Sentinel/root-block/max-upload remain separate defense-in-depth observations. No execution-phase command downloads a dependency.
-5. Create a GUID-labeled Docker `--internal` network and run the final app plus exact reviewer image for normal/five-failure, four-scenario, 1440×900/390×844, keyboard/focus, WCAG, console, and request-graph review. Repeat adversarial environment injection and require the same PID 1/child allowlist. Verify root/config/exact theme/package assets, zero dependencies/functions, and all four pre-rendered scenario panels. For every radio, record checked state and corresponding panel visibility before and after keyboard selection. Record every browser app method/path/query and require only exact allowlisted GET/HEAD; outer-guard blocks, POSTs, event/session requests, external requests, and console errors must all be zero. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, encoded, traversal, case, and slash probes and require outer-guard fixed responses, no downstream/body receive, no outbound network, no temp delta, and no echo. Record the exact sanitized inner scope/header observation and fail if local/container proxy operation requires forwarding attacker headers. The absolute sentinel, root block, and `max_file_size=0` remain defense in depth. Only reviewer-to-app traffic is possible; all egress is absent. Record reviewer image/digests/browser revisions. Any normal route/query outside the allowlist, POST/event/session traffic, outer-order failure, sanitized-scope incompatibility, or HF candidate incompatibility stops verification for exact source audit, RED test, and central review; no wildcard is added.
+4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start passes adversarial values for the exact Gradio `6.26.0` source-derived environment-read inventory. The required named matrix includes `GRADIO_ANALYTICS_ENABLED`, `HF_HUB_DISABLE_TELEMETRY`, `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `GRADIO_ROOT_PATH`, `GRADIO_SHARE`, `GRADIO_MONITORING_ENABLED`, `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, plus `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect pre-import state, post-Blocks state, `/proc/1/environ`, and every runtime child environment and require exact equality with the fixed `ENTRYPOINT` allowlist, including `HF_HUB_DISABLE_TELEMETRY=True`; poison values `0` and hostile strings must be absent. Prove fixed port 7860, zero app-owned input/dependency/function/API config, pinned `enable_queue == true`, zero public state delta, mount mapping, direct outer-wrapper identity, and programmatic Uvicorn values do not drift. Derive sorted package membership/content-tree digests from the exact runtime wheel and compare them with the reviewer image; require only regular non-symlink root-contained members. Against loopback Host `127.0.0.1:7860`, require healthy exact root/config/theme/manifest/favicon/package members and logo digests; unavailable API/queue/history/monitoring; and fixed 404 before FastAPI/Gradio/downstream/body receive for the complete hostile method/path/query/authority/header/cookie/raw-path/WebSocket matrix, including HEAD on every non-root path, syntactically valid nonexistent assets, metadata/PWA variants, missing/duplicate/combined/whitespace Host, and every unlisted authority. Record zero CORS/compression, outbound fetches, temp delta, and echo. Sentinel/root-block/max-upload remain separate defense-in-depth observations. No execution-phase command downloads a dependency.
+5. Create a GUID-labeled Docker `--internal` network, start the final app with exact network alias `carerisk-app`, and run the exact reviewer image against `http://carerisk-app:7860` for normal/five-failure, four-scenario, 1440×900/390×844, keyboard/focus, WCAG, console, and request-graph review. Repeat adversarial environment injection and require the same PID 1/child allowlist. Verify root/config/exact theme/manifest/favicon/package members, exact membership/tree digest parity, zero app-owned inputs/dependencies/functions/API, pinned `enable_queue == true`, and all four pre-rendered scenario panels. For every radio, record checked state and corresponding panel visibility before and after keyboard selection plus zero public-interaction state delta. Record every browser app method/path/query and require the exact method table: `GET` for all allowed resources and optional `HEAD` only for root. Require the exact manifest/favicon/static-logo requests to appear as accepted traffic; outer-guard blocks, POSTs, event/session/queue requests, external requests, and console errors must all be zero. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile authority/query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, metadata/PWA, absent-asset, encoded, traversal, case, and slash probes and require outer-guard fixed responses, no downstream/body receive, no outbound network, no temp delta, and no echo. Record the exact authority-selected sanitized inner scope/header observation for all four approved authorities and fail if local/container proxy operation requires forwarding attacker headers. The absolute sentinel, root block, and `max_file_size=0` remain defense in depth. Only reviewer-to-app traffic is possible; all egress is absent. Record reviewer image/digests/browser revisions. Any normal route/query/method outside the table, POST/event/session/queue traffic, public state delta, outer-order failure, asset mismatch, authority/sanitized-scope incompatibility, or authorized Hugging Face identity other than exact `steven0226-carerisk-48h.hf.space` stops verification for exact source audit, RED test, and central review; no wildcard is added.
 6. In `finally`, stop/remove only containers and the internal network carrying the current GUID label, then validate and delete only the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect directory untouched for manual inspection; it never broadens the delete target.
 
-Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime image digest; `/usr/bin/env` inventory; exact PID 1/child environments; poisoned-environment behavior; zero-input/dependency/function/API observations; parent/inner registered-route classification; mount/outer-wrapper/Uvicorn identity; exact browser method/path/query graph; guard-block/POST/event/session/external/console counts; static radio visibility transitions; sanitized-scope compatibility; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; cold starts; viewport/state results; cleanup; and no-egress observations. If `/usr/bin/env -i` or the direct outer ASGI/fixed-scope boundary is absent, ineffective, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
+Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime image digest; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; static radio visibility transitions; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; cold starts; viewport/state results; cleanup; and no-egress observations. If `/usr/bin/env -i`, the direct outer ASGI/authority boundary, exact package membership, or accepted Host identity is absent, ineffective, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
 
 - [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
 
@@ -1823,19 +1945,24 @@ $requiredTrue = @(
     'runtime_read_only', 'runtime_non_root_nologin', 'runtime_env_binary_inventoried',
     'runtime_environment_scrubbed', 'runtime_fixed_port',
     'runtime_public_surface_guard_pre_router', 'runtime_history_monitoring_closed',
+    'runtime_telemetry_value_exact', 'runtime_authority_map_exact',
+    'runtime_package_asset_membership_exact', 'runtime_reviewer_asset_tree_match',
+    'runtime_manifest_exact', 'runtime_favicon_exact', 'runtime_logo_exact',
+    'framework_enable_queue_true_recorded', 'app_owned_api_surface_zero',
     'browser_request_allowlist_exact', 'browser_network_internal',
+    'browser_reviewer_alias_exact', 'browser_metadata_requests_observed',
     'accessibility_passed', 'cleanup_passed'
 )
 foreach ($field in $requiredTrue) {
     if ($receipt.$field -ne $true) { throw "Final receipt gate failed: $field" }
 }
 if ($receipt.cold_starts -ne 3 -or $receipt.viewport_count -ne 2 -or $receipt.page_state_count -ne 6 -or $receipt.scenario_count -ne 4) { throw 'Final review matrix mismatch' }
-foreach ($field in @('blocked_downstream_call_count', 'blocked_receive_call_count', 'blocked_outbound_fetch_count', 'blocked_temp_entry_delta', 'blocked_echo_count', 'browser_middleware_blocked_count', 'external_request_count', 'console_error_count')) {
+foreach ($field in @('blocked_downstream_call_count', 'blocked_receive_call_count', 'blocked_outbound_fetch_count', 'blocked_temp_entry_delta', 'blocked_echo_count', 'browser_middleware_blocked_count', 'browser_post_request_count', 'browser_event_or_session_request_count', 'browser_queue_request_count', 'public_interaction_state_delta', 'external_request_count', 'console_error_count')) {
     if ($receipt.$field -ne 0) { throw "Final public-surface evidence is not clean: $field" }
 }
 ```
 
-Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact environment scrubbing before import, fixed port/zero-event config/mount/Uvicorn state, direct outer-ASGI interception before FastAPI/Gradio/downstream/body receive, sanitized permitted scopes, zero CORS/compression/network/temp/echo side effects, unavailable API/queue/history/monitoring, loopback root/config/theme/assets, and three cold starts. Browser evidence separately proves exact allowlisted GET/HEAD method/path/query tuples, zero outer-guard blocks/POSTs/events/sessions, native-radio visibility transitions, normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. Sentinel/root-block/max-size evidence remains defense in depth. Cleanup is proven. The test does not require `/bin/sh` to be absent.
+Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact `HF_HUB_DISABLE_TELEMETRY=True` before import/after Blocks/in PID 1/children, fixed port and zero app-owned input/dependency/function/API config, recorded framework `enable_queue == true`, mount/Uvicorn state, direct outer-ASGI interception before FastAPI/Gradio/downstream/body receive, all four authority-selected sanitized scopes, runtime/reviewer package membership-tree equality, exact metadata/logo bytes, zero CORS/compression/network/temp/echo side effects, unavailable API/queue/history/monitoring, and three cold starts. Browser evidence separately proves the exact GET/root-HEAD method table, required manifest/favicon/logo traffic, fixed `carerisk-app` alias, zero outer-guard blocks/POSTs/events/sessions/queues/public-state delta, native-radio visibility transitions, normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. Sentinel/root-block/max-size evidence remains defense in depth. Cleanup is proven. The test does not require `/bin/sh` to be absent.
 
 - [ ] **Step 5: Verify clean scope and provenance one final time**
 
@@ -1858,7 +1985,7 @@ The implementation session stops after Task 13 and central written review. These
 3. Reproduce the exact clean export from the reviewed two commits and compare every byte to `deployment-manifest.json`.
 4. Obtain explicit authorization to upload that exact candidate. Space creation alone does not authorize upload.
 5. After upload, compare the public tree and bytes, record the Hugging Face destination commit plus deployment-manifest SHA-256 in a separate post-deployment audit record, and inspect logs, Secrets/Variables, external requests, licenses, and source tree.
-6. Run three real public cold starts and the 1440×900/390×844 accessibility review. Local results do not stand in for public live review.
+6. Before public traffic, verify the actual Space application/iframe Host is byte-for-byte `steven0226-carerisk-48h.hf.space`; any alias or different identity is a publication stop for central review, not permission to amend the authority map. Then run three real public cold starts and the 1440×900/390×844 accessibility, authority-sanitization, metadata, asset-membership, and request-graph review. Local results do not stand in for public live review.
 7. Obtain explicit authorization before changing GitHub About Website. A successful Space upload does not authorize About, Pages, description, topics, visibility, pinning, release, or other metadata changes.
 
 ## Implementation Completion Handoff
