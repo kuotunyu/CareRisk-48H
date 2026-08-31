@@ -1223,6 +1223,14 @@ git commit -m 'feat(space): present bounded evidence explorer'
 **Files:**
 - Create: `tests/test_hf_space_source_boundary.py`
 - Create: `space/tests/test_export_contract.py`
+- Modify: `space/tests/test_gradio_contract.py`
+
+The Task 6 change to `space/tests/test_gradio_contract.py` is limited to existing
+`PublicSurfaceGuard` helper construction sites: assign
+`build_package_asset_membership()` to a local variable, explicitly assert that
+`isinstance(membership, frozenset)` and `membership` are truthy, then pass that
+exact variable as the guard's second argument. No other test or product behavior
+may change under this authorization.
 
 **Interfaces:**
 - Consumes: Python AST for `space/app.py` and `space/carerisk_space/*.py`.
