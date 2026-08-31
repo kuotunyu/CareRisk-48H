@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the new application isolated under `space/` as a small `carerisk_space` package. Pure standard-library contracts parse three committed JSON artifacts and fail closed before Gradio is constructed; Gradio only presents static evidence plus one four-choice radio input. A source-only exporter reads exact Git blobs into a fresh directory, with application files from an app-source commit, evidence and legal files from the annotated `v0.2.0` tag commit, and `deployment-manifest.json` from the immediately following manifest commit.
 
-**Tech Stack:** CPython 3.11 slim-bookworm runtime image pinned by patch tag and OCI digest; an official Playwright Python test/reviewer image pinned by matching Playwright patch tag plus OCI index/linux-amd64 digests; Gradio; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
+**Tech Stack:** CPython 3.11 slim-bookworm runtime image pinned by patch tag and OCI digest; an official Playwright Python test/reviewer image pinned by matching Playwright patch tag plus OCI index/linux-amd64 digests; Gradio `6.26.0`; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
 
 **Approved design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md` at commit `10a85171afeb9fafb531b3bca1128cddc987619e`.
 
@@ -22,6 +22,7 @@
 - Do not read, modify, copy, or stage `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation working assets, private scientific ledgers/final locks, unapproved private evaluation outputs, or Set C. This prohibition does not cover the approved public `v0.2.0` receipt/release Git objects or the dependency lockfiles created and verified by this plan. Never run the receipt exporter or final evaluation.
 - Do not import, copy, package, or execute existing `app/dashboard.py`, root `app.py`, `src/carerisk48h`, joblib, scoring, guard, inference, schema, model, calibrator, or synthetic-patient paths in the public application.
 - Product code reads no environment variable and performs no network request, process spawn, shell call, filesystem write, persistence, analytics, telemetry, or dynamic import.
+- Gradio is fixed exactly at `6.26.0`. Its one UI dependency is private in API metadata but its internal event transport is acknowledged and adversarially probed; no test may infer that the internal transport is absent.
 - Runtime is CPU-only, non-root, and read-only except framework-owned operations in bounded ephemeral `/tmp`. No persistent service is started during ordinary unit tests.
 - The approved “no shell” interpretation is precise: the runtime account is non-login with `/usr/sbin/nologin`, the app uses exec-form startup and never invokes a shell, and unnecessary shell utilities are excluded. Do not assert that Debian slim physically lacks `/bin/sh`.
 - `requirements.lock` contains the complete runtime closure. `requirements-dev.lock` contains the complete runtime-plus-development union closure; every normalized runtime package/version pair is present unchanged in the development lock. Both locks contain exact versions and accepted target-distribution hashes. Docker installation uses `python -m pip install --require-hashes --no-deps` against the appropriate complete closure.
@@ -231,7 +232,7 @@ class ExportReceipt:
 ### Test-helper contracts
 
 - `space/tests/test_evidence_contract.py` owns `source_or_bundled_evidence(name)`, `valid_manifest_bytes(receipt_raw, release_raw)`, `candidate_bundle(tmp_path)`, and `apply_mutation(bundle, mutation)`. The bundle fixture writes only three synthetic/public JSON files under pytest `tmp_path`; the manifest lists all 24 public paths but runtime tests re-hash only the three JSON files allowed to application code.
-- `space/tests/test_gradio_contract.py` owns `valid_bundle`, `failure_bundle`, `running_local_app`, and `post_only_dependency(base_url, payload)`. The server fixture binds host loopback on an OS-assigned port, yields only after `/config` responds, and always closes the server in fixture cleanup. It uses the public committed receipt/release bytes and a synthetic manifest; it never starts the existing dashboard.
+- `space/tests/test_gradio_contract.py` owns `valid_bundle`, `failure_bundle`, `manifest_canary_bundle`, `RunningLocalApp`, `running_local_app`, `captured_app_logs`, `bounded_failure_codes(text)`, and `post_only_dependency(base_url, payload)`. `RunningLocalApp` exposes only `base_url` plus a callable snapshot of in-memory Python logging and server stdout/stderr; it never persists logs. The server fixture binds host loopback on an OS-assigned port, installs capture before startup, yields only after `/config` responds, and always closes the server and capture in fixture cleanup. It uses the public committed receipt/release bytes and a synthetic manifest; it never starts the existing dashboard. `manifest_canary_bundle` places `CANARY_7419` only in an invalid deployment-manifest field so the bounded startup reason and raw-log exclusion can be tested. `captured_app_logs` uses the same in-memory capture discipline for launch-free construction, and `bounded_failure_codes` returns only exact members of `ALL_FAILURE_CODES`.
 - `tests/test_hf_space_exporter.py` owns `git_repo`, `ExporterCase`, `APP_SOURCE_SHA`, and `MANIFEST_SOURCE_SHA`. The fixture creates a temporary two-commit Git repository containing synthetic text fixtures with the same path/capability rules, so exporter rejection tests never mutate the real repository.
 - `tests/test_hf_space_live_review.py` owns `sample_record` and mocked process/browser adapters for unit tests. Real Docker/Playwright execution occurs only in Task 13 against the clean candidate.
 
@@ -677,8 +678,10 @@ git commit -m 'feat(space): add fixed synthetic gate states'
 - Create: `space/carerisk_space/ui.py`
 - Create: `space/app.py`
 - Create: `space/tests/test_gradio_contract.py`
+- Modify: `space/carerisk_space/scenarios.py`
 - Modify: `space/tests/test_claim_contract.py`
 - Modify: `space/tests/test_evidence_contract.py`
+- Modify: `space/tests/test_scenario_contract.py`
 
 **Interfaces:**
 - Consumes: `EvidenceLoadResult`, `SCENARIOS`, and `render_scenario`.
@@ -687,7 +690,10 @@ git commit -m 'feat(space): add fixed synthetic gate states'
 - [ ] **Step 1: Write failing Gradio component/config tests**
 
 ```python
-def test_normal_config_has_one_non_custom_radio_and_no_arbitrary_input(valid_bundle: Path) -> None:
+def test_gradio_version_and_normal_config_have_one_enumerated_radio(
+    valid_bundle: Path,
+) -> None:
+    assert gr.__version__ == "6.26.0"
     app = create_app(valid_bundle)
     config = app.get_config_file()
     types = [component["type"] for component in config["components"]]
@@ -697,9 +703,19 @@ def test_normal_config_has_one_non_custom_radio_and_no_arbitrary_input(valid_bun
         "image", "audio", "video", "chatbot", "multimodaltextbox",
     }
     radio = next(component for component in config["components"] if component["type"] == "radio")
-    assert radio["props"]["value"] is None
-    assert radio["props"]["allow_custom_value"] is False
-    assert [choice[1] for choice in radio["props"]["choices"]] == list(EXPECTED_IDS)
+    custom_value_capability_key = "_".join(("allow", "custom", "value"))
+    assert custom_value_capability_key not in inspect.signature(gr.Radio).parameters
+    assert custom_value_capability_key not in radio["props"]
+    assert radio["props"].get("value") is None
+    assert radio["props"]["type"] == "value"
+    assert radio["props"]["choices"] == [
+        [item.label_zh_tw, item.id] for item in SCENARIOS
+    ]
+    assert radio["api_info_as_input"] == {
+        "enum": list(EXPECTED_IDS),
+        "title": "Radio",
+        "type": "string",
+    }
 
 def test_claim_dom_precedes_first_focusable_control(valid_bundle: Path) -> None:
     config = create_app(valid_bundle).get_config_file()
@@ -714,14 +730,37 @@ def test_claim_dom_precedes_first_focusable_control(valid_bundle: Path) -> None:
     assert claim_html.index(EXPECTED_ZH_TW) < claim_html.index(EXPECTED_EN)
     assert not re.search(r"<a\b|<button\b|<input\b|<select\b|<textarea\b|tabindex=", claim_html)
 
-def test_internal_event_is_not_public_and_is_single_input(valid_bundle: Path) -> None:
-    config = create_app(valid_bundle).get_config_file()
+def test_internal_event_is_private_bounded_and_absent_from_api_metadata(
+    valid_bundle: Path,
+) -> None:
+    app = create_app(valid_bundle)
+    config = app.get_config_file()
     dependencies = config["dependencies"]
     assert len(dependencies) == 1
-    assert len(dependencies[0]["inputs"]) == 1
-    assert dependencies[0]["api_name"] is False
-    assert dependencies[0]["batch"] is False
-    assert dependencies[0]["queue"] is False
+    dependency = dependencies[0]
+    assert len(dependency["inputs"]) == 1
+    assert len(dependency["outputs"]) == 1
+    assert dependency["api_name"] == "select_scenario"
+    assert dependency["api_visibility"] == "private"
+    assert dependency["api_description"] is False
+    assert dependency["batch"] is False
+    assert dependency["queue"] is False
+    assert app.fns[dependency["id"]].concurrency_limit == 1
+    assert app.fns[dependency["id"]].preprocess is False
+    assert app.fns[dependency["id"]].postprocess is True
+    assert app.get_api_info() == {"named_endpoints": {}, "unnamed_endpoints": {}}
+    assert config["footer_links"] == []
+
+def test_oversized_scenario_id_stops_before_registry_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ExplodingRegistry:
+        def __iter__(self) -> NoReturn:
+            raise AssertionError("oversized input reached registry lookup")
+
+    monkeypatch.setattr(scenarios_module, "SCENARIOS", ExplodingRegistry())
+    value = "x" * (MAX_SCENARIO_ID_CHARS + 1)
+    assert select_scenario(value) == UNKNOWN_SCENARIO
 
 @pytest.mark.parametrize("failure_code", ALL_FAILURE_CODES)
 def test_failure_page_has_no_controls_or_metrics(failure_bundle: Path, failure_code: str) -> None:
@@ -757,7 +796,7 @@ def create_app(bundle_root: Path | None = None) -> gr.Blocks:
             scenario = gr.Radio(
                 choices=[(item.label_zh_tw, item.id) for item in SCENARIOS],
                 value=None,
-                allow_custom_value=False,
+                type="value",
                 label="選擇固定 synthetic gate state",
                 elem_id="scenario-selector",
             )
@@ -767,33 +806,97 @@ def create_app(bundle_root: Path | None = None) -> gr.Blocks:
                 render_scenario,
                 inputs=scenario,
                 outputs=result,
-                api_name=False,
+                api_name="select_scenario",
+                api_visibility="private",
+                api_description=False,
+                preprocess=False,
+                postprocess=True,
                 queue=False,
                 batch=False,
+                concurrency_limit=1,
             )
     return app
 ```
 
 The first `gr.HTML` owns `#carerisk-space-root`, header, complete `#claim-ceiling`, and opening scenario section. No link or focusable element appears before the claim. The evidence section displays only receipt-backed approved fields and the provenance section places all links after the radio. Failure HTML includes one bounded code and no raw exception.
 
-`space/app.py` constructs once and launches with hard-coded `server_name="0.0.0.0"`, `server_port=7860`, `show_api=False`, no allowed paths, no static mounts, no authentication, and no request object. It must not read CLI arguments or environment variables.
+Task 5 also adds `MAX_SCENARIO_ID_CHARS = max(len(item) for item in SCENARIO_IDS)` in `scenarios.py` and makes `select_scenario` return `UNKNOWN_SCENARIO` before registry iteration when `type(value) is not str` or `len(value) > MAX_SCENARIO_ID_CHARS`. This is the callback-owned type/size boundary; the exact four-ID lookup remains the final acceptance gate. The exploding-registry test proves an oversized value cannot reach lookup. The event's `preprocess=False` is load-bearing, not optional: it routes the opaque transport value to this bounded validator rather than Gradio's choice validator, which can echo invalid values in its error. `postprocess=True` remains fixed so only the callback's canonical HTML crosses the output boundary.
+
+When startup evidence is invalid, `create_app` logs exactly one structured bounded failure code and no exception, path, artifact bytes, or submitted value. The logger receives `EvidenceFailure.code` only. Tests capture the startup log for `manifest_canary_bundle`, require the bounded code `deployment_manifest_invalid`, and prove `CANARY_7419` and its representation are absent, preserving Design Section 12 without weakening it.
+
+`space/app.py` constructs once and launches with hard-coded `server_name="0.0.0.0"`, `server_port=7860`, `footer_links=[]`, `max_threads=1`, `allowed_paths=[]`, and `state_session_capacity=1`. It has no authentication or authentication dependency, request object, static mount, user-supplied path, or other user configuration. It must not read CLI arguments or environment variables. The pinned contract does not claim that Gradio’s internal UI transport is absent.
 
 - [ ] **Step 4: Add direct internal-transport adversarial probes**
 
 ```python
-@pytest.mark.parametrize("payload", ["unknown", "x" * 1_048_576, [], {}, None])
+ADVERSARIAL_VALUES = (
+    "unknown",
+    "x" * 1_048_576,
+    [],
+    {},
+    {"secret": "CANARY_7419"},
+    [EXPECTED_IDS[0], "extra"],
+    None,
+    True,
+    1,
+)
+
+@pytest.mark.parametrize("payload", ADVERSARIAL_VALUES)
+def test_direct_callback_rejects_arbitrary_values_without_echo(payload: object) -> None:
+    result = render_scenario(payload)
+    assert result == render_scenario(None)
+
+@pytest.mark.parametrize("payload", ADVERSARIAL_VALUES)
 def test_internal_transport_rejects_arbitrary_values_without_echo(
-    running_local_app: str, payload: object
+    running_local_app: RunningLocalApp, payload: object
 ) -> None:
-    response = post_only_dependency(running_local_app, payload)
-    assert response.status_code in {200, 400, 422}
+    response = post_only_dependency(running_local_app.base_url, payload)
+    assert response.status_code == 200
+    assert response.json()["data"] == [render_scenario(None)]
+
+@pytest.mark.parametrize(
+    "payload",
+    ({"secret": "CANARY_7419"}, "OVERSIZED_CANARY_7419" + "x" * 1_048_576),
+)
+def test_transport_response_and_server_logs_do_not_echo_payload(
+    running_local_app: RunningLocalApp, payload: object
+) -> None:
+    response = post_only_dependency(running_local_app.base_url, payload)
+    assert response.status_code == 200
+    assert response.json()["data"] == [render_scenario(None)]
+    assert "CANARY_7419" not in response.text
     assert repr(payload) not in response.text
-    if response.status_code == 200:
-        assert "unknown_synthetic_scenario" in response.text
-        assert "evidence withheld" in response.text
+    captured = running_local_app.captured_logs()
+    assert "CANARY_7419" not in captured
+    assert repr(payload) not in captured
+
+def test_failure_log_contains_only_bounded_reason(
+    manifest_canary_bundle: Path,
+    captured_app_logs: Callable[[], str],
+) -> None:
+    create_app(manifest_canary_bundle)
+    captured = captured_app_logs()
+    assert bounded_failure_codes(captured) == ("deployment_manifest_invalid",)
+    assert "CANARY_7419" not in captured
+    assert repr({"secret": "CANARY_7419"}) not in captured
+
+def test_running_api_metadata_is_empty(running_local_app: RunningLocalApp) -> None:
+    response = get_json(running_local_app.base_url, "/gradio_api/info")
+    assert response.status_code == 200
+    assert response.json() == {"named_endpoints": {}, "unnamed_endpoints": {}}
+
+def test_entrypoint_launch_contract_is_exact(captured_launch: Mapping[str, object]) -> None:
+    assert captured_launch == {
+        "server_name": "0.0.0.0",
+        "server_port": 7860,
+        "footer_links": [],
+        "max_threads": 1,
+        "allowed_paths": [],
+        "state_session_capacity": 1,
+    }
 ```
 
-The test discovers the one internal dependency from `/config`; it does not create or advertise a named public API. It also verifies `/gradio_api/info` or the locked-version equivalent exposes no named endpoint.
+The running test discovers the sole private dependency from `/config`, asserts its one-input/one-output bound and fixed event metadata, and submits the full adversarial matrix through that dependency. With event preprocessing disabled, every invalid payload must reach the bounded callback and return HTTP 200 whose sole parsed output exactly equals `render_scenario(None)`; status alternatives and substring-only no-echo checks are insufficient because framework-generated choice errors may include the raw value. The nested and oversized sentinel probes also require the sentinel and `repr(payload)` to be absent from both the raw response and the fixture's captured logging/stdout/stderr. The evidence-failure startup probe separately requires exactly the bounded reason and no manifest sentinel in captured logs. The test also verifies that `/gradio_api/info` returns HTTP 200 with exactly empty `named_endpoints` and `unnamed_endpoints`, matching `Blocks.get_api_info()`. The probe recognizes the internal UI transport and proves fail-closed/no-echo behavior; it does not claim that no transport exists. A launch-contract test captures the entry-point launch arguments and asserts the exact host, port, empty footer and allowed paths, one thread, one state session, and absence of auth/request/static/user-path/env/CLI configuration.
 
 - [ ] **Step 5: Run GREEN and all six UI states**
 
@@ -807,7 +910,7 @@ Expected: validated normal state plus all five bounded evidence-failure states p
 - [ ] **Step 6: Commit the exact files**
 
 ```powershell
-git add -- space/app.py space/carerisk_space/ui.py space/tests/test_claim_contract.py space/tests/test_evidence_contract.py space/tests/test_gradio_contract.py
+git add -- space/app.py space/carerisk_space/scenarios.py space/carerisk_space/ui.py space/tests/test_claim_contract.py space/tests/test_evidence_contract.py space/tests/test_scenario_contract.py space/tests/test_gradio_contract.py
 git diff --cached --check
 git commit -m 'feat(space): present bounded evidence explorer'
 ```
@@ -826,7 +929,7 @@ git commit -m 'feat(space): present bounded evidence explorer'
 
 ```python
 ALLOWED_IMPORT_ROOTS = {
-    "__future__", "dataclasses", "hashlib", "html", "json", "math",
+    "__future__", "dataclasses", "hashlib", "html", "json", "logging", "math",
     "pathlib", "types", "typing", "gradio", "carerisk_space",
 }
 FORBIDDEN_IMPORT_ROOTS = {
@@ -926,13 +1029,19 @@ def test_locks_are_complete_exact_and_hashed() -> None:
     runtime = normalized_package_versions(RUNTIME_LOCK)
     development = normalized_package_versions(DEVELOPMENT_LOCK)
     assert runtime <= development
+    assert direct_pin(RUNTIME_INPUT, "gradio") == "6.26.0"
+    assert direct_pin(DEVELOPMENT_INPUT, "gradio") == "6.26.0"
+    assert ("gradio", "6.26.0") in runtime
+    assert ("gradio", "6.26.0") in development
 
 def test_both_base_images_are_patch_tagged_digest_pinned_and_compatible() -> None:
     bases = json.loads(BASE_IMAGE.read_text(encoding="utf-8"))["images"]
     runtime, reviewer = bases["runtime"], bases["reviewer"]
     assert re.fullmatch(r"python:3\.11\.\d+-slim-bookworm", runtime["tag"])
     assert re.fullmatch(r"mcr\.microsoft\.com/playwright/python:v\d+\.\d+\.\d+-(jammy|noble)", reviewer["tag"])
-    assert reviewer["playwright_python_version"] == direct_pin("playwright")
+    assert reviewer["playwright_python_version"] == direct_pin(
+        DEVELOPMENT_INPUT, "playwright"
+    )
     assert set(reviewer["embedded_browsers"]) == {"chromium", "firefox", "webkit"}
     for base in (runtime, reviewer):
         assert re.fullmatch(r"sha256:[0-9a-f]{64}", base["index_digest"])
@@ -982,7 +1091,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 `inventory` extracts metadata and notices from exact accepted wheels and both exact image manifests/inventories, includes the reviewer image's embedded browser revisions and system packages, joins every component to an explicit approved `license-policy.json` record, and serializes sorted canonical JSON with a final newline. `SBOM.spdx.json`, `THIRD_PARTY_LICENSES.json`, and their tests cover both base images as well as the Python and browser components; the final runtime image still contains only the runtime base and runtime lock.
 
-The direct runtime input contains only Gradio. The direct development input contains pytest, Ruff, Mypy, PyYAML, packaging, the exact Playwright Python pin matching the reviewer image, accessibility tooling, lock verification, vulnerability scanning, and license/SBOM verification tools. It does not rely on Playwright wheels to supply browsers or Debian packages, and Dockerfile generation must not run `playwright install` or `apt-get install` in the reviewer stage. Product code still imports only Gradio, standard library, and local modules.
+The direct runtime input contains only `gradio==6.26.0`; a candidate range such as a broad major-version interval is forbidden. The direct development input contains the same exact Gradio pin plus pytest, Ruff, Mypy, PyYAML, packaging, the exact Playwright Python pin matching the reviewer image, accessibility tooling, lock verification, vulnerability scanning, and license/SBOM verification tools. The development lock remains the complete runtime-plus-development union closure, and contract tests verify the installed Gradio version as well as the exact direct pin and equal runtime/development lock entries. It does not rely on Playwright wheels to supply browsers or Debian packages, and Dockerfile generation must not run `playwright install` or `apt-get install` in the reviewer stage. Product code still imports only Gradio, standard library, and local modules.
 
 - [ ] **Step 4: Resolve and review real pins rather than writing guessed values**
 

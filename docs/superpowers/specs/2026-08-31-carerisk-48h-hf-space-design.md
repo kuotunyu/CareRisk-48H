@@ -275,7 +275,7 @@ Any match is a hard export failure, including if a similarly named path is newly
 Runtime application modules may import only:
 
 - Python standard-library modules required for immutable data structures, strict JSON parsing, HTML escaping, hashing, package-relative read-only paths, and typing.
-- The exactly locked `gradio` package.
+- The exactly locked `gradio==6.26.0` package.
 - Local `carerisk_space` modules.
 
 Application-source AST and import-graph tests reject:
@@ -335,17 +335,17 @@ It contains no scenario control, metric value, partially parsed evidence, path, 
 
 The normal app may contain only static HTML/Markdown output, one `Radio` input with the four exact scenario IDs, and bounded HTML output for the selected state. A button is unnecessary. No component accepts arbitrary bytes or strings.
 
-The Gradio config contract verifies:
+The application and capability tests are pinned to Gradio `6.26.0`. The Gradio config contract verifies:
 
 - No `Textbox`, `Code`, `File`, `UploadButton`, `Dataframe`, editable `JSON`, input `Image`, input `Audio`, input `Video`, chatbot, multimodal, gallery upload, or state initialized from request data.
-- The only input component is the single-select scenario radio; its choices exactly equal the four IDs and `allow_custom_value` is false.
-- The sole event dependency has one input, bounded outputs, no public `api_name`, no examples API, no batch mode, no queue, and no concurrency worker pool beyond the default single bounded callback.
-- API documentation is hidden. Gradio’s internal event transport is acknowledged rather than misrepresented as absent.
-- The callback independently validates the exact scenario allowlist. Direct calls with unknown strings, nested data, oversized strings, lists, mappings, nulls, or extra arguments return `unknown_synthetic_scenario` without echoing input.
-- Launch configuration exposes no local file paths, allowed directories, static mounts, file serving, authentication hook, request object, or user-provided path.
+- The only input component is the single-select scenario radio. Its config exposes no prop or schema capability for arbitrary custom values; `choices` is exactly the four label/ID pairs, `value` is unselected, `type == "value"`, and its input schema is a string enum containing exactly the four IDs.
+- The sole event dependency has exactly one input and one bounded output. It uses the fixed internal name `api_name="select_scenario"`, `api_visibility="private"`, `api_description=False`, `preprocess=False`, `postprocess=True`, `queue=False`, `batch=False`, and `concurrency_limit=1`; it exposes no examples API. Disabling component preprocessing is a load-bearing requirement so Gradio never constructs an input-echoing choice error before the bounded callback runs. Output postprocessing remains enabled only for the callback's canonical bounded HTML.
+- Both `Blocks.get_api_info()` and the running `/gradio_api/info` response have empty `named_endpoints` and `unnamed_endpoints`. This proves that the dependency is absent from public API metadata, not that Gradio’s internal UI event transport is absent.
+- The callback independently validates exact type, a fixed maximum scenario-ID character length, and the four-ID allowlist before lookup. Direct calls and running internal-transport calls with unknown strings, oversized strings, nested data, lists, mappings, nulls, booleans, or numbers return the exact same canonical `unknown_synthetic_scenario` HTML without echoing input; direct multi-value probes are likewise rejected rather than partially consumed.
+- Launch is hard-coded to `server_name="0.0.0.0"`, `server_port=7860`, `footer_links=[]`, `max_threads=1`, `allowed_paths=[]`, and `state_session_capacity=1`. It exposes no authentication or authentication dependency, request object, static mount, user-provided path, environment-derived configuration, or CLI-derived configuration.
 - Gradio flagging, feedback, analytics, and persistence are absent.
 
-Tests inspect `Blocks.get_config_file()` and event dependency metadata, invoke the callback directly with adversarial values, and probe the running local server’s documented API metadata. The contract is capability-based: an internal endpoint is acceptable only when it cannot carry any value beyond the four enumerated IDs and cannot return anything beyond bounded state HTML.
+Tests inspect `Blocks.get_config_file()`, the pinned event dependency object, and launch arguments; assert that framework input preprocessing is disabled and output postprocessing remains enabled; compare both in-process and running-server API metadata to the exact empty-endpoint object; invoke the callback directly with adversarial values; and submit the same adversarial matrix through the sole running internal transport. Every invalid direct result and every parsed transport output must equal the canonical unknown-state HTML byte-for-byte. A nested sentinel payload and an oversized string are additionally checked against the raw HTTP response and captured server logs; neither their raw value nor representation may appear. The contract is capability-based: the acknowledged internal transport is acceptable only when every value beyond the four enumerated IDs fails closed without echo and every response remains bounded state HTML.
 
 ## 14. Space card and licensing
 
