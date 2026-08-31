@@ -228,7 +228,10 @@ def _compose(demo: gr.Blocks) -> Any:
         pwa=False,
         mcp_server=False,
     )
-    return ui_module.PublicSurfaceGuard(parent, ui_module.build_package_asset_membership())
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return ui_module.PublicSurfaceGuard(parent, membership)
 
 
 def _route_inventory(parent: FastAPI) -> list[tuple[str, str, str]]:
@@ -881,11 +884,12 @@ def test_outer_guard_constructor_is_exact_and_rejects_empty_membership() -> None
 def test_outer_guard_blocks_hostile_http_before_downstream_or_receive(
     method: str, path: str, query: bytes, headers: list[tuple[bytes, bytes]]
 ) -> None:
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
     downstream = DownstreamRecorder()
     scope = _scope(method, path, query=query, headers=headers)
-    messages, receive_calls = _run_asgi(
-        ui_module.PublicSurfaceGuard(downstream, ui_module.build_package_asset_membership()), scope
-    )
+    messages, receive_calls = _run_asgi(ui_module.PublicSurfaceGuard(downstream, membership), scope)
     assert downstream.calls == receive_calls == 0
     assert messages == [
         {
@@ -910,6 +914,9 @@ def test_outer_guard_blocks_hostile_http_before_downstream_or_receive(
 def test_permitted_root_scope_is_rebuilt_from_exact_authority(
     host: bytes, scheme: str, server: tuple[str, int]
 ) -> None:
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
     downstream = DownstreamRecorder()
     scope = _scope(
         "GET",
@@ -925,9 +932,7 @@ def test_permitted_root_scope_is_rebuilt_from_exact_authority(
             (b"content-length", b"0"),
         ],
     )
-    messages, receive_calls = _run_asgi(
-        ui_module.PublicSurfaceGuard(downstream, ui_module.build_package_asset_membership()), scope
-    )
+    messages, receive_calls = _run_asgi(ui_module.PublicSurfaceGuard(downstream, membership), scope)
     assert _status(messages) == 204
     assert downstream.calls == 1 and receive_calls == 0
     assert downstream.scope is not None
@@ -940,6 +945,9 @@ def test_permitted_root_scope_is_rebuilt_from_exact_authority(
 
 
 def test_body_framing_is_rejected_without_receive() -> None:
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
     for headers in (
         [(b"host", b"127.0.0.1:7860"), (b"transfer-encoding", b"chunked")],
         [(b"host", b"127.0.0.1:7860"), (b"content-length", b"1")],
@@ -948,7 +956,7 @@ def test_body_framing_is_rejected_without_receive() -> None:
     ):
         downstream = DownstreamRecorder()
         messages, receive_calls = _run_asgi(
-            ui_module.PublicSurfaceGuard(downstream, ui_module.build_package_asset_membership()),
+            ui_module.PublicSurfaceGuard(downstream, membership),
             _scope("GET", "/", headers=headers),
         )
         assert _status(messages) == 404
@@ -957,6 +965,8 @@ def test_body_framing_is_rejected_without_receive() -> None:
 
 def test_websocket_and_unknown_scopes_never_reach_downstream_or_receive() -> None:
     membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
     downstream = DownstreamRecorder()
     messages, receive_calls = _run_asgi(
         ui_module.PublicSurfaceGuard(downstream, membership),
@@ -978,8 +988,11 @@ def test_lifespan_is_the_only_non_http_scope_forwarded() -> None:
     async def downstream(scope: Any, receive: Any, send: Any) -> None:
         calls.append(cast(str, scope["type"]))
 
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
     messages, receive_calls = _run_asgi(
-        ui_module.PublicSurfaceGuard(downstream, ui_module.build_package_asset_membership()),
+        ui_module.PublicSurfaceGuard(downstream, membership),
         {"type": "lifespan"},
     )
     assert calls == ["lifespan"]
@@ -998,11 +1011,14 @@ def test_lifespan_is_the_only_non_http_scope_forwarded() -> None:
     ),
 )
 def test_raw_path_must_be_exact_canonical_ascii(path: str, raw_path: bytes) -> None:
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
     downstream = DownstreamRecorder()
     scope = _scope("GET", path)
     scope["raw_path"] = raw_path
     messages, receive_calls = _run_asgi(
-        ui_module.PublicSurfaceGuard(downstream, ui_module.build_package_asset_membership()),
+        ui_module.PublicSurfaceGuard(downstream, membership),
         scope,
     )
     assert _status(messages) == 404
@@ -1063,6 +1079,8 @@ def test_uvicorn_wire_permitted_root_head_has_no_entity_body(
 
 def test_exact_read_only_method_table_uses_membership() -> None:
     membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
     asset = sorted(membership)[0]
     permitted = (
         ("GET", "/", b""),

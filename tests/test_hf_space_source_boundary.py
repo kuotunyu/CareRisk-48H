@@ -107,6 +107,13 @@ _PROCESS_CALLS = {
     "subprocess.Popen",
     "subprocess.run",
 }
+_EXPECTED_EVIDENCE_PUBLIC_PATHS = frozenset(
+    {
+        "deployment-manifest.json",
+        "evidence/final-result-receipt.json",
+        "evidence/release-v0.2.0.json",
+    }
+)
 
 
 def _tree(path: Path) -> ast.Module:
@@ -142,12 +149,208 @@ def imported_roots(paths: Iterable[Path]) -> set[str]:
     return roots
 
 
+def _module_literal_assignment(tree: ast.Module, name: str) -> object | None:
+    assignments = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        and (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+            or isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == name for target in node.targets
+            )
+        )
+    ]
+    if len(assignments) != 1:
+        return None
+    value = assignments[0].value
+    if value is None:
+        return None
+    try:
+        return ast.literal_eval(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_literal_path_join(node: ast.expr, receiver: str) -> bool:
+    if not isinstance(node, ast.Call) or _call_name(node.func) != f"{receiver}.joinpath":
+        return False
+    if len(node.args) != 1 or node.keywords or not isinstance(node.args[0], ast.Starred):
+        return False
+    split = node.args[0].value
+    return (
+        isinstance(split, ast.Call)
+        and _call_name(split.func) == "relative_path.split"
+        and len(split.args) == 1
+        and isinstance(split.args[0], ast.Constant)
+        and split.args[0].value == "/"
+        and not split.keywords
+    )
+
+
+def _approved_evidence_read_calls(tree: ast.Module) -> set[ast.Call]:
+    """Prove the sole byte read is rooted in the three public evidence names."""
+
+    source_paths = _module_literal_assignment(tree, "_SOURCE_PATHS")
+    literal_paths = _module_literal_assignment(tree, "_LITERAL_EVIDENCE_PATHS")
+    if not isinstance(source_paths, dict):
+        return set()
+    if not isinstance(literal_paths, (set, frozenset)):
+        return set()
+    if set(literal_paths) != _EXPECTED_EVIDENCE_PUBLIC_PATHS:
+        return set()
+    if not set(source_paths) >= _EXPECTED_EVIDENCE_PUBLIC_PATHS:
+        return set()
+
+    readers = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "read_regular_file"
+    ]
+    if len(readers) != 1:
+        return set()
+    reader = readers[0]
+    if (
+        reader.args.posonlyargs
+        or [argument.arg for argument in reader.args.args] != ["bundle_root", "relative_path"]
+        or reader.args.vararg is not None
+        or reader.args.kwonlyargs
+        or reader.args.kwarg is not None
+        or reader.args.defaults
+        or reader.args.kw_defaults
+    ):
+        return set()
+    membership_guards = [
+        node
+        for node in reader.body
+        if isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == "relative_path"
+        and len(node.test.ops) == len(node.test.comparators) == 1
+        and isinstance(node.test.ops[0], ast.NotIn)
+        and isinstance(node.test.comparators[0], ast.Name)
+        and node.test.comparators[0].id == "_LITERAL_EVIDENCE_PATHS"
+        and any(isinstance(item, ast.Raise) for item in node.body)
+    ]
+    if len(membership_guards) != 1:
+        return set()
+    path_assignments = [
+        node
+        for node in reader.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and _is_literal_path_join(node.value, "bundle_root")
+    ]
+    if len(path_assignments) != 1:
+        return set()
+    assert isinstance(path_assignments[0].targets[0], ast.Name)
+    path_name = path_assignments[0].targets[0].id
+    if sum(
+        isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == path_name
+        for node in ast.walk(reader)
+    ) != 1:
+        return set()
+    required_regular_file_calls = {
+        f"{path_name}.lstat",
+        "stat.S_ISLNK",
+        "stat.S_ISREG",
+    }
+    actual_calls = {
+        _call_name(node.func)
+        for node in ast.walk(reader)
+        if isinstance(node, ast.Call) and _call_name(node.func) is not None
+    }
+    if not required_regular_file_calls <= actual_calls:
+        return set()
+    mode_assignments = [
+        node
+        for node in ast.walk(reader)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "mode"
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "st_mode"
+        and isinstance(node.value.value, ast.Call)
+        and _call_name(node.value.value.func) == f"{path_name}.lstat"
+        and not node.value.value.args
+        and not node.value.value.keywords
+    ]
+    regular_guards = [
+        node
+        for node in reader.body
+        if isinstance(node, ast.If)
+        and ast.unparse(node.test) == "stat.S_ISLNK(mode) or not stat.S_ISREG(mode)"
+        and any(
+            isinstance(item, ast.Raise)
+            and isinstance(item.exc, ast.Name)
+            and item.exc.id == "FileNotFoundError"
+            for item in node.body
+        )
+    ]
+    if len(mode_assignments) != 1 or len(regular_guards) != 1:
+        return set()
+    reads = [
+        node
+        for node in ast.walk(reader)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "read_bytes"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == path_name
+    ]
+    if len(reads) != 1 or not any(
+        isinstance(node, ast.Return) and node.value is reads[0] for node in ast.walk(reader)
+    ):
+        return set()
+    if not (
+        membership_guards[0].lineno
+        < path_assignments[0].lineno
+        < mode_assignments[0].lineno
+        < regular_guards[0].lineno
+        < reads[0].lineno
+    ):
+        return set()
+    reader_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _call_name(node.func) == "read_regular_file"
+    ]
+    if (
+        len(reader_calls) != len(_EXPECTED_EVIDENCE_PUBLIC_PATHS)
+        or {
+            call.args[1].value
+            for call in reader_calls
+            if len(call.args) == 2
+            and not call.keywords
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id == "bundle_root"
+            and isinstance(call.args[1], ast.Constant)
+            and isinstance(call.args[1].value, str)
+        }
+        != _EXPECTED_EVIDENCE_PUBLIC_PATHS
+    ):
+        return set()
+    return {reads[0]}
+
+
 def scan_capabilities(paths: Iterable[Path]) -> list[str]:
     """Find capability-bearing source constructs that have no public-Space role."""
 
     violations: list[str] = []
     for path in paths:
-        for node in ast.walk(_tree(path)):
+        tree = _tree(path)
+        approved_evidence_reads = (
+            _approved_evidence_read_calls(tree)
+            if path == SPACE_ROOT / "carerisk_space" / "evidence.py"
+            else set()
+        )
+        for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "environ":
                 violations.append(f"{path.name}:environment")
             if not isinstance(node, ast.Call):
@@ -167,11 +370,7 @@ def scan_capabilities(paths: Iterable[Path]) -> list[str]:
             if attr in _WRITE_METHODS:
                 violations.append(f"{path.name}:{attr}")
             if attr in _READ_METHODS:
-                if (
-                    attr == "read_bytes"
-                    and path == SPACE_ROOT / "carerisk_space" / "evidence.py"
-                    and name == "path.read_bytes"
-                ):
+                if node in approved_evidence_reads:
                     continue
                 violations.append(f"{path.name}:{attr}")
             if name in _DYNAMIC_OR_PROCESS_CALLS or name == "importlib.import_module":
@@ -257,15 +456,84 @@ def _is_main_guard(node: ast.stmt) -> bool:
     )
 
 
+def _resolved_name(node: ast.expr, aliases: dict[str, str]) -> str | None:
+    if isinstance(node, ast.Name):
+        return aliases.get(node.id, node.id)
+    if isinstance(node, ast.Attribute):
+        parent = _resolved_name(node.value, aliases)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    return None
+
+
+def _assignment_targets(node: ast.AST) -> list[ast.expr]:
+    if isinstance(node, ast.Assign):
+        targets = node.targets
+    elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+        targets = [node.target]
+    else:
+        return []
+    flattened: list[ast.expr] = []
+    pending = list(targets)
+    while pending:
+        target = pending.pop()
+        if isinstance(target, (ast.Tuple, ast.List)):
+            pending.extend(target.elts)
+        elif isinstance(target, ast.Starred):
+            pending.append(target.value)
+        else:
+            flattened.append(target)
+    return flattened
+
+
+def _simple_aliases(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
+    aliases: dict[str, str] = {}
+    sensitive_assignments: set[str] = set()
+    assignments = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        and node.value is not None
+    ]
+    for _ in range(len(assignments) + 1):
+        changed = False
+        for assignment in assignments:
+            value = assignment.value
+            if value is None:
+                continue
+            resolved = _resolved_name(value, aliases)
+            if resolved is None or not (
+                resolved in {"parent", "gr", "uvicorn", "main"}
+                or resolved.startswith(("parent.", "gr.", "uvicorn."))
+            ):
+                continue
+            for target in _assignment_targets(assignment):
+                if isinstance(target, ast.Name) and aliases.get(target.id) != resolved:
+                    aliases[target.id] = resolved
+                    sensitive_assignments.add(resolved)
+                    changed = True
+        if not changed:
+            break
+    return aliases, sensitive_assignments
+
+
+def _resolved_calls(tree: ast.AST, aliases: dict[str, str], name: str) -> list[ast.Call]:
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _resolved_name(node.func, aliases) == name
+    ]
+
+
 def _entrypoint_violations(tree: ast.Module) -> list[str]:
     """Require the only server call to be reached solely through the main guard."""
 
     violations: set[str] = set()
+    aliases, sensitive_assignments = _simple_aliases(tree)
     main_guards = [node for node in tree.body if _is_main_guard(node)]
     main_functions = [
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main"
     ]
-    uvicorn_calls = _calls(tree, "uvicorn.run")
+    uvicorn_calls = _resolved_calls(tree, aliases, "uvicorn.run")
     if len(main_guards) != 1 or len(main_functions) != 1 or len(uvicorn_calls) != 1:
         violations.add("uvicorn_main_guard")
     else:
@@ -286,24 +554,30 @@ def _entrypoint_violations(tree: ast.Module) -> list[str]:
         for node in tree.body
         if isinstance(node, ast.Expr)
         and isinstance(node.value, ast.Call)
-        and _call_name(node.value.func) == "main"
+        and _resolved_name(node.value.func, aliases) == "main"
     ]
-    if module_main_calls:
+    module_main_aliases = {
+        _resolved_name(node.value, aliases)
+        for node in tree.body
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None
+    }
+    if module_main_calls or "main" in module_main_aliases:
         violations.add("uvicorn_main_guard")
-    mounts = _calls(tree, "gr.mount_gradio_app")
+    mounts = _resolved_calls(tree, aliases, "gr.mount_gradio_app")
     if len(mounts) != 1:
         violations.add("mount_count")
+    if sensitive_assignments & {"gr", "uvicorn", "gr.mount_gradio_app", "uvicorn.run"}:
+        violations.add("framework_alias")
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Assign)
-            and node.targets
-            and isinstance(node.targets[0], ast.Attribute)
-            and _call_name(node.targets[0]) in {"gr.mount_gradio_app", "uvicorn.run"}
-        ):
-            violations.add("framework_monkeypatch")
+        for target in _assignment_targets(node):
+            if (
+                isinstance(target, ast.Attribute)
+                and _resolved_name(target, aliases) in {"gr.mount_gradio_app", "uvicorn.run"}
+            ):
+                violations.add("framework_monkeypatch")
         if not isinstance(node, ast.Call):
             continue
-        name = _call_name(node.func)
+        name = _resolved_name(node.func, aliases)
         if name == "parent.add_middleware":
             violations.add("parent_middleware")
         if name in {
@@ -444,6 +718,48 @@ def _asset_builder_violations(tree: ast.Module) -> list[str]:
         isinstance(node, ast.Attribute) and node.attr == "casefold" for node in ast.walk(function)
     ):
         violations.append("asset_case_sensitive_membership")
+    required_conditions = {
+        "root.is_symlink()",
+        "not resolved_root.is_dir()",
+        "candidate.is_symlink()",
+        "candidate.is_dir()",
+        "not candidate.is_file()",
+        "url in urls",
+        "folded_url in casefold_urls",
+        "not urls",
+    }
+    actual_conditions = {
+        ast.unparse(node.test) for node in ast.walk(function) if isinstance(node, ast.If)
+    }
+    if not required_conditions <= actual_conditions:
+        violations.append("asset_fail_closed_branches")
+    containment_handlers = [
+        handler
+        for node in ast.walk(function)
+        if isinstance(node, ast.Try)
+        and any(
+            isinstance(item, ast.Call) and _call_name(item.func) == "candidate.resolve"
+            for item in ast.walk(ast.Module(body=node.body, type_ignores=[]))
+        )
+        and any(
+            isinstance(item, ast.Call) and _call_name(item.func) == "resolved.relative_to"
+            for item in ast.walk(ast.Module(body=node.body, type_ignores=[]))
+        )
+        for handler in node.handlers
+        if handler.type is not None
+        and ast.unparse(handler.type) == "(OSError, ValueError)"
+        and any(
+            isinstance(item, ast.Raise)
+            and isinstance(item.exc, ast.Call)
+            and _call_name(item.exc.func) == "ValueError"
+            and item.exc.args
+            and isinstance(item.exc.args[0], ast.Constant)
+            and item.exc.args[0].value == "package_asset_containment_invalid"
+            for item in handler.body
+        )
+    ]
+    if len(containment_handlers) != 1:
+        violations.append("asset_containment_failure")
     return violations
 
 
@@ -516,6 +832,101 @@ def test_evidence_named_source_does_not_receive_a_filename_wide_read_exception(
     synthetic_evidence = tmp_path / "evidence.py"
     synthetic_evidence.write_text("Path('private').read_bytes()", encoding="utf-8")
     assert scan_capabilities((synthetic_evidence,)) == ["evidence.py:read_bytes"]
+
+
+def _scan_mutated_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tree: ast.Module,
+) -> list[str]:
+    fake_space_root = tmp_path / "space"
+    synthetic_evidence = fake_space_root / "carerisk_space" / "evidence.py"
+    synthetic_evidence.parent.mkdir(parents=True)
+    synthetic_evidence.write_text(ast.unparse(tree), encoding="utf-8")
+    with monkeypatch.context() as patch:
+        patch.setitem(scan_capabilities.__globals__, "SPACE_ROOT", fake_space_root)
+        return scan_capabilities((synthetic_evidence,))
+
+
+def test_evidence_reader_rejects_same_receiver_in_an_arbitrary_function(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    mutated = ast.parse(ast.unparse(_tree(SPACE_ROOT / "carerisk_space" / "evidence.py")))
+    mutated.body.extend(
+        ast.parse(
+            """
+def arbitrary_reader(bundle_root):
+    path = bundle_root.joinpath("README.md")
+    return path.read_bytes()
+"""
+        ).body
+    )
+    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == [
+        "evidence.py:read_bytes"
+    ]
+
+
+def test_evidence_reader_rejects_an_arbitrary_path_inside_the_approved_function(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    mutated = ast.parse(ast.unparse(_tree(SPACE_ROOT / "carerisk_space" / "evidence.py")))
+    reader = _function(mutated, "read_regular_file")
+    path_assignment = next(
+        node
+        for node in reader.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "path" for target in node.targets)
+    )
+    path_assignment.value = ast.Call(
+        func=ast.Name(id="Path", ctx=ast.Load()),
+        args=[ast.Constant(value="private")],
+        keywords=[],
+    )
+    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == [
+        "evidence.py:read_bytes"
+    ]
+
+
+def test_evidence_reader_rejects_expansion_beyond_exact_public_source_names(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    mutated = ast.parse(ast.unparse(_tree(SPACE_ROOT / "carerisk_space" / "evidence.py")))
+    literal_paths = next(
+        node
+        for node in mutated.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "_LITERAL_EVIDENCE_PATHS"
+            for target in node.targets
+        )
+    )
+    assert isinstance(literal_paths.value, ast.Set)
+    literal_paths.value.elts.append(ast.Constant(value="README.md"))
+    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == [
+        "evidence.py:read_bytes"
+    ]
+
+
+def test_evidence_reader_rejects_a_disabled_regular_file_guard(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    mutated = ast.parse(ast.unparse(_tree(SPACE_ROOT / "carerisk_space" / "evidence.py")))
+    reader = _function(mutated, "read_regular_file")
+    regular_guard = next(
+        node
+        for node in reader.body
+        if isinstance(node, ast.If) and "stat.S_ISREG" in ast.unparse(node.test)
+    )
+    regular_guard.test = ast.BoolOp(
+        op=ast.And(), values=[ast.Constant(value=False), regular_guard.test]
+    )
+    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == [
+        "evidence.py:read_bytes"
+    ]
 
 
 def test_ui_framework_import_scanner_rejects_extra_members_and_aliases() -> None:
@@ -691,6 +1102,55 @@ def test_entrypoint_scanner_rejects_second_uvicorn_and_parent_route() -> None:
     assert _entrypoint_violations(mutated) == ["parent_route", "uvicorn_main_guard"]
 
 
+@pytest.mark.parametrize("method", ("add_middleware", "get"))  # type: ignore[untyped-decorator]
+def test_entrypoint_scanner_rejects_parent_alias_lineage(method: str) -> None:
+    mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
+    mutated.body.extend(
+        ast.parse(
+            f"parent_alias = parent\nsecond_alias = parent_alias\nsecond_alias.{method}()"
+        ).body
+    )
+    expected = "parent_middleware" if method == "add_middleware" else "parent_route"
+    assert expected in _entrypoint_violations(mutated)
+
+
+def test_entrypoint_scanner_rejects_mount_and_uvicorn_alias_calls() -> None:
+    mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
+    mutated.body.extend(
+        ast.parse(
+            "mount = gr.mount_gradio_app\nmount(parent, demo)\nserver_main = main"
+        ).body
+    )
+    _function(mutated, "main").body.extend(
+        ast.parse("runner = uvicorn.run\nrunner(app)").body
+    )
+    violations = _entrypoint_violations(mutated)
+    assert "framework_alias" in violations
+    assert "mount_count" in violations
+    assert "uvicorn_main_guard" in violations
+
+
+def test_entrypoint_scanner_rejects_module_scope_main_alias_assignment() -> None:
+    mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
+    mutated.body.extend(ast.parse("server_main = main").body)
+    assert "uvicorn_main_guard" in _entrypoint_violations(mutated)
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+    "statement",
+    (
+        "canary = gr.mount_gradio_app = replacement",
+        "gr.mount_gradio_app: object = replacement",
+        "uvicorn.run += replacement",
+        "framework = gr\nframework.mount_gradio_app = replacement",
+    ),
+)
+def test_entrypoint_scanner_rejects_every_framework_assignment_form(statement: str) -> None:
+    mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
+    mutated.body.extend(ast.parse(statement).body)
+    assert "framework_monkeypatch" in _entrypoint_violations(mutated)
+
+
 def test_ui_uses_only_the_pinned_framework_surface_and_asset_builder_is_fail_closed() -> None:
     tree = _tree(UI_SOURCE)
     assert _ui_framework_violations(tree) == []
@@ -748,6 +1208,180 @@ def test_asset_builder_scanner_rejects_every_required_fail_closed_step() -> None
                 node.attr = "removed"
                 break
         assert expected in _asset_builder_violations(mutated)
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+    "condition",
+    (
+        "root.is_symlink()",
+        "not resolved_root.is_dir()",
+        "candidate.is_symlink()",
+        "candidate.is_dir()",
+        "not candidate.is_file()",
+        "url in urls",
+        "folded_url in casefold_urls",
+        "not urls",
+    ),
+)
+def test_asset_builder_scanner_rejects_fail_closed_branch_disable_mutations(
+    condition: str,
+) -> None:
+    mutated = ast.parse(ast.unparse(_tree(UI_SOURCE)))
+    function = _function(mutated, "build_package_asset_membership")
+    branch = next(
+        node
+        for node in ast.walk(function)
+        if isinstance(node, ast.If) and ast.unparse(node.test) == condition
+    )
+    branch.test = ast.BoolOp(op=ast.And(), values=[ast.Constant(value=False), branch.test])
+    assert "asset_fail_closed_branches" in _asset_builder_violations(mutated)
+
+
+def test_asset_builder_scanner_rejects_a_disabled_containment_failure_handler() -> None:
+    mutated = ast.parse(ast.unparse(_tree(UI_SOURCE)))
+    function = _function(mutated, "build_package_asset_membership")
+    containment_try = next(
+        node
+        for node in ast.walk(function)
+        if isinstance(node, ast.Try)
+        and any(
+            isinstance(item, ast.Call) and _call_name(item.func) == "resolved.relative_to"
+            for item in ast.walk(node)
+        )
+    )
+    containment_try.handlers[0].body = [ast.Pass()]
+    assert "asset_containment_failure" in _asset_builder_violations(mutated)
+
+
+class _FakeAssetPath:
+    def __init__(
+        self,
+        relative: str,
+        *,
+        symlink: bool = False,
+        directory: bool = False,
+        regular: bool = True,
+        children: tuple[_FakeAssetPath, ...] = (),
+        contained: bool = True,
+    ) -> None:
+        self.relative = relative
+        self.symlink = symlink
+        self.directory = directory
+        self.regular = regular
+        self.children = children
+        self.contained = contained
+
+    def is_symlink(self) -> bool:
+        return self.symlink
+
+    def resolve(self, *, strict: bool) -> _FakeAssetPath:
+        assert strict is True
+        return self
+
+    def is_dir(self) -> bool:
+        return self.directory
+
+    def is_file(self) -> bool:
+        return self.regular
+
+    def rglob(self, pattern: str) -> tuple[_FakeAssetPath, ...]:
+        assert pattern == "*"
+        return self.children
+
+    def relative_to(self, root: _FakeAssetPath) -> Path:
+        assert root.directory
+        if not self.contained:
+            raise ValueError("synthetic containment escape")
+        return Path(self.relative)
+
+
+def _install_fake_asset_roots(
+    monkeypatch: pytest.MonkeyPatch,
+    ui_module: object,
+    build_candidates: tuple[_FakeAssetPath, ...],
+    *,
+    build_symlink: bool = False,
+) -> None:
+    build_root = _FakeAssetPath(
+        "build", symlink=build_symlink, directory=True, regular=False, children=build_candidates
+    )
+    static_root = _FakeAssetPath(
+        "static",
+        directory=True,
+        regular=False,
+        children=(_FakeAssetPath("logo.svg"),),
+    )
+
+    def fake_path(value: object) -> _FakeAssetPath | Path:
+        if isinstance(value, _FakeAssetPath):
+            return value
+        assert isinstance(value, (str, Path))
+        return Path(value)
+
+    monkeypatch.setattr(ui_module, "BUILD_PATH_LIB", build_root)
+    monkeypatch.setattr(ui_module, "STATIC_PATH_LIB", static_root)
+    monkeypatch.setattr(ui_module, "Path", fake_path)
+
+
+def test_asset_builder_fake_root_symlink_branch_fails_without_platform_skip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(SPACE_ROOT))
+    ui_module = importlib.import_module("carerisk_space.ui")
+    _install_fake_asset_roots(monkeypatch, ui_module, (), build_symlink=True)
+    with pytest.raises(ValueError, match="package_asset_root_symlink"):
+        ui_module.build_package_asset_membership()
+
+
+@pytest.mark.parametrize("directory", (False, True))  # type: ignore[untyped-decorator]
+def test_asset_builder_fake_file_and_directory_symlink_branches_fail(
+    monkeypatch: pytest.MonkeyPatch,
+    directory: bool,
+) -> None:
+    monkeypatch.syspath_prepend(str(SPACE_ROOT))
+    ui_module = importlib.import_module("carerisk_space.ui")
+    candidate = _FakeAssetPath(
+        "linked" if directory else "linked.js",
+        symlink=True,
+        directory=directory,
+        regular=not directory,
+    )
+    _install_fake_asset_roots(monkeypatch, ui_module, (candidate,))
+    with pytest.raises(ValueError, match="package_asset_symlink"):
+        ui_module.build_package_asset_membership()
+
+
+def test_asset_builder_fake_special_file_and_containment_escape_branches_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(SPACE_ROOT))
+    ui_module = importlib.import_module("carerisk_space.ui")
+    special = _FakeAssetPath("special.sock", regular=False)
+    _install_fake_asset_roots(monkeypatch, ui_module, (special,))
+    with pytest.raises(ValueError, match="package_asset_special_file"):
+        ui_module.build_package_asset_membership()
+
+    escaped = _FakeAssetPath("escape.js", contained=False)
+    _install_fake_asset_roots(monkeypatch, ui_module, (escaped,))
+    with pytest.raises(ValueError, match="package_asset_containment_invalid"):
+        ui_module.build_package_asset_membership()
+
+
+def test_asset_builder_and_request_case_aliases_fail_deterministically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(SPACE_ROOT))
+    ui_module = importlib.import_module("carerisk_space.ui")
+    _install_fake_asset_roots(
+        monkeypatch,
+        ui_module,
+        (_FakeAssetPath("CaseAlias.js"), _FakeAssetPath("casealias.js")),
+    )
+    with pytest.raises(ValueError, match="package_asset_case_alias"):
+        ui_module.build_package_asset_membership()
+    membership = frozenset({"/assets/CaseAlias.js"})
+    assert ui_module._allowed_request("GET", "/assets/CaseAlias.js", b"", membership)
+    assert not ui_module._allowed_request("GET", "/assets/casealias.js", b"", membership)
 
 
 def test_public_surface_guard_has_mandatory_membership_and_entrypoint_uses_the_builder() -> None:
@@ -827,16 +1461,130 @@ def test_asset_builder_runtime_rejects_missing_file_and_symlink_roots(
         ui_module.build_package_asset_membership()
 
 
-def test_existing_guard_helpers_derive_membership_from_the_pinned_builder() -> None:
-    tree = _tree(SPACE_ROOT / "tests" / "test_gradio_contract.py")
+def _guard_helper_violations(tree: ast.Module) -> list[str]:
+    violations: list[str] = []
     functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
     for function in functions:
         guard_calls = _calls(function, "ui_module.PublicSurfaceGuard")
         if not guard_calls:
             continue
         builder_calls = _calls(function, "ui_module.build_package_asset_membership")
-        assert builder_calls
-        assert all(len(call.args) == 2 and not call.keywords for call in guard_calls)
+        assignments = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.Call)
+            and node.value in builder_calls
+            and not node.value.args
+            and not node.value.keywords
+        ]
+        if len(builder_calls) != 1 or len(assignments) != 1:
+            violations.append(f"{function.name}:builder_assignment")
+            continue
+        assignment = assignments[0]
+        assert isinstance(assignment.targets[0], ast.Name)
+        membership_name = assignment.targets[0].id
+        stores = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Name)
+            and node.id == membership_name
+            and isinstance(node.ctx, ast.Store)
+        ]
+        type_assertions = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Assert)
+            and isinstance(node.test, ast.Call)
+            and _call_name(node.test.func) == "isinstance"
+            and len(node.test.args) == 2
+            and not node.test.keywords
+            and isinstance(node.test.args[0], ast.Name)
+            and node.test.args[0].id == membership_name
+            and isinstance(node.test.args[1], ast.Name)
+            and node.test.args[1].id == "frozenset"
+        ]
+        truthy_assertions = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Assert)
+            and isinstance(node.test, ast.Name)
+            and node.test.id == membership_name
+        ]
+        if len(stores) != 1:
+            violations.append(f"{function.name}:builder_reassigned")
+        if len(type_assertions) != 1:
+            violations.append(f"{function.name}:builder_type_assertion")
+        if len(truthy_assertions) != 1:
+            violations.append(f"{function.name}:builder_nonempty_assertion")
+        if not all(
+            len(call.args) == 2
+            and not call.keywords
+            and isinstance(call.args[1], ast.Name)
+            and call.args[1].id == membership_name
+            for call in guard_calls
+        ):
+            violations.append(f"{function.name}:guard_membership_identity")
+        checkpoints = [*type_assertions, *truthy_assertions]
+        if checkpoints and not (
+            assignment.lineno < min(node.lineno for node in checkpoints)
+            and max(node.lineno for node in checkpoints)
+            < min(call.lineno for call in guard_calls)
+        ):
+            violations.append(f"{function.name}:builder_assertion_order")
+    return violations
+
+
+def test_existing_guard_helpers_derive_membership_from_the_pinned_builder() -> None:
+    tree = _tree(SPACE_ROOT / "tests" / "test_gradio_contract.py")
+    assert _guard_helper_violations(tree) == []
+
+
+def _assert_guard_helper_audit_rejects(
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    synthetic_tree = ast.parse(source)
+    with monkeypatch.context() as patch:
+        patch.setitem(_tree.__globals__, "_tree", lambda path: synthetic_tree)
+        with pytest.raises(AssertionError):
+            test_existing_guard_helpers_derive_membership_from_the_pinned_builder()
+
+
+def test_guard_helper_audit_rejects_deleted_type_or_nonempty_assertions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for deleted_assertion in (
+        "assert isinstance(membership, frozenset)",
+        "assert membership",
+    ):
+        source = """
+def _compose(parent):
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return ui_module.PublicSurfaceGuard(parent, membership)
+""".replace(f"    {deleted_assertion}\n", "")
+        _assert_guard_helper_audit_rejects(monkeypatch, source)
+
+
+def test_guard_helper_audit_rejects_empty_or_different_second_argument(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for mutation in (
+        "membership = frozenset()\n    return ui_module.PublicSurfaceGuard(parent, membership)",
+        "return ui_module.PublicSurfaceGuard(parent, frozenset())",
+    ):
+        source = f"""
+def _compose(parent):
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
+    {mutation}
+"""
+        _assert_guard_helper_audit_rejects(monkeypatch, source)
 
 
 def test_guard_constructor_scanner_rejects_variadic_or_keyword_only_parameters() -> None:
