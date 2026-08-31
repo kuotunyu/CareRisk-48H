@@ -4,11 +4,11 @@
 
 **Goal:** Build a public-safe, synthetic-only Gradio Docker Space that explains receipt-backed evidence and four fixed abstention gate states without accepting patient data or producing case-level scores or decisions.
 
-**Architecture:** Keep the new application isolated under `space/` as a small `carerisk_space` package. Pure standard-library contracts parse three committed JSON artifacts and fail closed before Gradio is constructed; Gradio presents one pre-rendered static HTML/CSS explorer with native radios and zero app-owned inputs, dependencies, functions, or API endpoints. An empty FastAPI parent mounts Gradio, a direct pure-ASGI wrapper forms the truly outer public-surface firewall with a closed authority map and exact locked-package asset membership, and fixed programmatic Uvicorn serves it. A source-only exporter reads exact Git blobs into a fresh directory, with application files from an app-source commit, evidence and legal files from the annotated `v0.2.0` tag commit, and `deployment-manifest.json` from the immediately following manifest commit.
+**Architecture:** Keep the new application isolated under `space/` as a small `carerisk_space` package. Pure standard-library contracts parse three committed JSON artifacts and fail closed before Gradio is constructed; Gradio presents one pre-rendered static HTML/CSS explorer with native radios and zero app-owned inputs, dependencies, functions, or API endpoints. An empty FastAPI parent mounts Gradio, a direct pure-ASGI wrapper forms the truly outer public-surface firewall with a closed authority map and exact locked-package asset membership, and fixed programmatic Uvicorn with explicit `http="h11"` serves it. A source-only exporter reads exact Git blobs into a fresh directory, with application files from an app-source commit, evidence and legal files from the annotated `v0.2.0` tag commit, and `deployment-manifest.json` from the immediately following manifest commit.
 
 **Tech Stack:** CPython 3.11 slim-bookworm runtime image pinned by patch tag and OCI digest; an official Playwright Python test/reviewer image pinned by matching Playwright patch tag plus OCI index/linux-amd64 digests; Gradio `6.26.0`; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
 
-**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. The current and final Task 5 docs-only executable-correction gate starts from exact parent `94eb781e3786fbce6415f8d823b904287dc67817`; Task 5 may resume only after a fresh review of the resulting design/plan commit reports Critical=0, Important=0, and Minor=0. No provisional self-SHA is fabricated in this document.
+**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. The seventh Task 5 docs-only executable-correction gate starts from exact parent `3d29dbc1a00833a339e273a6eafc6b3f3ee6dfa2`; Task 5 may resume only after a fresh review of the resulting design/plan commit reports Critical=0, Important=0, and Minor=0. No provisional self-SHA is fabricated in this document.
 
 ## Global Constraints
 
@@ -22,8 +22,8 @@
 - Do not read, modify, copy, or stage `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation working assets, private scientific ledgers/final locks, unapproved private evaluation outputs, or Set C. This prohibition does not cover the approved public `v0.2.0` receipt/release Git objects or the dependency lockfiles created and verified by this plan. Never run the receipt exporter or final evaluation.
 - Do not import, copy, package, or execute existing `app/dashboard.py`, root `app.py`, `src/carerisk48h`, joblib, scoring, guard, inference, schema, model, calibrator, or synthetic-patient paths in the public application.
 - Product code does not import `os`, reads no environment variable, and performs no network request, process spawn, shell call, filesystem write, persistence, analytics, telemetry, or dynamic import. Gradio exact-version instance/mount values and Uvicorn values are explicit programmatic configuration, never framework-global monkeypatches.
-- Gradio is fixed exactly at `6.26.0`. The normal and five failure Blocks have zero app-owned input components, dependencies, functions, or API endpoints and empty in-process API metadata. Four scenarios are pre-rendered through `render_scenario`; normal browser interaction sends zero POST, callback, queue, event, or session traffic. Pinned `config.enable_queue == true` and Gradio's internal queue/state initialization are recorded facts, not failures and not monkeypatch targets; queue/event/session routes remain outer-blocked and public-interaction state delta must stay zero.
-- `create_app` fixes `dev_mode=False`, `vibe_mode=False`, `root_path=""`, `api_open=False`, and `space_id=None`. `gr.mount_gradio_app` receives only the supported fixed mount arguments listed in Task 5. `uvicorn.run` receives the wrapped application object plus fixed host/port/single-worker/no-proxy/no-access-log arguments; no Gradio `launch` path exists.
+- Gradio is fixed exactly at `6.26.0`. The normal and all five taxonomy failure Blocks are unit/component constructible with zero app-owned input components, dependencies, functions, or API endpoints and empty in-process API metadata. Four scenarios are pre-rendered through `render_scenario`; normal browser interaction sends zero POST, callback, queue, event, or session traffic. Pinned `config.enable_queue == true` and Gradio's internal queue/state initialization are recorded facts, not failures and not monkeypatch targets; queue/event/session routes remain outer-blocked and public-interaction state delta must stay zero. Live final-image review covers normal plus only the four runtime-reachable failures; `receipt_schema_invalid` is dominated by the immutable receipt identity gate and has unit/component/ASGI evidence only.
+- `create_app` fixes `dev_mode=False`, `vibe_mode=False`, `root_path=""`, `api_open=False`, and `space_id=None`. `gr.mount_gradio_app` receives only the supported fixed mount arguments listed in Task 5. `uvicorn.run` receives the wrapped application object plus fixed host/port/single-worker/no-proxy/no-access-log arguments and explicit `http="h11"`; source, container, cold-start, and receipt tests reject `auto`, `httptools`, CLI/environment selection, or accidental dependency absence as parser evidence. No Gradio `launch` path exists, and the existing h11 runtime/dev lock closure remains unchanged.
 - `space/carerisk_space/ui.py` owns pure-ASGI `PublicSurfaceGuard` and the immutable locked-package asset membership builder. `space/app.py` creates an empty FastAPI parent without docs/OpenAPI, mounts Gradio, and directly wraps the resulting parent as `app = PublicSurfaceGuard(parent, build_package_asset_membership())` before Uvicorn. The guard is outside parent error handling and mounted Gradio Brotli/CORS/router/body parsing. It is not placed in `app_kwargs` or a framework middleware list.
 - The guard accepts exactly four Host authorities: `127.0.0.1:7860` and `localhost:7860` over HTTP, the reviewer-only Docker alias `carerisk-app:7860` over HTTP, and `steven0226-carerisk-48h.hf.space` over HTTPS. It rebuilds a constant downstream scope/header tuple for the selected authority. In direct pure-ASGI scopes it rejects missing, duplicate, invalid, combined, whitespace-padded, case-variant, trailing-dot, userinfo, extra-port, or unlisted Host with the fixed 404 and no downstream/receive. On the pinned Uvicorn+h11 wire, missing/duplicate Host is instead rejected before the ASGI app with exact 400; this is parser-layer fail-closed evidence and must leave the app-entry/downstream marker unchanged. A valid unlisted single Host reaches the guard and receives 404. Uvicorn never trusts forwarded headers. A different real Hugging Face Host is a publication stop, not permission to broaden the map.
 - At startup, `ui.py` reads only the source-audited locked-wheel constants `gradio.routes.BUILD_PATH_LIB` and `STATIC_PATH_LIB`, derives an immutable URL set from canonical regular non-symlink root-contained package files, and authorizes `/assets` and `/static` only by exact membership. Linux runtime and reviewer images independently record and compare sorted membership/content-tree digests. No unknown-valid filename or user/site/evidence/temp path reaches Gradio.
@@ -49,8 +49,8 @@
 
 ## Task 5 Authority and Pinned-Source Evidence
 
-- Central authorized local implementation at plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is currently held at exact docs parent `94eb781e3786fbce6415f8d823b904287dc67817`; this final executable correction changes only the governing design and plan. Product/test files remain byte-frozen until a fresh authority review reports Critical=0, Important=0, and Minor=0.
-- Pinned `.venv-space` reports Gradio `6.26.0`. `inspect.signature(gr.mount_gradio_app)` contains every fixed Task 5 mount argument, including `favicon_path`; `inspect.signature(uvicorn.run)` contains the fixed programmatic options; no `launch` or CLI path is required.
+- Central authorized local implementation at plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is currently held at exact docs parent `3d29dbc1a00833a339e273a6eafc6b3f3ee6dfa2`; this seventh executable correction changes only the governing design and plan. Product/test files remain byte-frozen until a fresh authority review reports Critical=0, Important=0, and Minor=0.
+- Pinned `.venv-space` reports Gradio `6.26.0`. `inspect.signature(gr.mount_gradio_app)` contains every fixed Task 5 mount argument, including `favicon_path`; `inspect.signature(uvicorn.run)` contains the fixed programmatic options, including `http`; no `launch` or CLI path is required. The server call fixes `http="h11"` independently of whether `httptools` happens to be installed.
 - Direct composition `app = PublicSurfaceGuard(parent, build_package_asset_membership())` after `gr.mount_gradio_app(...)` was probed with hostile headers: permitted root/config requests remained healthy after scope sanitization, while `OPTIONS` and upload paths returned the fixed 404 outside Gradio with no canary, CORS, or compression. Every implementation and test construction uses this exact two-argument interface with the nonempty membership derived from the two pinned roots; there is no optional default or empty-set substitute.
 - Pinned source registers both `GET` and `HEAD` for root, but GET-only handlers for config, theme, manifest, favicon, and package routes. The governing outer method table therefore allows root GET/HEAD, allows only GET for the other exact read-only resources, and returns its own fixed 404 for all other methods before Gradio.
 - `gr.HTML` defaults `js_on_load` to a click-trigger script; explicit `js_on_load=None` removes that config key without creating dependencies. The pinned static config retains `enable_queue == true`, `dependencies == []`, `len(app.fns) == 0`, and empty API metadata. These are recorded as separate framework and app-owned facts.
@@ -252,7 +252,7 @@ class ExportReceipt:
 ### Test-helper contracts
 
 - `space/tests/test_evidence_contract.py` owns `source_or_bundled_evidence(name)`, `valid_manifest_bytes(receipt_raw, release_raw)`, `candidate_bundle(tmp_path)`, and `apply_mutation(bundle, mutation)`. The bundle fixture writes only three synthetic/public JSON files under pytest `tmp_path`; the manifest lists all 24 public paths but runtime tests re-hash only the three JSON files allowed to application code.
-- `space/tests/test_gradio_contract.py` owns `valid_bundle`, `failure_bundle`, `manifest_canary_bundle`, `RunningLocalApp`, `running_local_app`, `captured_app_logs`, `bounded_failure_codes(text)`, `exact_package_asset_urls()`, pure-ASGI bomb helpers, raw-wire Uvicorn+h11 helpers, and exact request-graph capture. `RunningLocalApp` exposes only `base_url`, the mounted parent/inner route inventory, an app-entry call marker installed outside the product guard, and callable in-memory log/request snapshots; it never persists logs. The server fixture binds loopback on port 7860 or an explicit test-only adapter that preserves the production scope constants, installs capture and the app-entry marker before startup, poisons framework-related host environment variables before application construction, yields only after permitted root/config/theme probes pass, and always closes server/capture in fixture cleanup. Its raw-wire helper sends exact HTTP/1.1 bytes to the pinned Uvicorn+h11 server without monkeypatching the parser, so missing/duplicate Host 400 evidence can be distinguished from guard 404 evidence. It uses the public committed receipt/release bytes and a synthetic manifest; it never starts the existing dashboard. `manifest_canary_bundle` places `CANARY_7419` only in an invalid deployment-manifest field. `captured_app_logs` uses the same in-memory discipline for server-free construction, and `bounded_failure_codes` returns only exact members of `ALL_FAILURE_CODES`. `exact_package_asset_urls()` always calls the pinned-root membership builder, asserts a nonempty result, and is used by every guard unit helper; no helper supplies a default or empty set.
+- `space/tests/test_gradio_contract.py` owns `valid_bundle`, `make_unit_failure_bundle(code, monkeypatch)`, `manifest_canary_bundle`, `RunningLocalApp`, `running_local_app`, `captured_app_logs`, `bounded_failure_codes(text)`, `exact_package_asset_urls()`, pure-ASGI bomb helpers, raw-wire Uvicorn+h11 helpers, and exact request-graph capture. `make_unit_failure_bundle` uses data-only mutations for the four runtime-reachable codes; only for `receipt_schema_invalid` does it invoke the already explicit controlled test anchor seam after changing strict-schema bytes. That seam is unit/component/ASGI-only and never enters `RunningLocalApp`, Docker, browser, cold-start, or final-image orchestration. `RunningLocalApp` exposes only `base_url`, the mounted parent/inner route inventory, an app-entry call marker installed outside the product guard, and callable in-memory log/request snapshots; it never persists logs. The server fixture binds loopback on port 7860 or an explicit test-only adapter that preserves the production scope constants, installs capture and the app-entry marker before startup, poisons framework-related host environment variables before application construction, yields only after permitted root/config/theme probes pass, and always closes server/capture in fixture cleanup. Its raw-wire helper sends exact HTTP/1.1 bytes to the explicitly configured Uvicorn+h11 server without monkeypatching the parser, so missing/duplicate Host 400 evidence can be distinguished from guard 404 evidence. It uses the public committed receipt/release bytes and a synthetic manifest; it never starts the existing dashboard. `manifest_canary_bundle` places `CANARY_7419` only in an invalid deployment-manifest field. `captured_app_logs` uses the same in-memory discipline for server-free construction, and `bounded_failure_codes` returns only exact members of `ALL_FAILURE_CODES`. `exact_package_asset_urls()` always calls the pinned-root membership builder, asserts a nonempty result, and is used by every guard unit helper; no helper supplies a default or empty set.
 - `tests/test_hf_space_exporter.py` owns `git_repo`, `ExporterCase`, `APP_SOURCE_SHA`, and `MANIFEST_SOURCE_SHA`. The fixture creates a temporary two-commit Git repository containing synthetic text fixtures with the same path/capability rules, so exporter rejection tests never mutate the real repository.
 - `tests/test_hf_space_live_review.py` owns `sample_record` and mocked process/browser adapters for unit tests. Real Docker/Playwright execution occurs only in Task 13 against the clean candidate.
 
@@ -769,9 +769,11 @@ def test_claim_dom_precedes_first_focusable_control(valid_bundle: Path) -> None:
 
 @pytest.mark.parametrize("failure_code", ALL_FAILURE_CODES)
 def test_failure_page_is_one_static_document_with_no_inputs_or_functions(
-    failure_bundle: Path, failure_code: str,
+    failure_code: EvidenceFailureCode,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app = create_app(failure_bundle)
+    bundle = make_unit_failure_bundle(failure_code, monkeypatch)
+    app = create_app(bundle)
     config = app.get_config_file()
     assert [item["type"] for item in config["components"]] == ["html"]
     assert config["dependencies"] == []
@@ -783,6 +785,22 @@ def test_failure_page_is_one_static_document_with_no_inputs_or_functions(
     assert not re.search(r"<input\b|<button\b|<select\b|<textarea\b", document)
     for metric in ("0.555", "0.870", "0.087", "0.008"):
         assert metric not in document
+
+def test_schema_failure_controlled_unit_seam_is_fail_closed_through_asgi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = make_unit_failure_bundle("receipt_schema_invalid", monkeypatch)
+    demo = create_app(bundle)
+    app = compose_in_memory_outer_app(demo, exact_package_asset_urls())
+    response = run_permitted_root_asgi(app)
+    assert response.status == 200
+    assert response.visible_failure_code == "receipt_schema_invalid"
+    assert response.radio_count == response.control_count == response.scenario_panel_count == 0
+    assert response.visible_metric_count == response.visible_canonical_value_count == 0
+    assert demo.get_config_file()["dependencies"] == []
+    assert len(demo.fns) == 0
+    assert demo.get_api_info() == {"named_endpoints": {}, "unnamed_endpoints": {}}
+    assert response.app_owned_event_or_api_request_count == response.echo_count == 0
 
 POISONED_FRAMEWORK_ENV = {
     "GRADIO_ANALYTICS_ENABLED": "true",
@@ -895,7 +913,7 @@ When startup evidence is invalid, `create_app` logs exactly one structured bound
 
 The assignments after the `Blocks` context are exact Gradio `6.26.0` per-instance configuration, not framework-global monkeypatching. Product modules do not import `os` or read environment variables. Tests poison every listed framework variable before construction and prove the exact instance, mount, Uvicorn, static config, and outer-wrapper state remain unchanged.
 
-`space/app.py` imports only pinned `fastapi`, `gradio`, `uvicorn`, `create_app`, `build_package_asset_membership`, and `PublicSurfaceGuard`. It builds `parent = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, mounts with exact `gr.mount_gradio_app(parent, demo, path="/", server_name="0.0.0.0", server_port=7860, footer_links=[], run_history=False, root_path="", allowed_paths=["/__carerisk_no_allowed_files__"], blocked_paths=["/"], favicon_path=None, show_error=False, max_file_size=0, ssr_mode=False, enable_monitoring=False, pwa=False, mcp_server=False)`, then assigns `app = PublicSurfaceGuard(parent, build_package_asset_membership())`. It calls `uvicorn.run(app, host="0.0.0.0", port=7860, workers=1, proxy_headers=False, forwarded_allow_ips="", access_log=False, server_header=False, date_header=False, reload=False, factory=False, env_file=None, log_config=None)` only under the main guard. There is no `launch`, `app_kwargs`, CLI/config file, authentication, user mount, or environment read.
+`space/app.py` imports only pinned `fastapi`, `gradio`, `uvicorn`, `create_app`, `build_package_asset_membership`, and `PublicSurfaceGuard`. It builds `parent = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, mounts with exact `gr.mount_gradio_app(parent, demo, path="/", server_name="0.0.0.0", server_port=7860, footer_links=[], run_history=False, root_path="", allowed_paths=["/__carerisk_no_allowed_files__"], blocked_paths=["/"], favicon_path=None, show_error=False, max_file_size=0, ssr_mode=False, enable_monitoring=False, pwa=False, mcp_server=False)`, then assigns `app = PublicSurfaceGuard(parent, build_package_asset_membership())`. It calls `uvicorn.run(app, host="0.0.0.0", port=7860, workers=1, http="h11", proxy_headers=False, forwarded_allow_ips="", access_log=False, server_header=False, date_header=False, reload=False, factory=False, env_file=None, log_config=None)` only under the main guard. There is no `launch`, `app_kwargs`, CLI/config file, authentication, user mount, or environment read; `auto` and `httptools` are forbidden parser values.
 
 - [ ] **Step 4: Add outer-ASGI, composition, route-inventory, and running probes**
 
@@ -1168,14 +1186,14 @@ The poisoned-environment fixture covers application construction, exact telemetr
 
 The route test expands the parent mount and inner Gradio `_IncludedRouter.original_router`. Every Gradio `6.26.0` method/route is explicitly classified as exact required read-only surface or outer-boundary-blocked; a new or unclassified item fails. Tests bind the package routes to only `BUILD_PATH_LIB` and `STATIC_PATH_LIB`, exercise root/symlink/case/containment mutations, block a syntactically valid nonexistent filename before Gradio, and record sorted membership/content-tree digests. Sentinel/root-block/max-size remain defense-in-depth state. If mount signature, outer order, authority map, sanitized scope, asset membership, normal browser route use, or later HF Docker behavior requires anything else, stop for exact source audit, a RED test, and central written review; do not add a wildcard.
 
-- [ ] **Step 5: Run GREEN and all six UI states**
+- [ ] **Step 5: Run GREEN for normal plus all five taxonomy UI states at unit/component level**
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path space)
 .venv-space\Scripts\python.exe -m pytest space/tests/test_claim_contract.py space/tests/test_evidence_contract.py space/tests/test_scenario_contract.py space/tests/test_gradio_contract.py -q
 ```
 
-Expected: validated normal state plus all five bounded evidence-failure states pass; every Blocks has zero app-owned inputs/dependencies/functions/API and explicit no-component-JS config, while preserving the recorded `enable_queue == true` fact; outer-ASGI unit/integration bombs prove pre-FastAPI/pre-Gradio/pre-receive interception, exact authority sanitization, exact package membership and metadata; and every exact Gradio `6.26.0` route/method is classified.
+Expected: validated normal state plus all five bounded taxonomy failure surfaces pass at unit/component level; every Blocks has zero app-owned inputs/dependencies/functions/API and explicit no-component-JS config, while preserving the recorded `enable_queue == true` fact; outer-ASGI unit/integration bombs prove pre-FastAPI/pre-Gradio/pre-receive interception, exact authority sanitization, exact package membership and metadata; and every exact Gradio `6.26.0` route/method is classified. This step does not claim that `receipt_schema_invalid` is reachable from mutated canonical runtime bytes or live-reviewed.
 
 - [ ] **Step 6: Commit the exact files**
 
@@ -1222,7 +1240,7 @@ def test_application_has_no_write_env_process_network_or_dynamic_code_capability
 
 `scan_capabilities` must identify write/append/update `open`, `Path.write_text`, `Path.write_bytes`, mkdir, rename, replace, delete, environment reads, `eval`, `exec`, dynamic import, process spawn, shell execution, network client construction, file watchers, and arbitrary absolute/current/home path discovery. The only additional filesystem-capability exception is in `ui.py`: read-only `pathlib` root resolution, `rglob`/iteration, `stat`/`is_file`/`is_dir`/`is_symlink`, `relative_to`, byte-size reads, and hash reads against the two fixed imported Gradio package roots. Calls accepting a runtime path argument, current/home/user/site discovery, `os.path`, globbing outside those roots, or any write remain forbidden.
 
-`space/app.py` may import only `FastAPI`, pinned Gradio's mount API, `uvicorn`, and the two named local UI interfaces. `space/carerisk_space/ui.py` may import only Gradio `Blocks`/`HTML`, Starlette `ASGIApp`/`Scope`/`Receive`/`Send` type interfaces, and exactly `gradio.routes.BUILD_PATH_LIB`/`gradio.routes.STATIC_PATH_LIB` from framework code. Importing any other Gradio route/function/internal, Starlette `Middleware`, request/body parsing, response/file/static helpers, network clients, temporary-file APIs, background tasks, environment access, or filesystem writes is forbidden. Source and mutation tests prove the two roots are the only inputs, are resolved strictly, are non-symlink directories, and every accepted file is regular/non-symlink and passes strict resolved-root `Path.relative_to` containment. URL membership preserves the wheel's exact case and is compared case-sensitively, including on Windows where filesystem containment semantics alone are not a case proof. Missing roots, root/file/directory symlinks, request case aliases, special files, and escapes fail closed. The source test requires exactly one empty `FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, one `gr.mount_gradio_app` call with the full exact Task 5 mapping including `favicon_path=None`, direct `PublicSurfaceGuard(parent, build_package_asset_membership())` composition, and one fixed programmatic `uvicorn.run` under the main guard. It rejects route decorators, `add_middleware`, `app_kwargs`, `Blocks.launch`, Gradio `Radio` or event binding, any second mount/router, and framework monkeypatching.
+`space/app.py` may import only `FastAPI`, pinned Gradio's mount API, `uvicorn`, and the two named local UI interfaces. `space/carerisk_space/ui.py` may import only Gradio `Blocks`/`HTML`, Starlette `ASGIApp`/`Scope`/`Receive`/`Send` type interfaces, and exactly `gradio.routes.BUILD_PATH_LIB`/`gradio.routes.STATIC_PATH_LIB` from framework code. Importing any other Gradio route/function/internal, Starlette `Middleware`, request/body parsing, response/file/static helpers, network clients, temporary-file APIs, background tasks, environment access, or filesystem writes is forbidden. Source and mutation tests prove the two roots are the only inputs, are resolved strictly, are non-symlink directories, and every accepted file is regular/non-symlink and passes strict resolved-root `Path.relative_to` containment. URL membership preserves the wheel's exact case and is compared case-sensitively, including on Windows where filesystem containment semantics alone are not a case proof. Missing roots, root/file/directory symlinks, request case aliases, special files, and escapes fail closed. The source test requires exactly one empty `FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, one `gr.mount_gradio_app` call with the full exact Task 5 mapping including `favicon_path=None`, direct `PublicSurfaceGuard(parent, build_package_asset_membership())` composition, and one fixed programmatic `uvicorn.run` under the main guard with exact `http="h11"`. It rejects `http="auto"`, `httptools`, an omitted parser argument, route decorators, `add_middleware`, `app_kwargs`, `Blocks.launch`, Gradio `Radio` or event binding, any second mount/router, and framework monkeypatching.
 
 - [ ] **Step 2: Run RED**
 
@@ -1562,8 +1580,13 @@ def test_runtime_account_is_non_root_and_non_login_without_claiming_bin_sh_absen
 def test_runtime_starts_fixed_programmatic_uvicorn_not_cli_or_gradio_launch() -> None:
     source = APP_ENTRYPOINT.read_text(encoding="utf-8")
     assert 'CMD ["python", "app.py"]' in DOCKERFILE.read_text(encoding="utf-8")
-    assert_exact_fastapi_mount_outer_guard_and_uvicorn_calls(source)
+    server_call = assert_exact_fastapi_mount_outer_guard_and_uvicorn_calls(source)
+    assert literal_keyword(server_call, "http") == "h11"
+    assert literal_keyword(server_call, "workers") == 1
+    assert literal_keyword(server_call, "proxy_headers") is False
     assert "uvicorn " not in DOCKERFILE.read_text(encoding="utf-8")
+    assert "httptools" not in source
+    assert 'http="auto"' not in source
     assert ".launch(" not in source
 
 def test_runtime_entrypoint_clears_injected_environment_before_python_import() -> None:
@@ -1609,7 +1632,7 @@ $env:PYTHONPATH = (Resolve-Path space)
 .venv-space\Scripts\python.exe scripts/build_hf_space_supply_chain.py verify --repo-root .
 ```
 
-Expected: Dockerfile/two-base/union-lock/account/startup/source contracts pass, including `python app.py` invoking the exact programmatic Uvicorn contract, the exact `/usr/bin/env -i` allowlist, and absence of `SPACE_ID`/`PORT` configuration. Do not build from `space/` directly because it intentionally lacks tag-sourced evidence/legal files, and do not invent a provisional manifest. Actual `/usr/bin/env` inventory, image, final-stage inventory, injected-environment stripping, UID/GID, read-only/tmpfs, CPU, no-network, loopback, outer-guard/file-capability, and cold-start evidence is required from the two-commit clean export in Task 13 before any runtime success claim.
+Expected: Dockerfile/two-base/union-lock/account/startup/source contracts pass, including `python app.py` invoking the exact programmatic Uvicorn contract with explicit `http="h11"`, the exact `/usr/bin/env -i` allowlist, and absence of `SPACE_ID`/`PORT` configuration. The test may not infer h11 from an environment where `httptools` is absent. Do not build from `space/` directly because it intentionally lacks tag-sourced evidence/legal files, and do not invent a provisional manifest. Actual `/usr/bin/env` inventory, image, final-stage inventory, injected-environment stripping, UID/GID, read-only/tmpfs, CPU, no-network, loopback, outer-guard/file-capability, exact parser identity, and cold-start evidence is required from the two-commit clean export in Task 13 before any runtime success claim.
 
 - [ ] **Step 5: Run tests and commit exact files**
 
@@ -1629,8 +1652,8 @@ git commit -m 'build(space): harden CPU-only container runtime'
 - Modify: `space/tests/test_gradio_contract.py`
 
 **Interfaces:**
-- Consumes: a local container image or local candidate process plus an owned GUID-named temporary run root outside the repository.
-- Produces: `ReviewPlan`, `LiveReviewRecord`, `WireBoundaryRecord`, and ownership-safe orchestration that Task 13 exercises against the final clean candidate.
+- Consumes: the inspected exact local final-image digest plus an owned GUID-named temporary run root outside the repository. No caller supplies a registry, remote image, bind mount, failure-state environment variable, evidence path, Dockerfile, mutation command, local tag, push/save/export destination, or other injection surface.
+- Produces: `ReviewPlan`, split-invariant `LiveReviewRecord`, `FailureVariantRecord`, `EvidenceReachabilityRecord`, `WireBoundaryRecord`, and ownership-safe orchestration that Task 13 exercises against the final clean candidate. Normal records always come from the exact final image; live failure records always come from one of four final-image-derived, local-only, labeled `NEVER_DEPLOY` images. The fifth taxonomy code is represented only by its explicit unit/component/ASGI precedence record.
 
 - [ ] **Step 1: Write failing review-contract tests**
 
@@ -1643,21 +1666,58 @@ def test_default_review_plan_covers_exact_viewports_states_and_starts() -> None:
         "validated_normal",
         "receipt_missing",
         "receipt_hash_mismatch",
-        "receipt_schema_invalid",
         "release_relationship_invalid",
         "deployment_manifest_invalid",
     )
     assert plan.cold_starts == 3
+    assert plan.expected_live_records == 10  # five live states at two viewports
+
+def test_failure_taxonomy_reachability_and_precedence_are_explicit() -> None:
+    records = default_evidence_reachability_records()
+    assert tuple(item.failure_code for item in records) == ALL_FAILURE_CODES
+    by_code = {item.failure_code: item for item in records}
+    assert by_code["receipt_missing"].live_reachable is True
+    assert by_code["receipt_hash_mismatch"].live_reachable is True
+    assert by_code["release_relationship_invalid"].live_reachable is True
+    assert by_code["deployment_manifest_invalid"].live_reachable is True
+    schema = by_code["receipt_schema_invalid"]
+    assert schema.live_reachable is False
+    assert schema.evidence_type == "unit_component_asgi"
+    assert schema.precedence == "dominated_by_immutable_receipt_anchor"
+    assert schema.live_review_status == "not_live_reviewed"
 
 def test_container_cold_start_command_is_hardened() -> None:
-    command = build_container_command("carerisk-space:final")
+    command = build_container_command("sha256:" + "a" * 64)
     joined = " ".join(command)
     for required in ("--cpus=2", "--network=none", "--read-only", "--tmpfs"):
         assert required in joined
     assert "mode=1777" in joined
 
+def test_failure_variant_build_is_local_digest_derived_and_network_disabled() -> None:
+    final_digest = "sha256:" + "a" * 64
+    command, dockerfile = build_never_deploy_variant(
+        final_digest=final_digest,
+        failure_code="receipt_missing",
+        run_guid="00000000-0000-0000-0000-000000000001",
+        owned_temp_root=owned_temp_root(),
+    )
+    assert command[:4] == ["docker", "build", "--pull=false", "--network=none"]
+    assert "NEVER_DEPLOY" in option_value(command, "--tag")
+    assert dockerfile.startswith(f"FROM {final_digest}\n")
+    assert "USER 0" in dockerfile
+    assert 'RUN ["rm", "--", "/app/evidence/final-result-receipt.json"]' in dockerfile
+    assert dockerfile.rstrip().endswith("USER 10001:10001")
+    assert_never_deploy_labels(command, final_digest, "receipt_missing")
+
+@pytest.mark.parametrize("forbidden", [
+    "registry.example/x", "--push", "--output", "--save", "--mount", "--env",
+])
+def test_failure_variant_interface_rejects_remote_or_injection_inputs(forbidden: str) -> None:
+    with pytest.raises(ReviewFailure, match="NEVER_DEPLOY input"):
+        parse_failure_variant_arguments([forbidden])
+
 def test_reviewer_app_uses_exact_internal_network_alias() -> None:
-    command = build_reviewer_app_command("carerisk-space:final")
+    command = build_reviewer_app_command("sha256:" + "a" * 64)
     assert option_value(command, "--network-alias") == "carerisk-app"
     assert reviewer_base_url(command) == "http://carerisk-app:7860"
 
@@ -1665,6 +1725,27 @@ def test_failed_live_record_cannot_be_reported_as_green() -> None:
     record = sample_record(serious_accessibility_findings=1)
     with pytest.raises(ReviewFailure, match="accessibility"):
         assert_review_passed(record)
+
+def test_normal_and_failure_records_use_disjoint_assertions() -> None:
+    normal = sample_normal_record()
+    assert_review_passed(normal)
+    assert normal.radio_count == normal.control_count == normal.scenario_panel_count == 4
+    assert normal.keyboard_selection_performed is True
+    assert normal.scenario_visibility_before_after == EXPECTED_VISIBILITY_TRANSITIONS
+
+    failure = sample_failure_record("receipt_missing")
+    assert_review_passed(failure)
+    assert failure.radio_count == failure.control_count == failure.scenario_panel_count == 0
+    assert failure.keyboard_selection_performed is False
+    assert failure.scenario_visibility_before_after == ()
+    assert failure.visible_metric_count == failure.visible_canonical_value_count == 0
+    assert failure.visible_failure_code == "receipt_missing"
+
+def test_normal_assertions_are_never_applied_to_failure_record() -> None:
+    with pytest.raises(ReviewFailure, match="failure-only surface"):
+        assert_review_passed(replace(sample_failure_record("receipt_missing"), radio_count=4))
+    with pytest.raises(ReviewFailure, match="normal-only surface"):
+        assert_review_passed(replace(sample_normal_record(), keyboard_selection_performed=False))
 
 def test_candidate_verifier_temp_self_test_rejects_unowned_or_outside_paths() -> None:
     result = run_candidate_verifier("--self-test-temp-ownership")
@@ -1695,11 +1776,10 @@ Expected: FAIL because the review runner and records do not exist.
 - [ ] **Step 3: Implement ephemeral review orchestration**
 
 ```python
-PageState = Literal[
+LivePageState = Literal[
     "validated_normal",
     "receipt_missing",
     "receipt_hash_mismatch",
-    "receipt_schema_invalid",
     "release_relationship_invalid",
     "deployment_manifest_invalid",
 ]
@@ -1708,8 +1788,12 @@ PageState = Literal[
 class ReviewPlan:
     viewports: tuple[tuple[int, int], ...]
     scenario_ids: tuple[str, ...]
-    page_states: tuple[PageState, ...]
+    page_states: tuple[LivePageState, ...]
     cold_starts: int
+
+    @property
+    def expected_live_records(self) -> int:
+        return len(self.viewports) * len(self.page_states)
 
     @classmethod
     def default(cls) -> "ReviewPlan":
@@ -1720,7 +1804,6 @@ class ReviewPlan:
                 "validated_normal",
                 "receipt_missing",
                 "receipt_hash_mismatch",
-                "receipt_schema_invalid",
                 "release_relationship_invalid",
                 "deployment_manifest_invalid",
             ),
@@ -1730,14 +1813,27 @@ class ReviewPlan:
 @dataclass(frozen=True)
 class LiveReviewRecord:
     viewport: tuple[int, int]
-    page_state: PageState
-    claim_fully_visible_before_control: bool
+    page_state: LivePageState
+    truth_and_headline_order_valid: bool
+    truth_and_headline_visible: bool
     horizontal_overflow_px: int
     body_font_px: float
-    minimum_control_target_px: float
-    keyboard_radio_selection: bool
+    responsive_layout_valid: bool
+    fonts_loaded: bool
+    heading_hierarchy_valid: bool
+    non_color_only_status: bool
+    radio_count: int
+    control_count: int
+    scenario_panel_count: int
+    minimum_control_target_px: float | None
+    keyboard_selection_performed: bool
     scenario_visibility_before_after: tuple[tuple[str, bool, bool], ...]
-    visible_focus: bool
+    focus_review: Literal["passed", "not_applicable"]
+    visible_metric_count: int
+    visible_canonical_value_count: int
+    normal_claims_and_metrics_exact: bool
+    visible_failure_code: str | None
+    expected_failure_message_visible: bool
     serious_accessibility_findings: int
     critical_accessibility_findings: int
     console_errors: tuple[str, ...]
@@ -1756,6 +1852,43 @@ class LiveReviewRecord:
     claim_visible_seconds: float
     partial_metrics: bool
     download_or_model_initialization: bool
+    cold_start_source_is_exact_final_or_derived_digest: bool
+
+@dataclass(frozen=True)
+class FailureVariantRecord:
+    run_guid: str
+    image_name: str
+    image_digest: str
+    base_final_image_digest: str
+    expected_failure_code: Literal[
+        "receipt_missing",
+        "receipt_hash_mismatch",
+        "release_relationship_invalid",
+        "deployment_manifest_invalid",
+    ]
+    labels: tuple[tuple[str, str], ...]
+    dockerfile_sha256: str
+    build_pull_disabled: bool
+    build_network_none: bool
+    image_user: str
+    entrypoint_and_cmd_match_final: bool
+    intended_path_delta: tuple[str, ...]
+    unexpected_path_or_byte_deltas: tuple[str, ...]
+    app_source_locks_assets_match_final: bool
+    observed_failure_codes: tuple[str, ...]
+    remote_or_export_input_count: int
+
+@dataclass(frozen=True)
+class EvidenceReachabilityRecord:
+    failure_code: EvidenceFailureCode
+    owning_gate: str
+    live_reachable: bool
+    evidence_type: Literal["final_image_variant", "unit_component_asgi"]
+    precedence: Literal[
+        "runtime_reachable",
+        "dominated_by_immutable_receipt_anchor",
+    ]
+    live_review_status: Literal["reviewed", "not_live_reviewed"]
 
 @dataclass(frozen=True)
 class WireBoundaryRecord:
@@ -1797,14 +1930,17 @@ class ReviewFailure(RuntimeError):
 def assert_review_passed(record: LiveReviewRecord) -> None:
     if record.serious_accessibility_findings or record.critical_accessibility_findings:
         raise ReviewFailure("accessibility findings")
-    if not record.claim_fully_visible_before_control:
-        raise ReviewFailure("claim order or visibility")
-    if record.horizontal_overflow_px or record.body_font_px < 16:
+    if not record.truth_and_headline_order_valid or not record.truth_and_headline_visible:
+        raise ReviewFailure("truth or headline order/visibility")
+    if (
+        record.horizontal_overflow_px
+        or record.body_font_px < 16
+        or not record.responsive_layout_valid
+        or not record.fonts_loaded
+        or not record.heading_hierarchy_valid
+        or not record.non_color_only_status
+    ):
         raise ReviewFailure("responsive layout")
-    if record.minimum_control_target_px < 44 or not record.keyboard_radio_selection:
-        raise ReviewFailure("control accessibility")
-    if record.scenario_visibility_before_after != EXPECTED_VISIBILITY_TRANSITIONS:
-        raise ReviewFailure("static scenario visibility")
     if record.console_errors or record.external_app_requests:
         raise ReviewFailure("console or external request")
     if record.outer_guard_blocked_count:
@@ -1826,13 +1962,96 @@ def assert_review_passed(record: LiveReviewRecord) -> None:
         raise ReviewFailure("browser used a non-allowlisted app route")
     if record.partial_metrics or record.download_or_model_initialization:
         raise ReviewFailure("partial evidence or runtime download")
+    if not record.cold_start_source_is_exact_final_or_derived_digest:
+        raise ReviewFailure("unbound review image")
+
+    if record.page_state == "validated_normal":
+        if (record.radio_count, record.control_count, record.scenario_panel_count) != (4, 4, 4):
+            raise ReviewFailure("normal-only surface counts")
+        if record.minimum_control_target_px is None or record.minimum_control_target_px < 44:
+            raise ReviewFailure("normal-only control target")
+        if not record.keyboard_selection_performed or record.focus_review != "passed":
+            raise ReviewFailure("normal-only surface keyboard/focus")
+        if record.scenario_visibility_before_after != EXPECTED_VISIBILITY_TRANSITIONS:
+            raise ReviewFailure("normal-only surface transitions")
+        if not record.normal_claims_and_metrics_exact:
+            raise ReviewFailure("normal-only claims/metrics")
+        if record.visible_failure_code is not None or record.expected_failure_message_visible:
+            raise ReviewFailure("normal-only failure content")
+    else:
+        if (record.radio_count, record.control_count, record.scenario_panel_count) != (0, 0, 0):
+            raise ReviewFailure("failure-only surface counts")
+        if record.minimum_control_target_px is not None:
+            raise ReviewFailure("failure-only control target")
+        if record.keyboard_selection_performed or record.focus_review != "not_applicable":
+            raise ReviewFailure("failure-only surface keyboard/focus")
+        if record.scenario_visibility_before_after:
+            raise ReviewFailure("failure-only surface transitions")
+        if record.visible_metric_count or record.visible_canonical_value_count:
+            raise ReviewFailure("failure-only surface metrics")
+        if record.normal_claims_and_metrics_exact:
+            raise ReviewFailure("failure-only normal evidence")
+        if record.visible_failure_code != record.page_state or not record.expected_failure_message_visible:
+            raise ReviewFailure("failure-only code/message")
+
+def assert_failure_variant_passed(record: FailureVariantRecord) -> None:
+    expected_labels = {
+        "carerisk.never_deploy": "true",
+        "carerisk.run_guid": record.run_guid,
+        "carerisk.base_digest": record.base_final_image_digest,
+        "carerisk.failure_code": record.expected_failure_code,
+    }
+    if "NEVER_DEPLOY" not in record.image_name or dict(record.labels) != expected_labels:
+        raise ReviewFailure("NEVER_DEPLOY labels")
+    if not record.build_pull_disabled or not record.build_network_none:
+        raise ReviewFailure("NEVER_DEPLOY build boundary")
+    if record.image_user != "10001:10001":
+        raise ReviewFailure("NEVER_DEPLOY final user")
+    if not record.entrypoint_and_cmd_match_final or not record.app_source_locks_assets_match_final:
+        raise ReviewFailure("NEVER_DEPLOY final-image identity")
+    if len(record.intended_path_delta) != 1 or record.unexpected_path_or_byte_deltas:
+        raise ReviewFailure("NEVER_DEPLOY mutation delta")
+    if record.observed_failure_codes != (record.expected_failure_code,):
+        raise ReviewFailure("NEVER_DEPLOY failure-code isolation")
+    if record.remote_or_export_input_count:
+        raise ReviewFailure("NEVER_DEPLOY remote/export input")
+
+def assert_evidence_reachability_passed(
+    records: tuple[EvidenceReachabilityRecord, ...],
+) -> None:
+    if tuple(item.failure_code for item in records) != ALL_FAILURE_CODES:
+        raise ReviewFailure("failure taxonomy reachability order")
+    live_codes = tuple(item.failure_code for item in records if item.live_reachable)
+    if live_codes != (
+        "receipt_missing",
+        "receipt_hash_mismatch",
+        "release_relationship_invalid",
+        "deployment_manifest_invalid",
+    ):
+        raise ReviewFailure("runtime-reachable failure matrix")
+    schema = next(item for item in records if item.failure_code == "receipt_schema_invalid")
+    if schema != EvidenceReachabilityRecord(
+        failure_code="receipt_schema_invalid",
+        owning_gate="strict_receipt_json_schema_after_identity",
+        live_reachable=False,
+        evidence_type="unit_component_asgi",
+        precedence="dominated_by_immutable_receipt_anchor",
+        live_review_status="not_live_reviewed",
+    ):
+        raise ReviewFailure("receipt schema precedence")
 ```
 
-The Python runner has two explicit modes. Container cold-start mode starts the app image with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` with Host `127.0.0.1:7860` to probe exact root/config/theme/manifest/favicon/package-member responses and claim copy on loopback. It records the locked package membership/content-tree digest and submits the authoritative blocked matrix, including method-table HEAD probes, nonexistent-valid asset names, authority mutations, metadata/PWA paths, and downstream/receive/fetch/temp bombs. Every direct pure-ASGI helper constructs `PublicSurfaceGuard(downstream, exact_package_asset_urls())`, where the helper derives and asserts the nonempty pinned-root membership. `WireBoundaryRecord` then keeps those deterministic ASGI messages separate from raw HTTP/1.1 observations against the untouched pinned Uvicorn+h11 server: missing/duplicate Host must return `(400, 400)` before the app-entry marker, a valid unlisted single Host must increment that marker and receive guard 404, and every blocked non-root wire `HEAD` must have zero entity bytes with `content-length: 9` even though the pure-ASGI response body message is `b"Not Found"`. All records require zero CORS/compression/canary/reflection and preserve exact selected sanitized downstream scope and defense-in-depth state separately. Browser-review mode creates a temporary Docker `--internal` network, starts the final app image with the exact network alias `carerisk-app`, starts the pinned Playwright reviewer against `http://carerisk-app:7860`, drives both viewports, selects all four native radios by keyboard, records before/after checked-panel visibility, tests normal plus five failure bundles, runs WCAG checks, and records every exact app method/path/query plus block, POST, event/session/queue, state-delta, console, and external-request counts. Normal traffic must follow the exact method table (`GET` except root may also use `HEAD`), must include the observed manifest/favicon/static-logo requests, and must be exactly allowlisted; guard blocks, POSTs, event/session/queue requests, public state delta, external requests, and console errors are each zero. The internal network permits reviewer-to-app traffic but has no external route and no dependency download. Browser review never substitutes for `--network none` smoke.
+The Python runner has two explicit execution modes plus one local derivation phase. Container cold-start mode starts the exact inspected final-image digest with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` with Host `127.0.0.1:7860` to probe exact root/config/theme/manifest/favicon/package-member responses and claim copy on loopback. It records the exact `uvicorn.run(..., http="h11", ...)` source/config/runtime identity, locked package membership/content-tree digest, and authoritative blocked matrix, including method-table HEAD probes, nonexistent-valid asset names, authority mutations, metadata/PWA paths, and downstream/receive/fetch/temp bombs. Every direct pure-ASGI helper constructs `PublicSurfaceGuard(downstream, exact_package_asset_urls())`, where the helper derives and asserts the nonempty pinned-root membership. `WireBoundaryRecord` then keeps those deterministic ASGI messages separate from raw HTTP/1.1 observations against that explicit h11 Uvicorn server: missing/duplicate Host must return `(400, 400)` before the app-entry marker, a valid unlisted single Host must increment that marker and receive guard 404, and every blocked non-root wire `HEAD` must have zero entity bytes with `content-length: 9` even though the pure-ASGI response body message is `b"Not Found"`. All records require zero CORS/compression/canary/reflection and preserve exact selected sanitized downstream scope and defense-in-depth state separately.
+
+Only after final-image inspection, a derivation phase creates four task-owned local images for runtime-reachable failure review. The verifier itself generates a literal Dockerfile and minimal context beneath its validated GUID temp root for each exact reachable failure code. Every Dockerfile begins `FROM <exact inspected local final digest>`, uses `USER 0` only around one package-relative evidence mutation, and ends `USER 10001:10001`. `receipt_missing` uses exec-form `RUN ["rm", "--", "/app/evidence/final-result-receipt.json"]`; the other variants `COPY` one generated mutated artifact over exactly `/app/evidence/final-result-receipt.json`, `/app/evidence/release-v0.2.0.json`, or `/app/deployment-manifest.json` to produce `receipt_hash_mismatch`, `release_relationship_invalid`, or `deployment_manifest_invalid`. Each variant has exactly one intended path delta; no manifest compensation or secondary mutation is allowed. The build command is exact `docker build --pull=false --network=none`, with no remote registry or output/export option. The verifier chooses a local name containing `NEVER_DEPLOY` and exact labels `carerisk.never_deploy=true`, `carerisk.run_guid=<GUID>`, `carerisk.base_digest=<digest>`, and `carerisk.failure_code=<code>`. It rejects caller-controlled image names, paths, Dockerfile content, mutation commands, remote/tag/push/save/export inputs, bind mounts, runtime environment/path switches, and monkeypatches.
+
+`receipt_schema_invalid` deliberately has no derived image. The canonical receipt SHA-256 and Git-blob checks precede strict JSON/schema validation, so any live byte mutation is owned by `receipt_hash_mismatch`. The existing explicit controlled anchor seam is allowed only in unit tests to isolate downstream strict-parser/schema behavior; component and direct-ASGI tests then require its exact bounded message and zero controls, metrics, scenarios, dependency/function/API surface, app-owned event/API traffic, or echo. The permitted root GET still enters the mounted static document and is not counted as an event. A running container, final image, derived image, browser record, or cold-start record must never patch those anchors or describe schema failure as live evidence. `EvidenceReachabilityRecord` makes this precedence and `not_live_reviewed` status machine-verifiable instead of silently omitting the code.
+
+Image inspection and filesystem comparison bind each derived image to the final digest, require unchanged entrypoint/CMD and final `USER 10001:10001`, require the intended single evidence delta, and require every application source, lock, package asset, and other path to match the final image byte-for-byte. Each image must emit exactly its one expected bounded code. Browser-review mode creates one GUID-labeled Docker `--internal` network, always uses exact alias `carerisk-app`, and runs the exact Playwright reviewer against the exact final image for normal review and each of the four `NEVER_DEPLOY` images for its one failure review. All five live page states are exercised at both viewports with the same entrypoint and runtime flags. Shared assertions cover only truth/headline ordering, responsive/font/heading/non-color accessibility, console/external/request graph, guard/state-delta/package membership/sanitized scope, and cold-start/no-download/no-model-init behavior. Normal-only assertions cover four radios/controls/panels, targets, keyboard/focus, exact visibility transitions, and receipt-backed claims/metrics. Failure-only assertions cover zero radios/controls/panels/transitions/metrics/canonical values, false or not-applicable keyboard/focus, the exact visible failure code/message, and no partial evidence. Normal traffic follows the exact method table (`GET` except root may also use `HEAD`), includes observed manifest/favicon/static-logo requests, and has zero guard blocks, POSTs, event/session/queue requests, public state delta, external requests, or console errors. The internal network permits reviewer-to-app traffic but has no external route and no dependency download. Browser review never substitutes for `--network none` smoke.
 
 If the normal Gradio `6.26.0` browser needs a route/query/method not in the approved table, emits any POST/event/session/queue traffic, changes framework public-interaction state, cannot use the exact `carerisk-app:7860` authority-selected sanitized scope behind the reviewer network, produces an asset inventory mismatch, or if outer ordering lets a blocked probe reach FastAPI/Gradio/body receive, the runner raises a load-bearing incompatibility and stops. If an authorized Hugging Face candidate or iframe Host is not exactly `steven0226-carerisk-48h.hf.space`, publication stops and reports centrally. The implementation must source-audit the exact issue, add a RED test, and report centrally; it must not accept a generic prefix, method, static, upload, file, header, host, authority suffix, or query wildcard.
 
-`verify_hf_space_candidate.py` owns final orchestration. It creates exactly one GUID-named run directory beneath `Path(tempfile.gettempdir()).resolve(strict=True)` and writes an ownership marker containing that GUID and canonical root. Candidate and review directories are children of that run root. A `try/finally` always stops only containers/networks labeled with the same GUID and calls a cleanup function that re-resolves the OS temp root, rejects symlinks/reparse points, requires the exact GUID prefix plus matching ownership marker/canonical root, and then applies `shutil.rmtree` only to that one run directory. Unowned, missing-marker, mismatched, symlink/reparse-point, workspace, temp-root itself, or outside-temp paths are a hard stop and are never deleted. The script emits its final verification receipt to stdout after cleanup; it persists no review file unless central later provides a separately authorized, explicit outside-repository retention path.
+`verify_hf_space_candidate.py` owns final orchestration. It creates exactly one GUID-named run directory beneath `Path(tempfile.gettempdir()).resolve(strict=True)` and writes an ownership marker containing that GUID and canonical root. Candidate, review, and `NEVER_DEPLOY` build-context directories are children of that run root and contain that literal marker in their names. A `try/finally` stops/removes only containers, internal networks, and derived local images whose complete label set matches the current GUID/base digest/expected code/`NEVER_DEPLOY=true`; it then calls a cleanup function that re-resolves the OS temp root, rejects symlinks/reparse points, requires the exact GUID prefix plus matching ownership marker/canonical root, and applies `shutil.rmtree` only to that one run directory. It never deletes by name prefix alone, dangling image list, broad Docker filter, or unverified path. Unowned, missing-label/marker, mismatched, symlink/reparse-point, workspace, temp-root itself, or outside-temp resources are a hard stop and are left untouched for manual inspection. The script emits its final verification receipt to stdout after cleanup; it persists no review or derived-image artifact and exposes no remote/upload/tag/push/save/export path.
 
 - [ ] **Step 4: Run orchestration/config GREEN before the final candidate exists**
 
@@ -1840,7 +2059,7 @@ If the normal Gradio `6.26.0` browser needs a route/query/method not in the appr
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_live_review.py space/tests/test_gradio_contract.py -q -m 'not integration'
 ```
 
-Expected: orchestration, exact viewport/state matrix, hardened command construction, Gradio config, distinct pure-ASGI/wire boundary records, and failure-reporting contracts pass. Unit records require the nonempty pinned-root membership and prove no result can pass through constructor `TypeError`; do not claim live Uvicorn parser, HEAD wire, viewport, container, accessibility, or cold-start success here, because those require the clean candidate in Task 13. Thirty seconds remains a recorded soft local target, never a public SLA.
+Expected: orchestration, exact 10-record live viewport/state matrix, final-digest-only normal command, four local-only `NEVER_DEPLOY` variant build/inspect/label/delta/code/cleanup contracts, five-code reachability/precedence records, split shared/normal/failure assertions, hardened command construction, Gradio config, exact `http="h11"` identity, distinct pure-ASGI/wire boundary records, and failure-reporting contracts pass. Unit records require the nonempty pinned-root membership and prove no result can pass through constructor `TypeError`; schema failure is unit/component/ASGI evidence and is explicitly not live-reviewed. Do not claim a built variant, live Uvicorn parser, HEAD wire, viewport, container, accessibility, or cold-start success here, because those require the clean candidate in Task 13. Thirty seconds remains a recorded soft local target, never a public SLA.
 
 - [ ] **Step 5: Commit exact review files**
 
@@ -1995,7 +2214,7 @@ if ((git rev-parse HEAD^).Trim() -cne $appSourceSha) { throw 'Manifest is not th
 
 **Files:**
 - Verify only: every file named above.
-- Temporary only: one ownership-marked GUID run root beneath the resolved OS temp root, containing candidate and review children.
+- Temporary only: one ownership-marked GUID run root beneath the resolved OS temp root, containing candidate, review, and four code-specific `NEVER_DEPLOY` build-context children.
 
 **Interfaces:**
 - Consumes: app-source SHA from `deployment-manifest.json` and current manifest-source SHA.
@@ -2030,11 +2249,12 @@ if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'In
 1. Re-check clean-worktree and two-commit preconditions. Create `candidate` and `review` children only beneath the owned run root. Run exporter and `verify-export` before any controlled acquisition/build command. Export code is restricted by source tests to local Git object reads and has no networking API/import/call path.
 2. Read both exact tag/platform-digest records from `base-image.json`. For each, run `docker image inspect` against the concatenated recorded tag and linux/amd64 digest and verify `RepoDigests`; if and only if that exact image is absent, perform a logged controlled `docker pull` of the same immutable reference, then re-inspect. Reject a tag-only or wrong-platform image. This is controlled supply-chain acquisition, not test execution.
 3. In the same controlled supply-chain/build phase, build `--target test` and `--target runtime` from the exact candidate. Network access is permitted only for digest/hash-pinned base and Python package acquisition and every accepted byte must match the image digest or lock hash. `--pull=false` may be used only after exact local image verification and is never evidence that the build was offline. Verify built image histories/inventories: test uses the reviewer base; runtime uses only the CPython base and contains no dev/browser/model package.
-4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start passes adversarial values for the exact Gradio `6.26.0` source-derived environment-read inventory. The required named matrix includes `GRADIO_ANALYTICS_ENABLED`, `HF_HUB_DISABLE_TELEMETRY`, `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `GRADIO_ROOT_PATH`, `GRADIO_SHARE`, `GRADIO_MONITORING_ENABLED`, `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, plus `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect pre-import state, post-Blocks state, `/proc/1/environ`, and every runtime child environment and require exact equality with the fixed `ENTRYPOINT` allowlist, including `HF_HUB_DISABLE_TELEMETRY=True`; poison values `0` and hostile strings must be absent. Prove fixed port 7860, zero app-owned input/dependency/function/API config, pinned `enable_queue == true`, zero public state delta, mount mapping, exact two-argument direct outer-wrapper identity with nonempty pinned-root membership, and programmatic Uvicorn values do not drift. Derive sorted package membership/content-tree digests from the exact runtime wheel and compare them with the reviewer image; require only regular non-symlink root-contained members. Against loopback Host `127.0.0.1:7860`, require healthy exact root/config/theme/manifest/favicon/package members and logo digests plus unavailable API/queue/history/monitoring. Direct pure-ASGI probes require the fixed guard 404 message sequence with `b"Not Found"` and `content-length: 9` before FastAPI/Gradio/downstream/body receive for the complete hostile method/path/query/authority/header/cookie/raw-path/WebSocket matrix, including `HEAD` on every non-root path, syntactically valid nonexistent assets, metadata/PWA variants, and missing/duplicate/combined/whitespace/unlisted Host scopes. Separately send raw HTTP/1.1 bytes to the untouched pinned Uvicorn+h11 server: missing and duplicate Host must each return exact 400 with no ASGI app-entry marker delta, while a valid unlisted single Host must enter the guard and return 404. Wire-level blocked non-root `HEAD` must return 404 with zero entity bytes and `content-length: 9`; root `HEAD` remains the sole allowed HEAD and also has zero wire entity bytes. Record zero CORS/compression, canary/reflection, outbound fetches, temp delta, and echo at each layer. Sentinel/root-block/max-upload remain separate defense-in-depth observations. No execution-phase command downloads a dependency.
-5. Create a GUID-labeled Docker `--internal` network, start the final app with exact network alias `carerisk-app`, and run the exact reviewer image against `http://carerisk-app:7860` for normal/five-failure, four-scenario, 1440×900/390×844, keyboard/focus, WCAG, console, and request-graph review. Repeat adversarial environment injection and require the same PID 1/child allowlist. Verify root/config/exact theme/manifest/favicon/package members, exact membership/tree digest parity, zero app-owned inputs/dependencies/functions/API, pinned `enable_queue == true`, and all four pre-rendered scenario panels. For every radio, record checked state and corresponding panel visibility before and after keyboard selection plus zero public-interaction state delta. Record every browser app method/path/query and require the exact method table: `GET` for all allowed resources and optional `HEAD` only for root. Require the exact manifest/favicon/static-logo requests to appear as accepted traffic; outer-guard blocks, POSTs, event/session/queue requests, external requests, and console errors must all be zero. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile authority/query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, metadata/PWA, absent-asset, encoded, traversal, case, and slash probes. Guard-reachable probes require its exact fixed ASGI/wire response, no downstream/body receive, no outbound network, no temp delta, and no echo. Missing/duplicate raw-wire Host probes remain parser-layer 400 with zero app-entry marker and are reported separately rather than counted as guard blocks; blocked wire HEAD probes retain zero entity bytes and `content-length: 9`. Record the exact authority-selected sanitized inner scope/header observation for all four approved authorities and fail if local/container proxy operation requires forwarding attacker headers. The absolute sentinel, root block, and `max_file_size=0` remain defense in depth. Only reviewer-to-app traffic is possible; all egress is absent. Record reviewer image/digests/browser revisions. Any normal route/query/method outside the table, POST/event/session/queue traffic, public state delta, outer-order failure, asset mismatch, authority/sanitized-scope incompatibility, or authorized Hugging Face identity other than exact `steven0226-carerisk-48h.hf.space` stops verification for exact source audit, RED test, and central review; no wildcard is added.
-6. In `finally`, stop/remove only containers and the internal network carrying the current GUID label, then validate and delete only the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect directory untouched for manual inspection; it never broadens the delete target.
+4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start passes adversarial values for the exact Gradio `6.26.0` source-derived environment-read inventory. The required named matrix includes `GRADIO_ANALYTICS_ENABLED`, `HF_HUB_DISABLE_TELEMETRY`, `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `GRADIO_ROOT_PATH`, `GRADIO_SHARE`, `GRADIO_MONITORING_ENABLED`, `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, plus `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect pre-import state, post-Blocks state, `/proc/1/environ`, and every runtime child environment and require exact equality with the fixed `ENTRYPOINT` allowlist, including `HF_HUB_DISABLE_TELEMETRY=True`; poison values `0` and hostile strings must be absent. Prove fixed port 7860, zero app-owned input/dependency/function/API config, pinned `enable_queue == true`, zero public state delta, mount mapping, exact two-argument direct outer-wrapper identity with nonempty pinned-root membership, and exact programmatic Uvicorn `http="h11"`; reject `auto`, `httptools`, CLI/environment selection, or inference from an absent package. Derive sorted package membership/content-tree digests from the exact runtime wheel and compare them with the reviewer image; require only regular non-symlink root-contained members. Against loopback Host `127.0.0.1:7860`, require healthy exact root/config/theme/manifest/favicon/package members and logo digests plus unavailable API/queue/history/monitoring. Direct pure-ASGI probes require the fixed guard 404 message sequence with `b"Not Found"` and `content-length: 9` before FastAPI/Gradio/downstream/body receive for the complete hostile method/path/query/authority/header/cookie/raw-path/WebSocket matrix, including `HEAD` on every non-root path, syntactically valid nonexistent assets, metadata/PWA variants, and missing/duplicate/combined/whitespace/unlisted Host scopes. Separately send raw HTTP/1.1 bytes to the untouched explicitly configured Uvicorn+h11 server: missing and duplicate Host must each return exact 400 with no ASGI app-entry marker delta, while a valid unlisted single Host must enter the guard and return 404. Wire-level blocked non-root `HEAD` must return 404 with zero entity bytes and `content-length: 9`; root `HEAD` remains the sole allowed HEAD and also has zero wire entity bytes. Record zero CORS/compression, canary/reflection, outbound fetches, temp delta, and echo at each layer. Sentinel/root-block/max-upload remain separate defense-in-depth observations. No execution-phase command downloads a dependency.
+5. Inspect and record the exact final runtime image digest before creating any variant. Generate four literal task-owned Dockerfiles and minimal contexts for only `receipt_missing`, `receipt_hash_mismatch`, `release_relationship_invalid`, and `deployment_manifest_invalid`. Each uses `FROM <exact local final digest>`, `--pull=false --network=none`, exact GUID/base/code/`NEVER_DEPLOY=true` labels, a name containing `NEVER_DEPLOY`, temporary `USER 0`, one literal package-relative evidence removal/replacement, and final `USER 10001:10001`. Reject remote registries, caller-controlled images/paths/Dockerfiles/commands, bind mounts, environment/path injection, push, save, export/output, or any fifth variant. Inspect each derived image and require exactly one intended evidence-path delta, exact entrypoint/CMD/app-source/lock/asset/other-path byte parity with the final image, and exactly its own expected failure code. `receipt_schema_invalid` receives no image: its strict-parser/UI/ASGI behavior is exercised only with the existing explicit unit test anchor seam, while the final receipt records that live bytes are dominated by the immutable receipt identity gate and marks it `not_live_reviewed`.
+6. Create a GUID-labeled Docker `--internal` network. Run the exact final image with network alias `carerisk-app` for normal review, then separately run each of the four inspected `NEVER_DEPLOY` images with the same alias, entrypoint, command, environment scrub, runtime flags, and no-egress network. Run the exact reviewer image against `http://carerisk-app:7860` for all five live page states at 1440×900 and 390×844. Apply shared assertions to all ten records; apply four-radio/panel/keyboard/focus/visibility/normal-claims assertions only to the two normal records; apply zero-control/panel/transition/metric/canonical-value plus exact code/message assertions only to the eight reachable-failure records. Verify root/config/exact theme/manifest/favicon/package members, exact membership/tree digest parity, zero app-owned inputs/dependencies/functions/API, pinned `enable_queue == true`, exact request method/path/query, zero outer blocks/POST/event/session/queue/public-state delta/external/console errors, and no partial evidence/download/model initialization. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile authority/query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, metadata/PWA, absent-asset, encoded, traversal, case, and slash probes. Missing/duplicate raw-wire Host and blocked-wire-HEAD evidence remains layer-separated. Any route, parser, variant, delta, authority, asset, state, or assertion drift stops verification for exact source audit, RED test, and central review; no wildcard or fifth live failure is added.
+7. In `finally`, stop/remove only containers, the internal network, and the four derived images whose complete current GUID/base-digest/code/`NEVER_DEPLOY=true` label set matches. Then validate and delete only the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect resource/path untouched for manual inspection; it never broadens the delete target.
 
-Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime image digest; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; static radio visibility transitions; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; cold starts; viewport/state results; cleanup; and no-egress observations. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the direct outer ASGI/authority boundary, exact package membership, or accepted Host identity is absent, ineffective, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
+Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime and four derived image digests; exact parser identity `h11`; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; normal-only static radio visibility transitions; failure-only zero-surface counts; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; three normal cold starts; ten viewport/state records; four variant label/base/delta/code records; five-code owning-gate/live-reachability/evidence-type/precedence/status records; cleanup; and no-egress observations. `receipt_schema_invalid` is recorded as unit/component/ASGI evidence, dominated by the immutable receipt anchor, and `not_live_reviewed`, never as a passed live state. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the explicit h11 parser, direct outer ASGI/authority boundary, exact package membership, or accepted Host identity is absent, ineffective, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
 
 - [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
 
@@ -2060,6 +2280,7 @@ $requiredTrue = @(
     'public_tests_passed', 'runtime_inventory_clean', 'runtime_network_none',
     'runtime_read_only', 'runtime_non_root_nologin', 'runtime_env_binary_inventoried',
     'runtime_environment_scrubbed', 'runtime_fixed_port',
+    'runtime_uvicorn_h11_exact',
     'runtime_public_surface_guard_pre_router', 'runtime_history_monitoring_closed',
     'runtime_telemetry_value_exact', 'runtime_authority_map_exact',
     'runtime_package_asset_membership_exact', 'runtime_reviewer_asset_tree_match',
@@ -2070,18 +2291,35 @@ $requiredTrue = @(
     'framework_enable_queue_true_recorded', 'app_owned_api_surface_zero',
     'browser_request_allowlist_exact', 'browser_network_internal',
     'browser_reviewer_alias_exact', 'browser_metadata_requests_observed',
+    'failure_variants_final_digest_derived', 'failure_variant_single_deltas_exact',
+    'failure_variant_labels_exact', 'failure_taxonomy_precedence_exact',
     'accessibility_passed', 'cleanup_passed'
 )
 foreach ($field in $requiredTrue) {
     if ($receipt.$field -ne $true) { throw "Final receipt gate failed: $field" }
 }
-if ($receipt.cold_starts -ne 3 -or $receipt.viewport_count -ne 2 -or $receipt.page_state_count -ne 6 -or $receipt.scenario_count -ne 4) { throw 'Final review matrix mismatch' }
+if ($receipt.cold_starts -ne 3 -or $receipt.viewport_count -ne 2 -or $receipt.page_state_count -ne 5 -or $receipt.live_review_record_count -ne 10 -or $receipt.failure_variant_count -ne 4 -or $receipt.scenario_count -ne 4) { throw 'Final review matrix mismatch' }
+$expectedLiveStates = @('validated_normal', 'receipt_missing', 'receipt_hash_mismatch', 'release_relationship_invalid', 'deployment_manifest_invalid')
+if ([string]::Join('|', [string[]]@($receipt.live_page_states)) -cne [string]::Join('|', [string[]]$expectedLiveStates)) { throw 'Live page-state matrix mismatch' }
+$expectedVariantCodes = @('receipt_missing', 'receipt_hash_mismatch', 'release_relationship_invalid', 'deployment_manifest_invalid')
+if ([string]::Join('|', [string[]]@($receipt.failure_variant_codes)) -cne [string]::Join('|', [string[]]$expectedVariantCodes)) { throw 'Failure variant matrix mismatch' }
+$expectedReachability = @(
+    'receipt_missing|literal_receipt_path|true|final_image_variant|runtime_reachable|reviewed',
+    'receipt_hash_mismatch|immutable_receipt_sha256_git_blob|true|final_image_variant|runtime_reachable|reviewed',
+    'receipt_schema_invalid|strict_receipt_json_schema_after_identity|false|unit_component_asgi|dominated_by_immutable_receipt_anchor|not_live_reviewed',
+    'release_relationship_invalid|release_relationship|true|final_image_variant|runtime_reachable|reviewed',
+    'deployment_manifest_invalid|deployment_manifest|true|final_image_variant|runtime_reachable|reviewed'
+)
+$actualReachability = @($receipt.evidence_reachability | ForEach-Object {
+    "$($_.failure_code)|$($_.owning_gate)|$(([bool]$_.live_reachable).ToString().ToLowerInvariant())|$($_.evidence_type)|$($_.precedence)|$($_.live_review_status)"
+})
+if ([string]::Join("`n", [string[]]$actualReachability) -cne [string]::Join("`n", [string[]]$expectedReachability)) { throw 'Failure reachability/precedence matrix mismatch' }
 foreach ($field in @('blocked_downstream_call_count', 'blocked_receive_call_count', 'blocked_outbound_fetch_count', 'blocked_temp_entry_delta', 'blocked_echo_count', 'wire_host_parser_app_entry_delta', 'wire_host_parser_canary_or_reflection_count', 'browser_middleware_blocked_count', 'browser_post_request_count', 'browser_event_or_session_request_count', 'browser_queue_request_count', 'public_interaction_state_delta', 'external_request_count', 'console_error_count')) {
     if ($receipt.$field -ne 0) { throw "Final public-surface evidence is not clean: $field" }
 }
 ```
 
-Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact `HF_HUB_DISABLE_TELEMETRY=True` before import/after Blocks/in PID 1/children, fixed port and zero app-owned input/dependency/function/API config, recorded framework `enable_queue == true`, mount/Uvicorn state, exact two-argument outer-ASGI composition with nonempty pinned-root membership, direct guard interception before FastAPI/Gradio/downstream/body receive, all four authority-selected sanitized scopes, runtime/reviewer package membership-tree equality, exact metadata/logo bytes, zero CORS/compression/network/temp/echo side effects, unavailable API/queue/history/monitoring, and three cold starts. Direct-ASGI evidence proves missing/duplicate/invalid Host guard 404 and deterministic blocked HEAD messages; raw-wire evidence separately proves pinned Uvicorn+h11 missing/duplicate Host 400 before ASGI, zero app-entry/canary/reflection delta, valid unlisted single Host guard 404, and zero wire HEAD entity bytes with `content-length: 9`. Browser evidence separately proves the exact GET/root-HEAD method table, required manifest/favicon/logo traffic, fixed `carerisk-app` alias, zero outer-guard blocks/POSTs/events/sessions/queues/public-state delta, native-radio visibility transitions, normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. Sentinel/root-block/max-size evidence remains defense in depth. Cleanup is proven. The test does not require `/bin/sh` to be absent.
+Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact `HF_HUB_DISABLE_TELEMETRY=True` before import/after Blocks/in PID 1/children, fixed port, explicit Uvicorn `http="h11"`, zero app-owned input/dependency/function/API config, recorded framework `enable_queue == true`, exact two-argument outer-ASGI composition with nonempty pinned-root membership, direct guard interception before FastAPI/Gradio/downstream/body receive, all four authority-selected sanitized scopes, runtime/reviewer package membership-tree equality, exact metadata/logo bytes, zero CORS/compression/network/temp/echo side effects, unavailable API/queue/history/monitoring, and three normal cold starts. Direct-ASGI evidence proves missing/duplicate/invalid Host guard 404 and deterministic blocked HEAD messages; raw-wire evidence separately proves the explicitly selected Uvicorn+h11 missing/duplicate Host 400 before ASGI, zero app-entry/canary/reflection delta, valid unlisted single Host guard 404, and zero wire HEAD entity bytes with `content-length: 9`. Browser evidence separately proves normal plus four runtime-reachable failures at both viewports, exact GET/root-HEAD traffic, fixed `carerisk-app` alias, zero public interaction/state delta, normal-only four-radio transitions, failure-only zero-surface counts, accessibility, console, and external-request gates. Four final-digest-derived `NEVER_DEPLOY` images have exact labels and one path delta each. The receipt's five-code matrix explicitly marks `receipt_schema_invalid` as unit/component/ASGI-only, anchor-dominated, and not live-reviewed. Sentinel/root-block/max-size evidence remains defense in depth. Cleanup is proven. The test does not require `/bin/sh` to be absent.
 
 - [ ] **Step 5: Verify clean scope and provenance one final time**
 
