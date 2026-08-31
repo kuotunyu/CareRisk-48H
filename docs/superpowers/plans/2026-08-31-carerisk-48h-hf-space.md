@@ -1232,8 +1232,8 @@ git commit -m 'feat(space): present bounded evidence explorer'
 
 ```python
 ALLOWED_IMPORT_ROOTS = {
-    "__future__", "dataclasses", "hashlib", "html", "json", "logging", "math",
-    "pathlib", "re", "types", "typing", "fastapi", "gradio", "starlette", "uvicorn",
+    "__future__", "collections", "dataclasses", "hashlib", "html", "json", "logging",
+    "math", "pathlib", "re", "stat", "types", "typing", "fastapi", "gradio", "starlette", "uvicorn",
     "carerisk_space",
 }
 FORBIDDEN_IMPORT_ROOTS = {
