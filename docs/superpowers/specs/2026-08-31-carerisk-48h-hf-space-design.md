@@ -27,7 +27,7 @@ This specification authorizes no product implementation, Space creation, upload,
 - Make calibration, abstention, provenance, and claim limits understandable to portfolio reviewers within one page.
 - Ensure every quantitative UI value is parsed from the exact committed aggregate receipt rather than copied into application source.
 - Demonstrate fail-closed evidence validation and a bounded capability surface.
-- Make it technically impossible through the intended UI and public event API to enter, upload, paste, or submit arbitrary patient data.
+- Make it technically impossible through the intended static UI and outer public-surface firewall to enter, upload, paste, or submit arbitrary patient data.
 - Produce an exact allowlist export from GitHub source into a separate Hugging Face repository without mirroring GitHub history.
 - Keep runtime CPU-only, non-root, read-only except for a bounded ephemeral `/tmp`, and functional with external networking disabled.
 - Preserve Apache-2.0 code licensing while clearly separating PhysioNet data and data-derived evidence licensing and attribution.
@@ -139,18 +139,18 @@ The clean Space application is a standalone package named `carerisk_space`. It h
 | `contracts.py` | Constants, claim copy, reason codes, strict schemas, hash helpers | Public bundle bytes | Validated immutable values or bounded error code | Python standard library only |
 | `evidence.py` | Read and validate receipt, release metadata, deployment manifest; format approved evidence | Three committed JSON files | `EvidenceViewModel` or `EvidenceFailure` | `contracts.py`, standard library |
 | `scenarios.py` | Own four immutable abstract scenarios and exact-ID lookup | Enumerated scenario ID | `ScenarioViewModel` | `contracts.py`, standard library |
-| `ui.py` | Build safe or evidence-failure Gradio Blocks | Evidence result and scenario registry | Gradio application | Gradio, local units |
-| `app.py` | Thin entry point; construct once and launch on port 7860 | No user configuration | Running local server | `ui.py` |
+| `ui.py` | Pre-render the safe or evidence-failure static document and enforce the outer ASGI public-surface firewall | Evidence result and scenario registry | Zero-event Gradio Blocks plus `PublicSurfaceGuard` | Gradio, local units, minimal ASGI types |
+| `app.py` | Compose an empty FastAPI parent, mount Gradio, wrap the parent with the guard, and run fixed Uvicorn on port 7860 | No user configuration | Running local server | FastAPI, Gradio, Uvicorn, `ui.py` |
 
 Startup flow:
 
 1. Read only the three allowlisted JSON files from package-relative paths.
 2. Validate byte hashes, Git blob relationship, schemas, release relationship, and manifest path set.
 3. If any gate fails, construct the evidence-failure UI in Section 12. Do not construct scenario controls or metric cards.
-4. If all gates pass, construct the normal UI from immutable view models.
-5. During interaction, accept one enumerated scenario ID, perform exact lookup, and render only the bounded state and reason.
+4. If all gates pass, call the canonical `render_scenario` function at startup for each of the four fixed IDs and embed all four bounded results into one static HTML/CSS radio explorer.
+5. Browser interaction changes only native radio/CSS visibility among already-rendered panels. It sends no request, invokes no server event, and creates no queue, session, or event state.
 
-No callback accesses receipt files again after startup. No callback accepts arbitrary mappings, lists, files, paths, URLs, request objects, headers, cookies, query parameters, or free text.
+After startup there is no callback or event dependency. The application accepts no mappings, lists, files, paths, URLs, request objects, headers, cookies, query parameters, free text, or scenario values at the Gradio application layer.
 
 ## 7. Evidence and provenance validation
 
@@ -229,7 +229,7 @@ The clean export contains exactly these destination paths:
 | Space source | `Dockerfile` | Container build |
 | Space source | `requirements.lock` | Hash-locked runtime dependencies |
 | Space source | `requirements-dev.lock` | Hash-locked verification dependencies |
-| Space source | `app.py` | Thin launch entry point |
+| Space source | `app.py` | Fixed FastAPI mount, outer guard composition, and programmatic Uvicorn entry point |
 | Space source | `carerisk_space/__init__.py` | Package identity only |
 | Space source | `carerisk_space/contracts.py` | Contracts and validation helpers |
 | Space source | `carerisk_space/evidence.py` | Read-only evidence loader |
@@ -246,7 +246,7 @@ The clean export contains exactly these destination paths:
 | Space source | `tests/test_claim_contract.py` | Exact copy and DOM-order contract |
 | Space source | `tests/test_evidence_contract.py` | Receipt/release fail-closed contract |
 | Space source | `tests/test_scenario_contract.py` | Fixed scenario and no-score contract |
-| Space source | `tests/test_gradio_contract.py` | Component/event/API capability contract |
+| Space source | `tests/test_gradio_contract.py` | Static component/config, outer-ASGI, route, and API-absence contract |
 | Space source | `tests/test_export_contract.py` | Exact path/hash/denylist contract |
 | Space source | `tests/test_container_contract.py` | Container/runtime contract |
 
@@ -275,8 +275,8 @@ Any match is a hard export failure, including if a similarly named path is newly
 Runtime application modules may import only:
 
 - Python standard-library modules required for immutable data structures, strict JSON parsing, HTML escaping, hashing, package-relative read-only paths, and typing.
-- The exactly locked `gradio==6.26.0` package.
-- Only the Starlette composition/types required by the approved pure-ASGI boundary: `starlette.middleware.Middleware` plus `ASGIApp`, `Scope`, `Receive`, and `Send`. This does not authorize Starlette request parsing, file/static responses, network clients, background work, temporary files, or writes.
+- The exactly locked `gradio==6.26.0` package and its already locked FastAPI/Uvicorn runtime dependencies, imported only by `app.py` for the fixed parent/mount/server composition.
+- Only the Starlette ASGI interfaces required by the approved pure-ASGI boundary: `ASGIApp`, `Scope`, `Receive`, and `Send`. `PublicSurfaceGuard` is direct ASGI composition, not Starlette/FastAPI middleware registration. This does not authorize request parsing, file/static responses, network clients, background work, temporary files, or writes.
 - Local `carerisk_space` modules.
 
 Application-source AST and import-graph tests reject:
@@ -336,29 +336,38 @@ It contains no scenario control, metric value, partially parsed evidence, path, 
 
 ## 13. Gradio component, config, and API contract
 
-The normal app may contain only static HTML/Markdown output, one `Radio` input with the four exact scenario IDs, and bounded HTML output for the selected state. A button is unnecessary. No component accepts arbitrary bytes or strings.
+The normal app is a single static HTML/CSS document inside one non-interactive `gr.HTML`. At startup it calls the existing canonical `render_scenario` function exactly once for each of the four fixed scenario IDs and embeds all four escaped results. Native HTML radio controls and CSS sibling selectors switch visibility locally. There is no inline JavaScript, Gradio input component, function binding, callback, request-triggered render, POST, queue, event, session, or server-side scenario state. The evidence-failure app uses the same one-document shape but contains no radio or other control.
 
-The application and capability tests are pinned to Gradio `6.26.0`. The Gradio config contract verifies:
+The application and capability tests are pinned to Gradio `6.26.0`. The exact contract is:
 
-- `create_app` explicitly neutralizes the exact-version instance state to `dev_mode=False`, `vibe_mode=False`, `root_path=""`, `api_open=False`, and `space_id=None`. This is ordinary per-instance configuration, not a framework-global monkeypatch. Application source neither imports `os` nor reads environment variables, and poisoned-host-environment tests prove that these attributes and the launch contract do not drift.
-- No `Textbox`, `Code`, `File`, `UploadButton`, `Dataframe`, editable `JSON`, input `Image`, input `Audio`, input `Video`, chatbot, multimodal, gallery upload, or state initialized from request data.
-- The only input component is the single-select scenario radio. Its config exposes no prop or schema capability for arbitrary custom values; `choices` is exactly the four label/ID pairs, `value` is unselected, `type == "value"`, and its input schema is a string enum containing exactly the four IDs.
-- The sole event dependency has exactly one input and one bounded output. It uses the fixed internal name `api_name="select_scenario"`, `api_visibility="private"`, `api_description=False`, `preprocess=False`, `postprocess=True`, `queue=False`, `batch=False`, and `concurrency_limit=1`; it exposes no examples API. Disabling component preprocessing is a load-bearing requirement so Gradio never constructs an input-echoing choice error before the bounded callback runs. Output postprocessing remains enabled only for the callback's canonical bounded HTML.
-- Both `Blocks.get_api_info()` and the running `/gradio_api/info` response have empty `named_endpoints` and `unnamed_endpoints`. This proves that the dependency is absent from public API metadata, not that Gradio’s internal UI event transport is absent.
-- The callback independently validates exact type, a fixed maximum scenario-ID character length, and the four-ID allowlist before lookup. Direct calls and running internal-transport calls with unknown strings, oversized strings, nested data, lists, mappings, nulls, booleans, or numbers return the exact same canonical `unknown_synthetic_scenario` HTML without echoing input; direct multi-value probes are likewise rejected rather than partially consumed.
-- `space/carerisk_space/ui.py` defines a pure-ASGI `PublicSurfaceGuard`. `space/app.py` supplies exactly one `starlette.middleware.Middleware(PublicSurfaceGuard)` through `launch(app_kwargs={"middleware": [...]})`, so the guard executes before Gradio routing and before any request-body receive. It is per-application composition, not a global framework monkeypatch. The guard neither reads nor records a request body, path, query, or submitted value. For a blocked HTTP request it does not call either the downstream app or `receive`; it returns only status 404 with the fixed short body `Not Found` and fixed content metadata, with no reflected input.
-- The guard uses an exact method/path allowlist. It permits `GET` and `HEAD` for `/`; `GET` for `/config`, `/config/`, `/gradio_api/info`, and `/gradio_api/info/`; `GET` and `HEAD` for canonical package assets under `/assets/` and `/static/`; and `GET` for the fixed metadata paths `/favicon.ico`, `/theme.css`, `/robots.txt`, `/manifest.json`, `/gradio_api/app_id`, `/gradio_api/app_id/`, `/gradio_api/token`, `/gradio_api/token/`, `/gradio_api/login_check`, `/gradio_api/login_check/`, `/gradio_api/user`, `/gradio_api/user/`, `/gradio_api/startup-events`, `/gradio_api/theme.css`, and `/gradio_api/queue/status`. The only permitted write-method request is `POST` to exactly `/gradio_api/call/select_scenario` or `/gradio_api/call/select_scenario/`. The only permitted event-result request is `GET /gradio_api/call/select_scenario/<event_id>`, where `<event_id>` is one non-empty 1–128-character ASCII segment containing only letters, digits, underscore, or hyphen. Every other HTTP method/path is blocked before Gradio.
-- An asset tail is canonical only when it is a non-empty relative sequence whose slash-delimited segments each match the exact ASCII regular expression `[A-Za-z0-9][A-Za-z0-9._@+~-]*`. It contains no control or NUL byte, backslash, percent sign or percent-encoded form, `.` or `..` segment, empty segment, or doubled slash, and its ASGI `raw_path` is ASCII and equals `scope["path"].encode("ascii")` byte-for-byte. Tests apply this relationship before prefix classification. Case variants of fixed routes, alternate slashes, encoded forms, normalization ambiguities, query-shaped path tricks, and traversal are not aliases for an allowed route.
-- Explicit pre-boundary blocked families include `proxy=`, `file=`, deprecated `file/`, `upload`, `upload_progress`, `stream`, `process_recording`, `custom_component`, `component_server`, every vibe route, login/logout/openapi, queue join/data/cancel/reset/heartbeat, and generic `/api`, `/run`, or `/call` routes other than the one exact dependency transport above. Encoded, traversal, alternate-slash, doubled-slash, and case variants are blocked as well. A browser requirement for any route not listed here is a load-bearing incompatibility: implementation must stop, perform an exact Gradio `6.26.0` source audit and RED test, and return for central written approval rather than broaden a prefix or method wildcard.
-- Launch is hard-coded to `share=False`, `server_name="0.0.0.0"`, `server_port=7860`, `root_path=""`, `footer_links=[]`, `run_history=False`, `max_threads=1`, `state_session_capacity=1`, `enable_monitoring=False`, `ssr_mode=False`, `pwa=False`, `mcp_server=False`, `num_workers=1`, `strict_cors=True`, `show_error=False`, `inbrowser=False`, `debug=False`, `max_file_size=0`, and the exact `app_kwargs` middleware list above. It exposes no authentication or authentication dependency, request object, static mount, user-provided path, environment-derived configuration, or CLI-derived configuration.
-- Gradio `6.26.0` treats empty file-path lists as permission to consult environment variables, so empty lists are forbidden here. Launch retains the truthy exact sentinel `allowed_paths=["/__carerisk_no_allowed_files__"]` and `blocked_paths=["/"]`; the allowed sentinel resolves to an absolute path and must not exist. These settings and `max_file_size=0` are defense in depth only. They do not establish that Gradio's own file/upload routes are safe and are not the authoritative no-file/no-upload/no-network/no-write boundary. The authoritative application boundary is `PublicSurfaceGuard` returning before the downstream router and body receive.
-- Gradio flagging, feedback, analytics, and persistence are absent.
+- `create_app` explicitly fixes per-instance state to `dev_mode=False`, `vibe_mode=False`, `root_path=""`, `api_open=False`, and `space_id=None`. Product source does not import `os` or read environment variables.
+- `Blocks.get_config_file()` has one non-interactive HTML component in the normal and each failure state, zero input components, `dependencies == []`, and no functions (`len(app.fns) == 0`). `Blocks.get_api_info()` and the blocked public `/gradio_api/info` route cannot expose endpoints; direct in-process metadata is exactly `{"named_endpoints": {}, "unnamed_endpoints": {}}`.
+- The normal document contains exactly four native radios in one named group, four exact fixed IDs/labels, and four pre-rendered scenario panels. The claim ceiling and English subtitle precede the first focusable radio in DOM order. CSS makes only the checked radio's corresponding panel visible; keyboard focus and checked-state transitions work without JavaScript or network activity. All five evidence-failure documents contain zero controls, metrics, or scenarios.
+- No Gradio `Radio`, `Textbox`, `Code`, `File`, `UploadButton`, `Dataframe`, editable `JSON`, input media, chatbot, multimodal component, state, examples, flagging, feedback, analytics, persistence, or request object exists.
 
-Tests inspect `Blocks.get_config_file()`, the pinned event dependency object, instance attributes, and the complete launch argument mapping; assert that framework input preprocessing is disabled and output postprocessing remains enabled; compare both in-process and running-server API metadata to the exact empty-endpoint object; invoke the callback directly with adversarial values; and submit the same adversarial matrix through the sole running internal transport. Every invalid direct result and every parsed transport output must equal the canonical unknown-state HTML byte-for-byte. A nested sentinel payload and an oversized string are additionally checked against the raw HTTP response and captured server logs; neither their raw value nor representation may appear.
+The server composition is load-bearing. `space/app.py` creates an otherwise empty `FastAPI(docs_url=None, redoc_url=None, openapi_url=None)`, calls `gr.mount_gradio_app(parent, demo, path="/", ...)`, then assigns `app = PublicSurfaceGuard(parent)` and passes that directly to programmatic `uvicorn.run`. The guard is not registered through `app_kwargs`, `FastAPI.add_middleware`, or a Starlette middleware list. It is therefore outside the FastAPI server-error layer and the mounted Gradio application, including Gradio's inner Brotli, CORS, router, and body parsing. Framework-global monkeypatching is forbidden.
 
-Pure-ASGI unit probes give each dangerous scope both a downstream bomb and a receive bomb and require neither to be called. The fixed 404 response and captured server output must contain none of the raw or decoded path, URL, filename, multipart canary, or `repr(payload)`. Running integration probes replace Gradio outbound URL fetch and temporary-file construction with bombs, record the temp root before and after, and exercise URL-file, local-file, zero-byte, nonzero, oversized upload, encoded, traversal, alternate-slash, case, and doubled-slash requests. Every probe must stop in the middleware with the exact bounded response, no temp delta, no network call, no framework traceback, and no response or log echo, while main/config/info and the private scenario event remain healthy.
+The exact Gradio `6.26.0` mount arguments are `path="/"`, `server_name="0.0.0.0"`, `server_port=7860`, `footer_links=[]`, `run_history=False`, `root_path=""`, `allowed_paths=["/__carerisk_no_allowed_files__"]`, `blocked_paths=["/"]`, `show_error=False`, `max_file_size=0`, `ssr_mode=False`, `enable_monitoring=False`, `pwa=False`, and `mcp_server=False`, with no authentication, authentication dependency, favicon, custom JavaScript/head path, custom static mount, or environment/CLI input. The sentinel must resolve to an absolute nonexistent path. The sentinel, root block, upload-size setting, and environment scrub are defense in depth only; the outer guard is authoritative.
 
-An exact Gradio `6.26.0` registered-route inventory test recursively expands FastAPI `_IncludedRouter.original_router` and classifies every route/method in one of two explicit sets: safe-required behind the public allowlist, or pre-boundary-blocked. Any new, missing, or unclassified route/method fails. Under poisoned `GRADIO_*`, `SPACE_ID`, and `PORT` values, tests also require fixed instance/launch state, a healthy permitted surface, an absent file sentinel, and unavailable run-history/monitoring. Browser and container review record every actual request path/method and require all of them to satisfy the exact allowlist, middleware blocked count zero during normal use, external request count zero, and console error count zero. These tests acknowledge unsafe internal Gradio routes and prove they are unreachable from the public surface; they do not claim those framework routes are intrinsically safe.
+Uvicorn is called with the application object rather than an import string and with exact programmatic values `host="0.0.0.0"`, `port=7860`, `workers=1`, `proxy_headers=False`, `forwarded_allow_ips=""`, `access_log=False`, `server_header=False`, `date_header=False`, `reload=False`, `factory=False`, `env_file=None`, and `log_config=None`. The entry point has no CLI parsing or environment-derived configuration. Docker continues to invoke `python app.py`.
+
+`PublicSurfaceGuard` passes only ASGI `lifespan` scopes to the parent. A WebSocket scope sends exactly `{"type": "websocket.close", "code": 1008, "reason": ""}` without calling downstream or `receive`. Any non-HTTP, non-WebSocket, non-lifespan scope returns without downstream, `receive`, or protocol-invalid output. For HTTP, the guard may inspect only `method`, `path`, `raw_path`, `query_string`, and headers needed for classification. It never logs those values and never reads a request body.
+
+The public HTTP allowlist is intentionally static and read-only:
+
+- `GET` or `HEAD` for exact `/` and `/config`, each with an empty query string;
+- `GET` or `HEAD` for exact `/theme.css` only with query bytes `v=8ad6f9b14414574fe6c6d9b4362dcdd63dfdc66d8c34cbef0982888dfc44ff04`. This value is the SHA-256 of the default-theme CSS generated by pinned Gradio `6.26.0`, must equal `demo.get_config_file()["theme_hash"]`, and is frozen by a response-content hash test; no other theme query or bare theme path is allowed;
+- `GET` or `HEAD` for `/assets/<tail>` and `/static/<tail>` only when the tail is canonical, every suffix is one of the source-audited packaged read-only set `.js`, `.css`, `.svg`, `.ttf`, `.woff`, or `.woff2`, and route-inventory/source tests prove the corresponding Gradio route is rooted only in its installed package asset directory.
+
+All other HTTP methods, paths, or queries return exact status 404 with body `Not Found`, fixed `content-type: text/plain; charset=utf-8`, fixed `content-length: 9`, no CORS header, no compression, and no reflected input. This includes every `POST` and `OPTIONS`; all `/gradio_api`, API, run, call, queue, session, file, upload, proxy, component, streaming, recording, monitoring, authentication, OpenAPI, docs, vibe, event, and metadata route; and all encoded, traversal, alternate-slash, doubled-slash, or case variants.
+
+The canonical-path predicate runs before allowlist classification for every HTTP request. `raw_path` must be ASCII and equal `path.encode("ascii")` byte-for-byte. The path contains no percent sign or percent-encoded form, backslash, control/NUL/non-ASCII character, `.` or `..` segment, empty interior segment, doubled slash, case alias, Unicode normalization, or alternate separator. Asset tails are non-empty relative paths whose segments each match `[A-Za-z0-9][A-Za-z0-9._@+~-]*`; a terminal suffix alone never authorizes a path outside the exact two package prefixes.
+
+Before forwarding an otherwise permitted `GET`/`HEAD`, the guard rejects any `Transfer-Encoding`, malformed or duplicated `Content-Length`, or numeric `Content-Length` other than zero. It then constructs a new downstream ASGI scope rather than forwarding the client scope. The sanitized scope fixes `scheme="http"`, `root_path=""`, `server=("127.0.0.1", 7860)`, `client=("127.0.0.1", 0)`, and the sole header `host: 127.0.0.1:7860`; it preserves only the already-validated method, path, raw path, query, HTTP version, and ASGI version. Origin, Cookie, Authorization, every `X-*`, Forwarded, User-Agent, and all other attacker-controlled headers are absent downstream. Local, container, and browser tests must prove this fixed scope remains compatible with the actual proxy/request graph. A Hugging Face candidate incompatibility is a stop-and-review condition, never permission to forward arbitrary headers.
+
+Pure-ASGI probes pair every hostile scope with downstream and receive bombs and require both counts to remain zero. Response and captured output must exclude raw/decoded paths, query, URL, filename, multipart/body canaries, header/cookie canaries, and their representations. Running probes replace Gradio outbound fetch and temporary-file creation with bombs and snapshot the temp root around URL-file, local-file, zero/nonzero/oversized upload, hostile query/header/cookie, CORS/Brotli, canonical-path, and alternate-scope matrices. Every blocked request must be intercepted by the outer guard with no network, temp delta, body receive, downstream call, CORS, compression, traceback, or echo. Permitted root/config/theme/package assets remain healthy and receive only the sanitized scope.
+
+An exact Gradio `6.26.0` route inventory recursively expands both the parent mount and the mounted application's FastAPI `_IncludedRouter.original_router`. Every route/method must be explicitly classified as required read-only packaged surface or outer-boundary-blocked; new, missing, or unclassified routes fail. Browser review records exact method/path/query tuples and requires all app traffic to be `GET`/`HEAD` in the allowlist, with zero guard blocks, POSTs, event/session requests, external requests, and console errors. It also verifies keyboard radio switching and before/after panel visibility. If the mounted signature, outer ordering, route inventory, browser request graph, fixed sanitized scope, or later Hugging Face Docker behavior differs, implementation stops for exact source audit, a RED test, and central written approval; no wildcard is added.
 
 ## 14. Space card and licensing
 
@@ -392,7 +401,7 @@ The card links to the exact GitHub `v0.2.0` tag, source repository, release mani
 - Formatter tests proving every rendered quantitative value comes from parsed receipt fields.
 - Scenario registry tests proving exactly four IDs, immutable fields, no numeric or patient-like fields, no score/probability/threshold strings, and fail-closed unknown input.
 - Source AST/import boundary and no-write/no-network client tests.
-- Gradio config/event/API capability tests from Section 13.
+- Gradio static-config, outer-ASGI, route-inventory, and API-absence capability tests from Section 13.
 - Exact clean-export path, size, hash, symlink, denylist, secret-pattern, private-key, large-file, and binary-signature tests.
 - Space card metadata, license boundary, citation, NOTICE, SBOM, and one-license-record-per-lock-package tests.
 - `ruff`, strict type checking for Space modules, `pip check`, and full Space-specific pytest.
@@ -405,7 +414,7 @@ Tests must not import the existing dashboard, model package, data parser, guard,
 - Verify final user is non-root and no shell or writable workspace exists; inventory and execute the required `/usr/bin/env` binary without invoking a shell.
 - Start the candidate with adversarial `GRADIO_*`, `SPACE_ID`, `PORT`, and secret-shaped Docker environment values; the fixed poison matrix includes `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT` in addition to analytics, watch, vibe, hot-reload, run-history, SSR, MCP, allowed/blocked paths, root path, share, and monitoring variables. An exact Gradio `6.26.0` source-derived environment-read inventory must be covered as well. Prove that PID 1 and every child receive exactly the fixed allowlist rebuilt by `/usr/bin/env -i`, that the app still binds fixed port 7860, and that no runtime behavior or capability is overridden.
 - Run under read-only root, bounded tmpfs, two CPUs, no GPU, and `--network none`.
-- Perform launch-free app construction and a same-container loopback HTTP health/claim/config probe. Verify normal static assets still load, the allowed-path sentinel does not exist, and monitoring/run-history functionality cannot be obtained. Then exercise the exact pre-Gradio allowlist and blocked matrix with downstream/body-receive, outbound-fetch, and temporary-file bombs: blocked requests must return the fixed 404 before Gradio, with no network, temp-file delta, or echo. Root blocking and `max_file_size=0` are checked only as defense in depth, never as the authoritative file/upload boundary.
+- Perform server-free app construction and a same-container loopback HTTP health/claim/config/theme/package-asset probe. Verify the parent/mount/outer-wrapper order, zero dependencies/functions, the absent allowed-path sentinel, and unavailable monitoring/run-history. Then exercise the exact outer allowlist and blocked matrix with downstream/body-receive, outbound-fetch, and temporary-file bombs: blocked requests must return the fixed 404 outside FastAPI/Gradio, with no CORS, compression, network, temp-file delta, or echo. Root blocking and `max_file_size=0` are checked only as defense in depth.
 - Verify normal and each bounded evidence-failure startup mode without altering committed files.
 - Generate and compare image SBOM to the committed dependency SBOM; inventory differences fail.
 - Scan vulnerabilities and licenses under the contract in Section 10.
@@ -416,12 +425,12 @@ For both `1440×900` and `390×844`:
 
 - Full claim ceiling visible in initial viewport before the first scenario control.
 - No horizontal overflow; body text at least 16 px; control target at least 44×44 CSS pixels.
-- Logical heading hierarchy, programmatic radio label, keyboard-only scenario selection, visible focus, and `aria-live` state announcement.
+- Logical heading hierarchy, a `fieldset`/`legend` radio-group name, exact label/control association, keyboard-only scenario selection, visible focus, and accessibility-tree visibility matching the checked static panel.
 - State and reason are not conveyed by color alone; no red/green clinical traffic-light treatment.
 - Four fixed scenarios render the exact allowed state/reason pair and never render score, probability, risk, recommendation, threshold comparison, patient-like values, or stale prior state.
 - Evidence-failure page exposes no controls or metrics.
 - WCAG 2.2 AA automated checks have zero serious or critical findings; manual keyboard and screen-reader-name review is recorded.
-- Browser console has zero errors and no runtime external requests beyond the Hugging Face platform shell. App iframe requests remain same-origin/local. The review records every app request method/path, proves each is accepted by the exact `PublicSurfaceGuard` allowlist, and records zero middleware blocks during normal browser use. A newly required path is a stop-and-review condition, not permission to broaden a wildcard.
+- Browser console has zero errors and no runtime external requests beyond the Hugging Face platform shell. App iframe requests remain same-origin/local. The review records every exact app request method/path/query, proves each is an allowlisted `GET`/`HEAD`, and records zero outer-guard blocks, POSTs, and event/session requests during normal browser use. A newly required path, query, method, or forwarded header is a stop-and-review condition, not permission to broaden a wildcard.
 
 ### 15.4 Cold-start review
 
@@ -472,7 +481,7 @@ Implementation is eligible for deployment review only when all statements below 
 - Receipt, release, tag, app-source commit, export paths, hashes, locks, base digest, SBOM, and licenses are mutually consistent.
 - App source has no model/data/scoring imports, no product filesystem writes, no environment configuration, and no outbound network capability.
 - Container passes non-root, read-only, bounded tmpfs, CPU-only, network-disabled smoke; its `/usr/bin/env -i` entrypoint removes injected environment values before import and preserves only the reviewed allowlist.
-- Gradio config and direct/internal event probes prove there is no arbitrary scenario-value entry; the exact pre-Gradio `PublicSurfaceGuard`, route inventory, downstream/receive/fetch/temp bombs, and container/browser records separately prove no public upload/file capability or side effect.
+- Gradio config proves zero inputs, dependencies, and functions; the pre-rendered HTML/CSS explorer proves scenario switching requires no server request. The truly outer `PublicSurfaceGuard`, exhaustive parent/inner route inventory, sanitized permitted scopes, downstream/receive/fetch/temp bombs, and container/browser records prove no public data-entry, upload/file, network, write, CORS, compression, queue, event, or session capability.
 - Normal, four scenario, and five evidence-failure states pass desktop/mobile/accessibility/live review.
 - Space creation, upload, and GitHub About remain unperformed until their explicit gates are approved.
 
