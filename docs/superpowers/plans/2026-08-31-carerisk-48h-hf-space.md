@@ -24,7 +24,8 @@
 - Product code does not import `os`, reads no environment variable, and performs no network request, process spawn, shell call, filesystem write, persistence, analytics, telemetry, or dynamic import. Gradio exact-version instance and launch values are explicit per-instance configuration, never framework-global monkeypatches.
 - Gradio is fixed exactly at `6.26.0`. Its one UI dependency is private in API metadata but its internal event transport is acknowledged and adversarially probed; no test may infer that the internal transport is absent.
 - `create_app` fixes `dev_mode=False`, `vibe_mode=False`, `root_path=""`, `api_open=False`, and `space_id=None`. Launch fixes `share=False`, `server_name="0.0.0.0"`, `server_port=7860`, `root_path=""`, `footer_links=[]`, `run_history=False`, `max_threads=1`, `state_session_capacity=1`, `enable_monitoring=False`, `ssr_mode=False`, `pwa=False`, `mcp_server=False`, `num_workers=1`, `strict_cors=True`, `show_error=False`, `inbrowser=False`, `debug=False`, and `max_file_size=0`.
-- Because Gradio `6.26.0` consults environment variables for falsy path lists, launch uses the truthy exact sentinels `allowed_paths=["/__carerisk_no_allowed_files__"]` and `blocked_paths=["/"]`. The allowed sentinel is an absolute non-existent path and the root block has priority; the claim is no effective application file-serving capability, not that Gradio has no internal file routes.
+- `space/carerisk_space/ui.py` owns the pure-ASGI `PublicSurfaceGuard`; `space/app.py` passes exactly one `starlette.middleware.Middleware(PublicSurfaceGuard)` through `launch(app_kwargs={"middleware": [...]})`. Its exact method/path allowlist is the authoritative public boundary and runs before Gradio routing or request-body receive. Blocked HTTP requests never call downstream or `receive` and return only fixed 404 `Not Found` without echo.
+- Because Gradio `6.26.0` consults environment variables for falsy path lists, launch retains the truthy exact sentinels `allowed_paths=["/__carerisk_no_allowed_files__"]` and `blocked_paths=["/"]`; the allowed sentinel is an absolute non-existent path. These and `max_file_size=0` are defense in depth only, not proof that Gradio file/upload routes are safe. No effective public file-serving/upload capability is proved by the pre-Gradio guard.
 - The final Docker exec-form `ENTRYPOINT` uses `/usr/bin/env -i` before Python import and rebuilds only the reviewed fixed environment allowlist. Its exec-form `CMD` remains `["python", "app.py"]`; neither `SPACE_ID`, `PORT`, secrets, nor arbitrary injected variables survive. Candidate verification poisons Docker `GRADIO_*`, `SPACE_ID`, and `PORT` values and proves PID 1/children and runtime behavior cannot drift.
 - Runtime is CPU-only, non-root, and read-only except framework-owned operations in bounded ephemeral `/tmp`. No persistent service is started during ordinary unit tests.
 - The approved “no shell” interpretation is precise: the runtime account is non-login with `/usr/sbin/nologin`, the app uses exec-form startup and never invokes a shell, and unnecessary shell utilities are excluded. Do not assert that Debian slim physically lacks `/bin/sh`.
@@ -688,7 +689,7 @@ git commit -m 'feat(space): add fixed synthetic gate states'
 
 **Interfaces:**
 - Consumes: `EvidenceLoadResult`, `SCENARIOS`, and `render_scenario`.
-- Produces: `create_app(bundle_root: Path | None = None) -> gr.Blocks`, exact DOM order, one bounded event, and a static evidence-failure page.
+- Produces: `create_app(bundle_root: Path | None = None) -> gr.Blocks`, `PublicSurfaceGuard(app: ASGIApp)`, exact DOM order, one bounded event, an exact pre-Gradio method/path allowlist, and a static evidence-failure page.
 
 - [ ] **Step 1: Write failing Gradio component/config tests**
 
@@ -768,6 +769,13 @@ POISONED_FRAMEWORK_ENV = {
     "GRADIO_ROOT_PATH": "/CANARY_7419",
     "GRADIO_SHARE": "true",
     "GRADIO_MONITORING_ENABLED": "true",
+    "GRADIO_DEBUG": "true",
+    "GRADIO_SERVER_NAME": "CANARY_7419.invalid",
+    "GRADIO_SERVER_PORT": "9998",
+    "GRADIO_NUM_WORKERS": "9",
+    "GRADIO_NODE_PATH": "/CANARY_7419/node",
+    "GRADIO_LOCAL_DEV_MODE": "true",
+    "GRADIO_NODE_SERVER_PORT": "9997",
     "SPACE_ID": "CANARY_7419/poisoned-space",
     "PORT": "9999",
 }
@@ -806,6 +814,26 @@ def test_failure_page_has_no_controls_or_metrics(failure_bundle: Path, failure_c
     assert '"type": "radio"' not in serialized
     for metric in ("0.555", "0.870", "0.087", "0.008"):
         assert metric not in serialized
+
+def test_public_surface_guard_blocks_without_downstream_or_body_receive() -> None:
+    for scope in dangerous_http_scopes():
+        downstream = DownstreamBomb()
+        receive = ReceiveBomb()
+        messages = run_asgi(PublicSurfaceGuard(downstream), scope, receive)
+        assert downstream.calls == 0
+        assert receive.calls == 0
+        assert messages == fixed_not_found_messages()
+        serialized = b"".join(message.get("body", b"") for message in messages)
+        assert serialized == b"Not Found"
+        for forbidden in scope_canaries(scope):
+            assert forbidden not in serialized
+
+def test_public_surface_allowlist_is_exact_and_assets_are_canonical() -> None:
+    assert accepted_scope_keys() == EXPECTED_PUBLIC_SCOPE_KEYS
+    for scope in allowed_http_scopes():
+        assert is_allowed_public_http_scope(scope) is True
+    for scope in encoded_traversal_case_and_alternate_slash_scopes():
+        assert is_allowed_public_http_scope(scope) is False
 ```
 
 - [ ] **Step 2: Run RED**
@@ -858,15 +886,28 @@ def create_app(bundle_root: Path | None = None) -> gr.Blocks:
     return app
 ```
 
+`PublicSurfaceGuard` is implemented in this same `ui.py`; no eighth Task 5 file is added. It is pure ASGI and stores only the wrapped `ASGIApp`. For HTTP scopes it evaluates method, decoded `path`, and `raw_path` without calling `receive`. A blocked request sends exactly `http.response.start` with status 404 and fixed `content-type: text/plain; charset=utf-8` / `content-length: 9`, then `http.response.body` with `b"Not Found"`; it does not call the wrapped app. ASGI lifespan scope is passed through solely for server startup/shutdown, not treated as a public request; no WebSocket public surface is allowed.
+
+The exact HTTP allowlist is:
+
+- `GET`/`HEAD /`;
+- `GET /config[/]` and `GET /gradio_api/info[/]`;
+- `GET`/`HEAD /assets/<canonical-safe-package-asset>` and `/static/<canonical-safe-package-asset>`;
+- `GET` for `/favicon.ico`, `/theme.css`, `/robots.txt`, `/manifest.json`, `/gradio_api/app_id[/]`, `/gradio_api/token[/]`, `/gradio_api/login_check[/]`, `/gradio_api/user[/]`, `/gradio_api/startup-events`, `/gradio_api/theme.css`, and `/gradio_api/queue/status`;
+- `POST /gradio_api/call/select_scenario[/]`;
+- `GET /gradio_api/call/select_scenario/<event_id>`, where the event ID is one 1..128 ASCII alphanumeric/underscore/hyphen segment.
+
+The canonical asset predicate first requires `raw_path == path.encode("ascii")` byte-for-byte. The tail must be non-empty and relative, and every slash-delimited segment must match exactly `[A-Za-z0-9][A-Za-z0-9._@+~-]*`; it rejects control/NUL, backslash, every literal or encoded percent ambiguity, `.`/`..`, empty segments, doubled slashes, and normalization, fixed-route case, or alternate-slash variants. Explicit blocked families cover `proxy=`, `file=`, deprecated `file/`, `upload`, `upload_progress`, `stream`, `process_recording`, `custom_component`, `component_server`, every vibe route, login/logout/openapi, queue join/data/cancel/reset/heartbeat, and generic `/api`, `/run`, or `/call` routes except the exact private dependency above. Every other method/path fails before Gradio. The guard does not log the path, query, body, URL, filename, or any submitted representation.
+
 The first `gr.HTML` owns `#carerisk-space-root`, header, complete `#claim-ceiling`, and opening scenario section. No link or focusable element appears before the claim. The evidence section displays only receipt-backed approved fields and the provenance section places all links after the radio. Failure HTML includes one bounded code and no raw exception.
 
 Task 5 also adds `MAX_SCENARIO_ID_CHARS = max(len(item) for item in SCENARIO_IDS)` in `scenarios.py` and makes `select_scenario` return `UNKNOWN_SCENARIO` before registry iteration when `type(value) is not str` or `len(value) > MAX_SCENARIO_ID_CHARS`. This is the callback-owned type/size boundary; the exact four-ID lookup remains the final acceptance gate. The exploding-registry test proves an oversized value cannot reach lookup. The event's `preprocess=False` is load-bearing, not optional: it routes the opaque transport value to this bounded validator rather than Gradio's choice validator, which can echo invalid values in its error. `postprocess=True` remains fixed so only the callback's canonical HTML crosses the output boundary.
 
 When startup evidence is invalid, `create_app` logs exactly one structured bounded failure code and no exception, path, artifact bytes, or submitted value. The logger receives `EvidenceFailure.code` only. Tests capture the startup log for `manifest_canary_bundle`, require the bounded code `deployment_manifest_invalid`, and prove `CANARY_7419` and its representation are absent, preserving Design Section 12 without weakening it.
 
-The assignments after the `Blocks` context are exact Gradio `6.26.0` per-instance configuration, not framework-global monkeypatching. Product modules do not import `os` or read environment variables. Tests poison `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `SPACE_ID`, and `PORT` before construction and prove that the exact instance attributes and component/config capabilities remain unchanged.
+The assignments after the `Blocks` context are exact Gradio `6.26.0` per-instance configuration, not framework-global monkeypatching. Product modules do not import `os` or read environment variables. Tests poison every listed framework variable, including `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, before construction and prove that the exact instance attributes, launch values, middleware, and component/config capabilities remain unchanged.
 
-`space/app.py` constructs once and launches with these hard-coded arguments and no others: `share=False`, `server_name="0.0.0.0"`, `server_port=7860`, `root_path=""`, `footer_links=[]`, `run_history=False`, `max_threads=1`, `state_session_capacity=1`, `enable_monitoring=False`, `ssr_mode=False`, `pwa=False`, `mcp_server=False`, `num_workers=1`, `strict_cors=True`, `show_error=False`, `inbrowser=False`, `debug=False`, `max_file_size=0`, `allowed_paths=["/__carerisk_no_allowed_files__"]`, and `blocked_paths=["/"]`. The truthy allowed sentinel is resolved as an absolute path and must not exist; root blocking takes priority. The entry point has no authentication or authentication dependency, request object, static mount, user-supplied path, or other user configuration. It must not read CLI arguments or environment variables. The pinned contract acknowledges Gradio's internal UI/file routes while proving no effective arbitrary data-entry, upload, file-serving, monitoring, or run-history capability.
+`space/app.py` imports only `create_app`, `PublicSurfaceGuard`, and `starlette.middleware.Middleware`; constructs once; and launches with these hard-coded arguments and no others: `share=False`, `server_name="0.0.0.0"`, `server_port=7860`, `root_path=""`, `footer_links=[]`, `run_history=False`, `max_threads=1`, `state_session_capacity=1`, `enable_monitoring=False`, `ssr_mode=False`, `pwa=False`, `mcp_server=False`, `num_workers=1`, `strict_cors=True`, `show_error=False`, `inbrowser=False`, `debug=False`, `max_file_size=0`, `allowed_paths=["/__carerisk_no_allowed_files__"]`, `blocked_paths=["/"]`, and `app_kwargs={"middleware": [Middleware(PublicSurfaceGuard)]}`. The entry point has no authentication or authentication dependency, request object, static mount, user-supplied path, or other user configuration. It must not read CLI arguments or environment variables. The sentinel, root block, and upload-size setting remain defense in depth. The only authoritative public file/upload/network/write boundary is the exact middleware running before Gradio routing and body receive.
 
 - [ ] **Step 4: Add direct internal-transport adversarial probes**
 
@@ -930,7 +971,16 @@ def test_running_api_metadata_is_empty(running_local_app: RunningLocalApp) -> No
 def test_entrypoint_launch_contract_is_exact_under_poisoned_environment(
     captured_launch: Mapping[str, object],
 ) -> None:
-    assert captured_launch == {
+    launch = dict(captured_launch)
+    app_kwargs = launch.pop("app_kwargs")
+    assert isinstance(app_kwargs, dict)
+    assert set(app_kwargs) == {"middleware"}
+    middleware = app_kwargs["middleware"]
+    assert isinstance(middleware, list) and len(middleware) == 1
+    assert middleware[0].cls is PublicSurfaceGuard
+    assert middleware[0].args == ()
+    assert middleware[0].kwargs == {}
+    assert launch == {
         "share": False,
         "server_name": "0.0.0.0",
         "server_port": 7860,
@@ -953,27 +1003,49 @@ def test_entrypoint_launch_contract_is_exact_under_poisoned_environment(
         "blocked_paths": ["/"],
     }
 
-def test_running_surface_has_no_effective_file_history_or_monitoring_capability(
+def test_registered_gradio_routes_are_exhaustively_classified(
     running_local_app: RunningLocalApp,
+) -> None:
+    registered = recursively_expand_routes(
+        running_local_app.fastapi_app,
+        included_router_attribute="original_router",
+    )
+    classified = classify_gradio_626_routes(registered)
+    assert classified.unclassified == frozenset()
+    assert classified.safe_required == EXPECTED_SAFE_REQUIRED_ROUTE_METHODS
+    assert classified.pre_boundary_blocked == EXPECTED_PRE_BOUNDARY_BLOCKED_ROUTE_METHODS
+
+def test_running_surface_guard_precedes_gradio_fetch_temp_and_body_capabilities(
+    running_local_app: RunningLocalApp,
+    gradio_outbound_fetch_bomb: OutboundFetchBomb,
+    gradio_tempfile_bomb: TemporaryFileBomb,
+    temp_entry_snapshot: Callable[[], frozenset[str]],
 ) -> None:
     assert get(running_local_app.base_url, "/").status_code == 200
     assert get(running_local_app.base_url, "/config").status_code == 200
+    assert get(running_local_app.base_url, "/gradio_api/info").status_code == 200
     assert_static_ui_assets_load(running_local_app.base_url)
     sentinel = Path("/__carerisk_no_allowed_files__").resolve(strict=False)
     assert sentinel.is_absolute()
     assert not sentinel.exists()
     assert_capability_unavailable(running_local_app.base_url, "run_history")
     assert_capability_unavailable(running_local_app.base_url, "monitoring")
-    assert_file_and_upload_probes_denied_without_echo(
-        running_local_app.base_url,
-        requested_path="/CANARY_7419",
-        expected_max_upload_size=0,
-    )
+    before = temp_entry_snapshot()
+    for probe in url_local_upload_and_ambiguity_probes():
+        response = send_probe(running_local_app.base_url, probe)
+        assert response.status_code == 404
+        assert response.content == b"Not Found"
+        assert_probe_not_echoed(response, probe)
+    assert temp_entry_snapshot() == before
+    assert gradio_outbound_fetch_bomb.calls == 0
+    assert gradio_tempfile_bomb.calls == 0
 ```
 
 The running test discovers the sole private dependency from `/config`, asserts its one-input/one-output bound and fixed event metadata, and submits the full adversarial matrix through that dependency. With event preprocessing disabled, every invalid payload must reach the bounded callback and return HTTP 200 whose sole parsed output exactly equals `render_scenario(None)`; status alternatives and substring-only no-echo checks are insufficient because framework-generated choice errors may include the raw value. The nested and oversized sentinel probes also require the sentinel and `repr(payload)` to be absent from both the raw response and the fixture's captured logging/stdout/stderr. The evidence-failure startup probe separately requires exactly the bounded reason and no manifest sentinel in captured logs. The test also verifies that `/gradio_api/info` returns HTTP 200 with exactly empty `named_endpoints` and `unnamed_endpoints`, matching `Blocks.get_api_info()`.
 
-The poisoned-environment fixture covers application construction, launch capture, and a running server. It requires main/config HTTP 200 and normal static UI assets while proving the allowed sentinel is absent, root blocking wins, `max_file_size` is zero, and monitoring, run-history, arbitrary file-read, and upload capabilities cannot be obtained. `assert_capability_unavailable` accepts the framework's bounded denial behavior without fixing 403 or 404 as the unique cross-deployment status. Every denied file/upload response and captured log must exclude the requested path, file bytes, canary, and `repr(payload)`. These probes recognize internal UI and file transports and prove bounded capabilities; they do not claim those framework routes are absent. The launch-contract test captures and compares the complete exact mapping above, not a subset or default-derived configuration.
+The poisoned-environment fixture covers application construction, launch capture, and a running server. The pure-ASGI unit matrix pairs dangerous URL-file, local-file, zero/nonzero/oversized upload, encoded, traversal, doubled/alternate-slash, case-variant, generic API/run/call, queue, vibe, login, openapi, component, streaming, and recording scopes with downstream and receive bombs; neither bomb may fire. Its fixed response and captured server output exclude raw/decoded path, URL, filename, multipart canary, and `repr(payload)`. Running integration replaces Gradio outbound fetch and temporary-file creation with bombs and proves the same probes are intercepted before either capability, with no temp-root delta, network call, request-body receive, response/log echo, or framework traceback. Main/config/info and the private event remain GREEN.
+
+The exact route-inventory test recursively expands FastAPI `_IncludedRouter.original_router`; every Gradio `6.26.0` registered route/method must be explicitly classified as safe-required or pre-boundary-blocked, and a new or unclassified item fails. `allowed_paths`, `blocked_paths`, and `max_file_size` are still asserted but only as defense-in-depth state. They are never used to claim the framework route itself is safe. The launch-contract test captures and compares the complete exact mapping above, not a subset or default-derived configuration. If launch middleware ordering, normal browser route use, or later HF Docker behavior requires any non-allowlisted route, stop for exact source audit, a RED test, and central written review; do not add a generic prefix or method wildcard.
 
 - [ ] **Step 5: Run GREEN and all six UI states**
 
@@ -982,7 +1054,7 @@ $env:PYTHONPATH = (Resolve-Path space)
 .venv-space\Scripts\python.exe -m pytest space/tests/test_claim_contract.py space/tests/test_evidence_contract.py space/tests/test_scenario_contract.py space/tests/test_gradio_contract.py -q
 ```
 
-Expected: validated normal state plus all five bounded evidence-failure states pass; the normal state has exactly one input and one event.
+Expected: validated normal state plus all five bounded evidence-failure states pass; the normal state has exactly one input and one event; middleware unit/integration bombs prove pre-router/pre-receive interception; and every exact Gradio `6.26.0` route/method is classified.
 
 - [ ] **Step 6: Commit the exact files**
 
@@ -1007,7 +1079,7 @@ git commit -m 'feat(space): present bounded evidence explorer'
 ```python
 ALLOWED_IMPORT_ROOTS = {
     "__future__", "dataclasses", "hashlib", "html", "json", "logging", "math",
-    "pathlib", "types", "typing", "gradio", "carerisk_space",
+    "pathlib", "types", "typing", "gradio", "starlette", "carerisk_space",
 }
 FORBIDDEN_IMPORT_ROOTS = {
     "app", "carerisk48h", "joblib", "pickle", "cloudpickle", "dill",
@@ -1027,6 +1099,8 @@ def test_application_has_no_write_env_process_network_or_dynamic_code_capability
 ```
 
 `scan_capabilities` must identify write/append/update `open`, `Path.write_text`, `Path.write_bytes`, mkdir, rename, replace, delete, environment reads, `eval`, `exec`, dynamic import, process spawn, shell execution, network client construction, file watchers, and arbitrary absolute/current/home path discovery.
+
+The only Starlette application imports permitted are the minimal ASGI/middleware types needed by the approved guard: `starlette.middleware.Middleware` in `space/app.py` and `ASGIApp`, `Scope`, `Receive`, and `Send` type interfaces in `space/carerisk_space/ui.py`. This allowance does not permit request parsing, file/static responses, network clients, temporary-file APIs, background tasks, environment access, or filesystem writes. The source test requires exactly one `Middleware(PublicSurfaceGuard)` in the launch `app_kwargs` and rejects any other middleware, mounted ASGI application, broad router, or framework monkeypatch.
 
 - [ ] **Step 2: Run RED**
 
@@ -1520,6 +1594,8 @@ class LiveReviewRecord:
     critical_accessibility_findings: int
     console_errors: tuple[str, ...]
     external_app_requests: tuple[str, ...]
+    app_request_method_paths: tuple[tuple[str, str], ...]
+    middleware_blocked_count: int
     first_http_200_seconds: float
     claim_visible_seconds: float
     partial_metrics: bool
@@ -1539,11 +1615,17 @@ def assert_review_passed(record: LiveReviewRecord) -> None:
         raise ReviewFailure("control accessibility")
     if record.console_errors or record.external_app_requests:
         raise ReviewFailure("console or external request")
+    if record.middleware_blocked_count:
+        raise ReviewFailure("normal browser request blocked by public-surface guard")
+    if not all(is_expected_public_scope(method, path) for method, path in record.app_request_method_paths):
+        raise ReviewFailure("browser used a non-allowlisted app route")
     if record.partial_metrics or record.download_or_model_initialization:
         raise ReviewFailure("partial evidence or runtime download")
 ```
 
-The Python runner has two explicit modes. Container cold-start mode starts the app image with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` to probe HTTP 200 and exact claim copy on container loopback, so no host port or external network is required. Browser-review mode creates a temporary Docker `--internal` network, starts the final app image and the exact pinned Playwright reviewer stage on that network, drives Playwright at both exact viewports, selects all four scenarios by keyboard, tests normal plus each of the five failure bundles, runs automated WCAG 2.2 AA checks, and records console/request evidence. The internal network permits reviewer-to-app traffic but has no external route. Browser review performs no package, browser, or system dependency download. The two modes are separate evidence: browser review never substitutes for the stricter `--network none` container smoke.
+The Python runner has two explicit modes. Container cold-start mode starts the app image with the same two-CPU/no-network/read-only/tmpfs flags as Task 9 and uses `docker exec` to probe HTTP 200 and exact claim copy on container loopback, so no host port or external network is required. It also submits the authoritative blocked-route matrix and records middleware-first status/body, no network, no temp delta, no echo, and defense-in-depth state as separate fields. Browser-review mode creates a temporary Docker `--internal` network, starts the final app image and the exact pinned Playwright reviewer stage on that network, drives Playwright at both exact viewports, selects all four scenarios by keyboard, tests normal plus each of the five failure bundles, runs automated WCAG 2.2 AA checks, and records every actual app request method/path, middleware blocked count, console evidence, and external requests. Every normal browser request must satisfy the exact Task 5 allowlist; blocked count, external request count, and console error count must each be zero. The internal network permits reviewer-to-app traffic but has no external route. Browser review performs no package, browser, or system dependency download. The two modes are separate evidence: browser review never substitutes for the stricter `--network none` container smoke.
+
+If the normal Gradio `6.26.0` browser needs a route not in the approved list, or if middleware ordering lets a blocked probe reach Gradio/body receive, the runner raises a load-bearing incompatibility and stops. The implementation must source-audit that exact route, add a RED test, and report centrally; it must not accept a generic prefix, method, static, upload, or file wildcard.
 
 `verify_hf_space_candidate.py` owns final orchestration. It creates exactly one GUID-named run directory beneath `Path(tempfile.gettempdir()).resolve(strict=True)` and writes an ownership marker containing that GUID and canonical root. Candidate and review directories are children of that run root. A `try/finally` always stops only containers/networks labeled with the same GUID and calls a cleanup function that re-resolves the OS temp root, rejects symlinks/reparse points, requires the exact GUID prefix plus matching ownership marker/canonical root, and then applies `shutil.rmtree` only to that one run directory. Unowned, missing-marker, mismatched, symlink/reparse-point, workspace, temp-root itself, or outside-temp paths are a hard stop and are never deleted. The script emits its final verification receipt to stdout after cleanup; it persists no review file unless central later provides a separately authorized, explicit outside-repository retention path.
 
@@ -1743,11 +1825,11 @@ if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'In
 1. Re-check clean-worktree and two-commit preconditions. Create `candidate` and `review` children only beneath the owned run root. Run exporter and `verify-export` before any controlled acquisition/build command. Export code is restricted by source tests to local Git object reads and has no networking API/import/call path.
 2. Read both exact tag/platform-digest records from `base-image.json`. For each, run `docker image inspect` against the concatenated recorded tag and linux/amd64 digest and verify `RepoDigests`; if and only if that exact image is absent, perform a logged controlled `docker pull` of the same immutable reference, then re-inspect. Reject a tag-only or wrong-platform image. This is controlled supply-chain acquisition, not test execution.
 3. In the same controlled supply-chain/build phase, build `--target test` and `--target runtime` from the exact candidate. Network access is permitted only for digest/hash-pinned base and Python package acquisition and every accepted byte must match the image digest or lock hash. `--pull=false` may be used only after exact local image verification and is never evidence that the build was offline. Verify built image histories/inventories: test uses the reviewer base; runtime uses only the CPython base and contains no dev/browser/model package.
-4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run the UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start additionally passes adversarial Docker values for multiple `GRADIO_*` names, `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect `/proc/1/environ` and every runtime child process environment from inside the container and require exactly the fixed `ENTRYPOINT` allowlist: none of the injected values or names may survive. Prove the app still binds only fixed port 7860, exact instance/launch/config values do not drift, and monitoring/run-history functionality remains unavailable. No command in these execution phases downloads a dependency.
-5. Create a GUID-labeled Docker `--internal` network and run the final app plus exact reviewer image for normal/five-failure, four-scenario, 1440×900/390×844, keyboard/focus, WCAG, console, and external-request review. Repeat adversarial environment injection for the app container and require the same PID 1/child allowlist. Verify main/config and normal static assets remain healthy, the absolute allowed sentinel does not exist, the root block takes precedence, `max_file_size=0`, and file/upload probes cannot read or disclose requested paths, bytes, canaries, or payload representations. Monitoring/run-history/file denials may use bounded framework 403 or 404 behavior; the verifier does not hard-code one status as universally required. Only reviewer-to-app traffic is possible; all egress is absent. Record reviewer image/tag/platform digest and browser revisions in the in-memory receipt.
+4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run the UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start passes adversarial values for the exact Gradio `6.26.0` source-derived environment-read inventory. The required named matrix includes `GRADIO_ANALYTICS_ENABLED`, `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `GRADIO_ROOT_PATH`, `GRADIO_SHARE`, `GRADIO_MONITORING_ENABLED`, `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, plus `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect `/proc/1/environ` and every runtime child process environment from inside the container and require exact equality with the fixed `ENTRYPOINT` allowlist: none of the injected names or values may survive. Prove the app still binds only fixed port 7860, exact instance/launch/middleware/config values do not drift, and monitoring/run-history functionality remains unavailable. Against container loopback, run the complete blocked-route matrix and require the fixed 404 body before downstream/body receive, zero outbound-fetch calls, zero temp-entry delta, and zero echo; sentinel/root-block/max-upload assertions remain separate defense-in-depth observations. No command in these execution phases downloads a dependency.
+5. Create a GUID-labeled Docker `--internal` network and run the final app plus exact reviewer image for normal/five-failure, four-scenario, 1440×900/390×844, keyboard/focus, WCAG, console, and external-request review. Repeat adversarial environment injection for the app container and require the same exact PID 1/child allowlist. Verify main/config/info, the private event, and normal static assets remain healthy. Record every actual browser app request method/path and require it to match the approved allowlist; middleware blocked count, external request count, and console error count must be zero. Separately repeat URL/local-file, zero/nonzero/oversized upload, dangerous-family, encoded, traversal, case, and alternate-slash probes and require the authoritative middleware-first fixed response, no downstream/body receive, no outbound network, no temp delta, and no echo. The absolute sentinel, root block, and `max_file_size=0` are recorded only as defense in depth, not as proof Gradio's file/upload routes are safe. Only reviewer-to-app traffic is possible; all egress is absent. Record reviewer image/tag/platform digest and browser revisions in the in-memory receipt. Any normal route outside the approved allowlist, middleware-order failure, or HF candidate incompatibility stops verification for exact source audit, RED test, and central review; no wildcard is added.
 6. In `finally`, stop/remove only containers and the internal network carrying the current GUID label, then validate and delete only the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect directory untouched for manual inspection; it never broadens the delete target.
 
-Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest, both base/platform digests, lock/SBOM/license hashes, test counts, final runtime image digest, `/usr/bin/env` inventory, exact PID 1/child environment observations, poisoned-environment behavior, file/upload/history/monitoring capability results, cold-start observations, viewport/state results, cleanup status, and no-egress observations. If `/usr/bin/env -i` is absent, fails to clear the exact candidate environment, or is later shown incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
+Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest, both base/platform digests, lock/SBOM/license hashes, test counts, final runtime image digest, `/usr/bin/env` inventory, exact PID 1/child environment observations, poisoned-environment behavior, exact registered-route classification, actual browser request methods/paths, middleware blocked count, blocked-probe downstream/receive counts, outbound-fetch count, temp-entry delta, echo count, defense-in-depth state, history/monitoring results, cold-start observations, viewport/state results, cleanup status, and no-egress observations. If `/usr/bin/env -i` is absent, fails to clear the exact candidate environment, or is later shown incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
 
 - [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
 
@@ -1773,17 +1855,20 @@ $requiredTrue = @(
     'public_tests_passed', 'runtime_inventory_clean', 'runtime_network_none',
     'runtime_read_only', 'runtime_non_root_nologin', 'runtime_env_binary_inventoried',
     'runtime_environment_scrubbed', 'runtime_fixed_port',
-    'runtime_file_capabilities_closed', 'runtime_history_monitoring_closed',
-    'browser_network_internal', 'accessibility_passed', 'cleanup_passed'
+    'runtime_public_surface_guard_pre_router', 'runtime_history_monitoring_closed',
+    'browser_request_allowlist_exact', 'browser_network_internal',
+    'accessibility_passed', 'cleanup_passed'
 )
 foreach ($field in $requiredTrue) {
     if ($receipt.$field -ne $true) { throw "Final receipt gate failed: $field" }
 }
 if ($receipt.cold_starts -ne 3 -or $receipt.viewport_count -ne 2 -or $receipt.page_state_count -ne 6 -or $receipt.scenario_count -ne 4) { throw 'Final review matrix mismatch' }
-if ($receipt.external_request_count -ne 0 -or $receipt.console_error_count -ne 0) { throw 'Final browser evidence is not clean' }
+foreach ($field in @('blocked_downstream_call_count', 'blocked_receive_call_count', 'blocked_outbound_fetch_count', 'blocked_temp_entry_delta', 'blocked_echo_count', 'browser_middleware_blocked_count', 'external_request_count', 'console_error_count')) {
+    if ($receipt.$field -ne 0) { throw "Final public-surface evidence is not clean: $field" }
+}
 ```
 
-Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact environment scrubbing before import, fixed port/config, closed file/upload/history/monitoring capabilities, container-loopback HTTP/claim, and three cold starts. Browser evidence separately proves normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. Cleanup is proven. The test does not require `/bin/sh` to be absent.
+Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact environment scrubbing before import, fixed port/config, pre-Gradio middleware interception before downstream/body receive, zero network/temp/echo side effects, unavailable history/monitoring, container-loopback HTTP/claim, and three cold starts. Browser evidence separately proves exact allowlisted requests with zero middleware blocks during normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. Sentinel/root-block/max-size evidence remains defense in depth. Cleanup is proven. The test does not require `/bin/sh` to be absent.
 
 - [ ] **Step 5: Verify clean scope and provenance one final time**
 
