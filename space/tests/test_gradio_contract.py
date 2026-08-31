@@ -692,6 +692,37 @@ def test_app_owned_text_and_mobile_shell_css_is_specific_and_bounded() -> None:
     assert re.search(r"\.gradio-container>\*\s*\{[^}]*max-width:100%!important", css)
 
 
+def test_mobile_css_compacts_claim_first_composition_without_lowering_floor() -> None:
+    css = re.sub(r"\s+", " ", ui_module.APP_CSS)
+    mobile_start = css.index("@media(max-width:620px)")
+    mobile = css[mobile_start:]
+    required_rules = {
+        "#carerisk-space-root": "padding:8px 10px 16px",
+        ".masthead": "gap:2px; padding-bottom:8px",
+        ".eyebrow": "line-height:1.1; letter-spacing:.08em",
+        ".masthead h1": "font-size:28px!important; line-height:1!important",
+        ".deck": "font-size:16px!important; line-height:1.25",
+        "#claim-ceiling": "margin:8px 0; padding:8px 10px",
+        "#claim-ceiling p": "line-height:1.25",
+        "#claim-ceiling p+p": "line-height:1.25; margin-top:4px",
+        "#scenario-explorer": "margin-top:8px; padding-top:8px",
+        "#scenario-explorer h2": (
+            "font-size:18px!important; line-height:1.15; margin:0 0 4px"
+        ),
+        "#scenario-explorer>p": "line-height:1.25; margin:0",
+        "#scenario-explorer fieldset": "gap:4px; margin:6px 0 0",
+        "#scenario-explorer legend": "line-height:1.2; margin-bottom:4px",
+    }
+    for selector, declarations in required_rules.items():
+        rule = re.search(rf"{re.escape(selector)}\s*\{{([^}}]+)\}}", mobile)
+        assert rule is not None, selector
+        assert declarations in rule.group(1), selector
+    assert "display:none" not in mobile
+    assert re.search(
+        r"#scenario-explorer label\s*\{[^}]*min-height:44px", css
+    )
+
+
 def test_all_app_owned_visible_text_css_respects_sixteen_pixel_floor() -> None:
     declarations = re.findall(
         r"(?:^|[;{}])\s*(font-size|font)\s*:\s*([^;}]+)", ui_module.APP_CSS

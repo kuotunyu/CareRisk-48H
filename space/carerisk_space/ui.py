@@ -125,7 +125,20 @@ body,.gradio-container { background:var(--paper)!important; color:var(--ink)!imp
 .evidence-failure { border-left-color:var(--amber); margin-top:24px; }
 .evidence-failure code { background:#f3eadc; color:#6d431a; display:inline-block; padding:7px 9px; }
 @media(max-width:620px) {
-  #carerisk-space-root{padding:20px 16px}.receipt-facts{grid-template-columns:1fr}
+  #carerisk-space-root{padding:8px 10px 16px}
+  .masthead{gap:2px; padding-bottom:8px}
+  .eyebrow{line-height:1.1; letter-spacing:.08em}
+  .masthead h1{font-size:28px!important; line-height:1!important}
+  .deck{font-size:16px!important; line-height:1.25}
+  #claim-ceiling{margin:8px 0; padding:8px 10px}
+  #claim-ceiling p{line-height:1.25}
+  #claim-ceiling p+p{line-height:1.25; margin-top:4px}
+  #scenario-explorer{margin-top:8px; padding-top:8px}
+  #scenario-explorer h2{font-size:18px!important; line-height:1.15; margin:0 0 4px}
+  #scenario-explorer>p{line-height:1.25; margin:0}
+  #scenario-explorer fieldset{gap:4px; margin:6px 0 0}
+  #scenario-explorer legend{line-height:1.2; margin-bottom:4px}
+  .receipt-facts{grid-template-columns:1fr}
   .evidence-ledger{font-size:16px}.evidence-ledger th,.evidence-ledger td{padding:10px 4px} }
 """
 
