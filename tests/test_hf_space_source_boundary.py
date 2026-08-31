@@ -462,6 +462,13 @@ def _resolved_name(node: ast.expr, aliases: dict[str, str]) -> str | None:
     if isinstance(node, ast.Attribute):
         parent = _resolved_name(node.value, aliases)
         return f"{parent}.{node.attr}" if parent else node.attr
+    if isinstance(node, ast.Call) and _resolved_name(node.func, aliases) == "getattr":
+        if len(node.args) != 2 or node.keywords:
+            return None
+        parent = _resolved_name(node.args[0], aliases)
+        member = node.args[1]
+        if parent and isinstance(member, ast.Constant) and isinstance(member.value, str):
+            return f"{parent}.{member.value}"
     return None
 
 
@@ -485,7 +492,10 @@ def _assignment_targets(node: ast.AST) -> list[ast.expr]:
     return flattened
 
 
-def _simple_aliases(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
+def _bounded_aliases(
+    tree: ast.AST,
+    roots: frozenset[str],
+) -> tuple[dict[str, str], set[str]]:
     aliases: dict[str, str] = {}
     sensitive_assignments: set[str] = set()
     assignments = [
@@ -501,9 +511,8 @@ def _simple_aliases(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
             if value is None:
                 continue
             resolved = _resolved_name(value, aliases)
-            if resolved is None or not (
-                resolved in {"parent", "gr", "uvicorn", "main"}
-                or resolved.startswith(("parent.", "gr.", "uvicorn."))
+            if resolved is None or not any(
+                resolved == root or resolved.startswith(f"{root}.") for root in roots
             ):
                 continue
             for target in _assignment_targets(assignment):
@@ -514,6 +523,10 @@ def _simple_aliases(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
         if not changed:
             break
     return aliases, sensitive_assignments
+
+
+def _simple_aliases(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
+    return _bounded_aliases(tree, frozenset({"getattr", "gr", "main", "parent", "uvicorn"}))
 
 
 def _resolved_calls(tree: ast.AST, aliases: dict[str, str], name: str) -> list[ast.Call]:
@@ -568,6 +581,11 @@ def _entrypoint_violations(tree: ast.Module) -> list[str]:
         violations.add("mount_count")
     if sensitive_assignments & {"gr", "uvicorn", "gr.mount_gradio_app", "uvicorn.run"}:
         violations.add("framework_alias")
+    if "getattr" in sensitive_assignments or any(
+        isinstance(node, ast.Call) and _resolved_name(node.func, aliases) == "getattr"
+        for node in ast.walk(tree)
+    ):
+        violations.add("builtin_reflection")
     for node in ast.walk(tree):
         for target in _assignment_targets(node):
             if (
@@ -1151,6 +1169,43 @@ def test_entrypoint_scanner_rejects_every_framework_assignment_form(statement: s
     assert "framework_monkeypatch" in _entrypoint_violations(mutated)
 
 
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+    ("source", "expected"),
+    (
+        (
+            'getattr(gr, "mount_gradio_app")(parent, demo)',
+            {"builtin_reflection", "mount_count"},
+        ),
+        (
+            'reflect = getattr\nmount = reflect(gr, "mount_gradio_app")\n'
+            "mount_alias = mount\nmount_alias(parent, demo)",
+            {"builtin_reflection", "framework_alias", "mount_count"},
+        ),
+        (
+            'route = getattr(parent, "get")\n@route("/hidden")\ndef hidden():\n    pass',
+            {"builtin_reflection", "parent_route"},
+        ),
+        (
+            "reflect = getattr\nparent_alias = parent\n"
+            'middleware = reflect(parent_alias, "add_middleware")\n'
+            "middleware(object)",
+            {"builtin_reflection", "parent_middleware"},
+        ),
+        (
+            "reflected = getattr(gr, runtime_member)",
+            {"builtin_reflection"},
+        ),
+    ),
+)
+def test_entrypoint_scanner_rejects_builtin_reflection_alias_chains(
+    source: str,
+    expected: set[str],
+) -> None:
+    mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
+    mutated.body.extend(ast.parse(source).body)
+    assert expected <= set(_entrypoint_violations(mutated))
+
+
 def test_ui_uses_only_the_pinned_framework_surface_and_asset_builder_is_fail_closed() -> None:
     tree = _tree(UI_SOURCE)
     assert _ui_framework_violations(tree) == []
@@ -1461,14 +1516,46 @@ def test_asset_builder_runtime_rejects_missing_file_and_symlink_roots(
         ui_module.build_package_asset_membership()
 
 
+def _expected_rejection_guard_calls(
+    function: ast.FunctionDef,
+    aliases: dict[str, str],
+) -> set[ast.Call]:
+    calls: set[ast.Call] = set()
+    for node in ast.walk(function):
+        if not isinstance(node, (ast.With, ast.AsyncWith)) or not any(
+            isinstance(item.context_expr, ast.Call)
+            and _resolved_name(item.context_expr.func, aliases) == "pytest.raises"
+            for item in node.items
+        ):
+            continue
+        calls.update(
+            call
+            for statement in node.body
+            for call in ast.walk(statement)
+            if isinstance(call, ast.Call)
+            and _resolved_name(call.func, aliases) == "ui_module.PublicSurfaceGuard"
+        )
+    return calls
+
+
 def _guard_helper_violations(tree: ast.Module) -> list[str]:
     violations: list[str] = []
     functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
     for function in functions:
-        guard_calls = _calls(function, "ui_module.PublicSurfaceGuard")
-        if not guard_calls:
+        aliases, _ = _bounded_aliases(function, frozenset({"getattr", "ui_module"}))
+        all_guard_calls = _resolved_calls(function, aliases, "ui_module.PublicSurfaceGuard")
+        if not all_guard_calls:
             continue
-        builder_calls = _calls(function, "ui_module.build_package_asset_membership")
+        rejected_calls = _expected_rejection_guard_calls(function, aliases)
+        guard_calls = [call for call in all_guard_calls if call not in rejected_calls]
+        if not guard_calls:
+            violations.append(f"{function.name}:positive_guard_call")
+            continue
+        builder_calls = _resolved_calls(
+            function,
+            aliases,
+            "ui_module.build_package_asset_membership",
+        )
         assignments = [
             node
             for node in ast.walk(function)
@@ -1585,6 +1672,48 @@ def _compose(parent):
     {mutation}
 """
         _assert_guard_helper_audit_rejects(monkeypatch, source)
+
+
+def test_guard_helper_audit_accepts_bounded_builder_and_guard_alias_lineage() -> None:
+    tree = ast.parse(
+        """
+def _compose(parent):
+    builder = ui_module.build_package_asset_membership
+    builder_alias = builder
+    guard_type = ui_module.PublicSurfaceGuard
+    guard_alias = guard_type
+    membership = builder_alias()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return guard_alias(parent, membership)
+"""
+    )
+    assert _guard_helper_violations(tree) == []
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+    "body",
+    (
+        "return guard_alias(parent, membership)",
+        "assert isinstance(membership, frozenset)\n    assert membership\n"
+        "    return guard_alias(parent, frozenset())",
+        "assert isinstance(membership, frozenset)\n    assert membership\n"
+        "    membership = frozenset()\n    return guard_alias(parent, membership)",
+    ),
+)
+def test_guard_helper_audit_rejects_alias_bypass_mutations(body: str) -> None:
+    tree = ast.parse(
+        f"""
+def _compose(parent):
+    builder = ui_module.build_package_asset_membership
+    builder_alias = builder
+    guard_type = ui_module.PublicSurfaceGuard
+    guard_alias = guard_type
+    membership = builder_alias()
+    {body}
+"""
+    )
+    assert _guard_helper_violations(tree)
 
 
 def test_guard_constructor_scanner_rejects_variadic_or_keyword_only_parameters() -> None:

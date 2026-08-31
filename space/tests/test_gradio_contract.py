@@ -848,6 +848,7 @@ def test_outer_guard_constructor_is_exact_and_rejects_empty_membership() -> None
     assert tuple(parameters) == ("downstream", "package_asset_urls")
     assert all(item.default is inspect.Parameter.empty for item in parameters.values())
     membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
     assert membership
     guard = guard_type(DownstreamRecorder(), membership)
     assert guard.package_asset_urls == membership
