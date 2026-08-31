@@ -10,9 +10,10 @@ import logging
 import os
 import re
 import socket
+import sys
 import threading
 import time
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -378,19 +379,61 @@ class RawResponse:
 
 
 class AppEntryMarker:
-    def __init__(self, downstream: Any) -> None:
+    def __init__(self, downstream: Any, package_asset_urls: frozenset[str]) -> None:
         self.downstream = downstream
         self.calls = 0
+        self._requests: deque[tuple[str, str]] = deque(maxlen=128)
+        self._package_asset_urls = package_asset_urls
+
+    def snapshots(self) -> tuple[tuple[str, str], ...]:
+        return tuple(self._requests)
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         self.calls += 1
+        if scope.get("type") == "http":
+            method = scope.get("method")
+            path = scope.get("path")
+            bounded_method = (
+                method if method in {"GET", "HEAD", "POST", "OPTIONS"} else "OTHER"
+            )
+            safe_paths = {"/", "/config", "/theme.css", "/manifest.json", "/favicon.ico"}
+            bounded_path = (
+                path
+                if isinstance(path, str)
+                and (path in safe_paths or path in self._package_asset_urls)
+                else "<blocked>"
+            )
+            self._requests.append((bounded_method, bounded_path))
         await self.downstream(scope, receive, send)
+
+
+class BoundedLogCapture(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self._records: deque[str] = deque(maxlen=128)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            rendered = self.format(record)
+        except Exception:
+            rendered = "log_format_failed"
+        self._records.append(rendered[:4096])
+
+    def snapshot(self) -> str:
+        return "\n".join(self._records)[-65_536:]
 
 
 @dataclass(frozen=True)
 class RunningWireApp:
     marker: AppEntryMarker
     demo: gr.Blocks
+    log_capture: BoundedLogCapture
+
+    def logs(self) -> str:
+        return self.log_capture.snapshot()
+
+    def requests(self) -> tuple[tuple[str, str], ...]:
+        return self.marker.snapshots()
 
     def request(self, request_bytes: bytes) -> RawResponse:
         chunks: list[bytes] = []
@@ -420,7 +463,15 @@ class RunningWireApp:
 def running_wire_app(valid_bundle: Path) -> Iterator[RunningWireApp]:
     demo = ui_module.create_app(valid_bundle)
     guarded = _compose(demo)
-    marker = AppEntryMarker(guarded)
+    marker = AppEntryMarker(guarded, guarded.package_asset_urls)
+    log_capture = BoundedLogCapture()
+    captured_loggers = (
+        logging.getLogger(),
+        logging.getLogger("uvicorn.error"),
+        logging.getLogger("carerisk_space.ui"),
+    )
+    for logger in captured_loggers:
+        logger.addHandler(log_capture)
     config = uvicorn.Config(
         marker,
         host="127.0.0.1",
@@ -444,12 +495,32 @@ def running_wire_app(valid_bundle: Path) -> Iterator[RunningWireApp]:
     if not server.started:
         server.should_exit = True
         thread.join(timeout=5)
+        for logger in captured_loggers:
+            logger.removeHandler(log_capture)
         raise AssertionError("programmatic Uvicorn+h11 did not start")
+    running = RunningWireApp(marker, demo, log_capture)
     try:
-        yield RunningWireApp(marker, demo)
+        root = running.request(
+            b"GET / HTTP/1.1\r\nHost: 127.0.0.1:7860\r\nConnection: close\r\n\r\n"
+        )
+        config_response = running.request(
+            b"GET /config HTTP/1.1\r\nHost: 127.0.0.1:7860\r\nConnection: close\r\n\r\n"
+        )
+        theme = running.request(
+            f"GET /theme.css?{THEME_QUERY} HTTP/1.1\r\n"
+            "Host: 127.0.0.1:7860\r\nConnection: close\r\n\r\n".encode()
+        )
+        assert root.status == config_response.status == theme.status == 200
+        assert json.loads(config_response.body)["dependencies"] == []
+        assert hashlib.sha256(theme.body).hexdigest() == THEME_CSS_SHA256
+        assert b"access-control-allow-origin" not in root.raw.lower()
+        assert b"content-encoding" not in root.raw.lower()
+        yield running
     finally:
         server.should_exit = True
         thread.join(timeout=15)
+        for logger in captured_loggers:
+            logger.removeHandler(log_capture)
         assert not thread.is_alive()
 
 
@@ -545,6 +616,22 @@ def test_schema_failure_controlled_seam_has_exact_copy_and_no_partial_surface(
     assert asgi_config["dependencies"] == []
     assert len(asgi_config["components"]) == 1
     assert asgi_config["components"][0]["props"]["value"] == document
+    root_response = _http_get(_compose(app), "/")
+    assert root_response.status_code == 200
+    root = root_response.text
+    for value in expected:
+        assert value in root
+    assert root.count("receipt_schema_invalid") == 1
+    assert tuple(code for code in ALL_FAILURE_CODES if code in root) == (
+        "receipt_schema_invalid",
+    )
+    assert not re.search(r'<input[^>]+type=["\']radio["\']', root)
+    assert 'class="scenario-panel"' not in root
+    assert "synthetic-gate-scenario" not in root
+    assert "/gradio_api/call" not in root
+    assert "CANARY_7419" not in root
+    for metric in ("0.555", "0.870", "0.087", "0.008"):
+        assert metric not in root
 
 
 def test_every_html_constructor_explicitly_disables_component_js() -> None:
@@ -878,7 +965,31 @@ def _symlink_or_skip(link: Path, target: Path, *, target_is_directory: bool = Fa
     try:
         link.symlink_to(target, target_is_directory=target_is_directory)
     except OSError as exc:
-        pytest.skip(f"symlink creation unavailable on this host: {exc}")
+        _capability_skip_or_fail(f"symlink creation unavailable: {exc}")
+
+
+def _capability_skip_or_fail(reason: str) -> None:
+    if sys.platform == "win32":
+        pytest.skip(f"Windows fixture capability unavailable: {reason}")
+    pytest.fail(f"mandatory Linux fixture capability unavailable: {reason}")
+
+
+def test_linux_symlink_fixture_failure_is_a_failure_not_a_skip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    def unavailable(*args: object, **kwargs: object) -> None:
+        raise OSError("CANARY_7419 fixture unavailable")
+
+    monkeypatch.setattr(Path, "symlink_to", unavailable)
+    try:
+        _symlink_or_skip(tmp_path / "link", tmp_path / "target")
+    except BaseException as exc:
+        assert type(exc).__name__ == "Failed"
+        assert "mandatory Linux" in str(exc)
+    else:
+        pytest.fail("Linux symlink fixture failure was not reported")
 
 
 def test_package_asset_root_symlink_fails_closed(
@@ -943,13 +1054,14 @@ def test_package_asset_special_file_fails_closed(
     special = build / "special.sock"
     unix_family = getattr(socket, "AF_UNIX", None)
     if unix_family is None:
-        pytest.skip("filesystem special-file creation unavailable on this host")
+        _capability_skip_or_fail("AF_UNIX is absent")
+        raise AssertionError("unreachable")
     unix_socket = socket.socket(unix_family, socket.SOCK_STREAM)
     try:
         unix_socket.bind(str(special))
     except (AttributeError, OSError) as exc:
         unix_socket.close()
-        pytest.skip(f"filesystem special-file creation unavailable on this host: {exc}")
+        _capability_skip_or_fail(f"filesystem special-file creation unavailable: {exc}")
     try:
         with pytest.raises(ValueError, match="package_asset_special_file"):
             ui_module.build_package_asset_membership()
@@ -976,7 +1088,7 @@ def test_package_asset_case_alias_fails_closed(
     upper.write_bytes(b"upper")
     lower.write_bytes(b"lower")
     if upper.samefile(lower):
-        pytest.skip("case-sensitive alias fixture unavailable on this filesystem")
+        _capability_skip_or_fail("case-sensitive alias fixture unavailable")
     with pytest.raises(ValueError, match="package_asset_case_alias"):
         ui_module.build_package_asset_membership()
 
@@ -1123,6 +1235,8 @@ def test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp(
     monkeypatch.setattr(gradio_routes.tempfile, "tempdir", str(temp_root))
     before_temp = tuple(temp_root.iterdir())
     before_state = _queue_state_snapshot(running_wire_app.demo)
+    before_logs = running_wire_app.logs()
+    before_requests = running_wire_app.requests()
     oversized = b"X" * 1_048_577 + b"CANARY_7419"
     probes = (
         (
@@ -1154,7 +1268,11 @@ def test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp(
         ),
     )
     before_entry = running_wire_app.marker.calls
+    payload_reprs: list[str] = []
     for request, canary in probes:
+        _, _, payload = request.partition(b"\r\n\r\n")
+        if payload:
+            payload_reprs.append(repr(payload))
         response = running_wire_app.request(request)
         assert response.status == 404
         assert response.headers[b"content-length"] == b"9"
@@ -1166,6 +1284,27 @@ def test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp(
     assert bomb_calls == []
     assert tuple(temp_root.iterdir()) == before_temp
     assert _queue_state_snapshot(running_wire_app.demo) == before_state
+    captured = (
+        running_wire_app.logs()[len(before_logs) :]
+        + repr(running_wire_app.requests()[len(before_requests) :])
+    )
+    assert "CANARY_7419" not in captured
+    assert repr({"secret": "CANARY_7419"}) not in captured
+    assert all(payload_repr not in captured for payload_repr in payload_reprs)
+    assert "Traceback" not in captured
+
+
+def test_running_fixture_health_gate_and_snapshots_are_bounded(
+    running_wire_app: RunningWireApp,
+) -> None:
+    requests = running_wire_app.requests()
+    assert requests[:3] == (
+        ("GET", "/"),
+        ("GET", "/config"),
+        ("GET", "/theme.css"),
+    )
+    assert len(requests) <= 128
+    assert len(running_wire_app.logs()) <= 65_536
 
 
 def test_registered_gradio_routes_are_exactly_inventoried_and_classified(
