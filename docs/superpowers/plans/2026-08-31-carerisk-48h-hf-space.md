@@ -21,8 +21,11 @@
 - Evidence tag is annotated object `2f1ddb0e2276fa894e124b856de488e31e21e88c`, resolving to commit `f4c820cce953f401c1ec525bd8df3a3c1678bbf3`.
 - Do not read, modify, copy, or stage `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation working assets, private scientific ledgers/final locks, unapproved private evaluation outputs, or Set C. This prohibition does not cover the approved public `v0.2.0` receipt/release Git objects or the dependency lockfiles created and verified by this plan. Never run the receipt exporter or final evaluation.
 - Do not import, copy, package, or execute existing `app/dashboard.py`, root `app.py`, `src/carerisk48h`, joblib, scoring, guard, inference, schema, model, calibrator, or synthetic-patient paths in the public application.
-- Product code reads no environment variable and performs no network request, process spawn, shell call, filesystem write, persistence, analytics, telemetry, or dynamic import.
+- Product code does not import `os`, reads no environment variable, and performs no network request, process spawn, shell call, filesystem write, persistence, analytics, telemetry, or dynamic import. Gradio exact-version instance and launch values are explicit per-instance configuration, never framework-global monkeypatches.
 - Gradio is fixed exactly at `6.26.0`. Its one UI dependency is private in API metadata but its internal event transport is acknowledged and adversarially probed; no test may infer that the internal transport is absent.
+- `create_app` fixes `dev_mode=False`, `vibe_mode=False`, `root_path=""`, `api_open=False`, and `space_id=None`. Launch fixes `share=False`, `server_name="0.0.0.0"`, `server_port=7860`, `root_path=""`, `footer_links=[]`, `run_history=False`, `max_threads=1`, `state_session_capacity=1`, `enable_monitoring=False`, `ssr_mode=False`, `pwa=False`, `mcp_server=False`, `num_workers=1`, `strict_cors=True`, `show_error=False`, `inbrowser=False`, `debug=False`, and `max_file_size=0`.
+- Because Gradio `6.26.0` consults environment variables for falsy path lists, launch uses the truthy exact sentinels `allowed_paths=["/__carerisk_no_allowed_files__"]` and `blocked_paths=["/"]`. The allowed sentinel is an absolute non-existent path and the root block has priority; the claim is no effective application file-serving capability, not that Gradio has no internal file routes.
+- The final Docker exec-form `ENTRYPOINT` uses `/usr/bin/env -i` before Python import and rebuilds only the reviewed fixed environment allowlist. Its exec-form `CMD` remains `["python", "app.py"]`; neither `SPACE_ID`, `PORT`, secrets, nor arbitrary injected variables survive. Candidate verification poisons Docker `GRADIO_*`, `SPACE_ID`, and `PORT` values and proves PID 1/children and runtime behavior cannot drift.
 - Runtime is CPU-only, non-root, and read-only except framework-owned operations in bounded ephemeral `/tmp`. No persistent service is started during ordinary unit tests.
 - The approved “no shell” interpretation is precise: the runtime account is non-login with `/usr/sbin/nologin`, the app uses exec-form startup and never invokes a shell, and unnecessary shell utilities are excluded. Do not assert that Debian slim physically lacks `/bin/sh`.
 - `requirements.lock` contains the complete runtime closure. `requirements-dev.lock` contains the complete runtime-plus-development union closure; every normalized runtime package/version pair is present unchanged in the development lock. Both locks contain exact versions and accepted target-distribution hashes. Docker installation uses `python -m pip install --require-hashes --no-deps` against the appropriate complete closure.
@@ -51,7 +54,7 @@
 | `space/Dockerfile` | Digest-pinned official Playwright test/reviewer stage plus non-root CPython final CPU runtime |
 | `space/requirements.lock` | Complete hash-locked runtime dependency closure |
 | `space/requirements-dev.lock` | Complete hash-locked runtime-plus-development union closure for the reviewer target |
-| `space/app.py` | Fixed port 7860 exec-form Python entry point; no environment configuration |
+| `space/app.py` | Fixed port 7860 Python entry point; exact launch arguments and no environment configuration |
 | `space/carerisk_space/__init__.py` | Package identity and version-free public surface |
 | `space/carerisk_space/contracts.py` | Exact copy, hashes, schemas, immutable view models, bounded reason codes |
 | `space/carerisk_space/evidence.py` | Strict JSON parsing, hash/schema/release/deployment validation, formatting |
@@ -232,7 +235,7 @@ class ExportReceipt:
 ### Test-helper contracts
 
 - `space/tests/test_evidence_contract.py` owns `source_or_bundled_evidence(name)`, `valid_manifest_bytes(receipt_raw, release_raw)`, `candidate_bundle(tmp_path)`, and `apply_mutation(bundle, mutation)`. The bundle fixture writes only three synthetic/public JSON files under pytest `tmp_path`; the manifest lists all 24 public paths but runtime tests re-hash only the three JSON files allowed to application code.
-- `space/tests/test_gradio_contract.py` owns `valid_bundle`, `failure_bundle`, `manifest_canary_bundle`, `RunningLocalApp`, `running_local_app`, `captured_app_logs`, `bounded_failure_codes(text)`, and `post_only_dependency(base_url, payload)`. `RunningLocalApp` exposes only `base_url` plus a callable snapshot of in-memory Python logging and server stdout/stderr; it never persists logs. The server fixture binds host loopback on an OS-assigned port, installs capture before startup, yields only after `/config` responds, and always closes the server and capture in fixture cleanup. It uses the public committed receipt/release bytes and a synthetic manifest; it never starts the existing dashboard. `manifest_canary_bundle` places `CANARY_7419` only in an invalid deployment-manifest field so the bounded startup reason and raw-log exclusion can be tested. `captured_app_logs` uses the same in-memory capture discipline for launch-free construction, and `bounded_failure_codes` returns only exact members of `ALL_FAILURE_CODES`.
+- `space/tests/test_gradio_contract.py` owns `valid_bundle`, `failure_bundle`, `manifest_canary_bundle`, `RunningLocalApp`, `running_local_app`, `captured_app_logs`, `bounded_failure_codes(text)`, and `post_only_dependency(base_url, payload)`. `RunningLocalApp` exposes only `base_url` plus a callable snapshot of in-memory Python logging and server stdout/stderr; it never persists logs. The server fixture binds host loopback on an OS-assigned port, installs capture before startup, poisons framework-related host environment variables before application construction, yields only after `/config` responds, and always closes the server and capture in fixture cleanup. It uses the public committed receipt/release bytes and a synthetic manifest; it never starts the existing dashboard. `manifest_canary_bundle` places `CANARY_7419` only in an invalid deployment-manifest field so the bounded startup reason and raw-log exclusion can be tested. `captured_app_logs` uses the same in-memory capture discipline for launch-free construction, and `bounded_failure_codes` returns only exact members of `ALL_FAILURE_CODES`.
 - `tests/test_hf_space_exporter.py` owns `git_repo`, `ExporterCase`, `APP_SOURCE_SHA`, and `MANIFEST_SOURCE_SHA`. The fixture creates a temporary two-commit Git repository containing synthetic text fixtures with the same path/capability rules, so exporter rejection tests never mutate the real repository.
 - `tests/test_hf_space_live_review.py` owns `sample_record` and mocked process/browser adapters for unit tests. Real Docker/Playwright execution occurs only in Task 13 against the clean candidate.
 
@@ -751,6 +754,38 @@ def test_internal_event_is_private_bounded_and_absent_from_api_metadata(
     assert app.get_api_info() == {"named_endpoints": {}, "unnamed_endpoints": {}}
     assert config["footer_links"] == []
 
+POISONED_FRAMEWORK_ENV = {
+    "GRADIO_ANALYTICS_ENABLED": "true",
+    "HF_HUB_DISABLE_TELEMETRY": "0",
+    "GRADIO_WATCH_DIRS": "/CANARY_7419",
+    "GRADIO_VIBE_MODE": "true",
+    "GRADIO_HOT_RELOAD": "true",
+    "GRADIO_RUN_HISTORY": "True",
+    "GRADIO_SSR_MODE": "True",
+    "GRADIO_MCP_SERVER": "True",
+    "GRADIO_ALLOWED_PATHS": "/",
+    "GRADIO_BLOCKED_PATHS": "",
+    "GRADIO_ROOT_PATH": "/CANARY_7419",
+    "GRADIO_SHARE": "true",
+    "GRADIO_MONITORING_ENABLED": "true",
+    "SPACE_ID": "CANARY_7419/poisoned-space",
+    "PORT": "9999",
+}
+
+def test_exact_instance_state_ignores_poisoned_framework_environment(
+    valid_bundle: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name, value in POISONED_FRAMEWORK_ENV.items():
+        monkeypatch.setenv(name, value)
+    app = create_app(valid_bundle)
+    assert app.dev_mode is False
+    assert app.vibe_mode is False
+    assert app.root_path == ""
+    assert app.api_open is False
+    assert app.space_id is None
+    assert app.get_config_file()["footer_links"] == []
+
 def test_oversized_scenario_id_stops_before_registry_lookup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -815,6 +850,11 @@ def create_app(bundle_root: Path | None = None) -> gr.Blocks:
                 batch=False,
                 concurrency_limit=1,
             )
+    app.dev_mode = False
+    app.vibe_mode = False
+    app.root_path = ""
+    app.api_open = False
+    app.space_id = None
     return app
 ```
 
@@ -824,7 +864,9 @@ Task 5 also adds `MAX_SCENARIO_ID_CHARS = max(len(item) for item in SCENARIO_IDS
 
 When startup evidence is invalid, `create_app` logs exactly one structured bounded failure code and no exception, path, artifact bytes, or submitted value. The logger receives `EvidenceFailure.code` only. Tests capture the startup log for `manifest_canary_bundle`, require the bounded code `deployment_manifest_invalid`, and prove `CANARY_7419` and its representation are absent, preserving Design Section 12 without weakening it.
 
-`space/app.py` constructs once and launches with hard-coded `server_name="0.0.0.0"`, `server_port=7860`, `footer_links=[]`, `max_threads=1`, `allowed_paths=[]`, and `state_session_capacity=1`. It has no authentication or authentication dependency, request object, static mount, user-supplied path, or other user configuration. It must not read CLI arguments or environment variables. The pinned contract does not claim that Gradio’s internal UI transport is absent.
+The assignments after the `Blocks` context are exact Gradio `6.26.0` per-instance configuration, not framework-global monkeypatching. Product modules do not import `os` or read environment variables. Tests poison `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `SPACE_ID`, and `PORT` before construction and prove that the exact instance attributes and component/config capabilities remain unchanged.
+
+`space/app.py` constructs once and launches with these hard-coded arguments and no others: `share=False`, `server_name="0.0.0.0"`, `server_port=7860`, `root_path=""`, `footer_links=[]`, `run_history=False`, `max_threads=1`, `state_session_capacity=1`, `enable_monitoring=False`, `ssr_mode=False`, `pwa=False`, `mcp_server=False`, `num_workers=1`, `strict_cors=True`, `show_error=False`, `inbrowser=False`, `debug=False`, `max_file_size=0`, `allowed_paths=["/__carerisk_no_allowed_files__"]`, and `blocked_paths=["/"]`. The truthy allowed sentinel is resolved as an absolute path and must not exist; root blocking takes priority. The entry point has no authentication or authentication dependency, request object, static mount, user-supplied path, or other user configuration. It must not read CLI arguments or environment variables. The pinned contract acknowledges Gradio's internal UI/file routes while proving no effective arbitrary data-entry, upload, file-serving, monitoring, or run-history capability.
 
 - [ ] **Step 4: Add direct internal-transport adversarial probes**
 
@@ -885,18 +927,53 @@ def test_running_api_metadata_is_empty(running_local_app: RunningLocalApp) -> No
     assert response.status_code == 200
     assert response.json() == {"named_endpoints": {}, "unnamed_endpoints": {}}
 
-def test_entrypoint_launch_contract_is_exact(captured_launch: Mapping[str, object]) -> None:
+def test_entrypoint_launch_contract_is_exact_under_poisoned_environment(
+    captured_launch: Mapping[str, object],
+) -> None:
     assert captured_launch == {
+        "share": False,
         "server_name": "0.0.0.0",
         "server_port": 7860,
+        "root_path": "",
         "footer_links": [],
+        "run_history": False,
         "max_threads": 1,
-        "allowed_paths": [],
         "state_session_capacity": 1,
+        "enable_monitoring": False,
+        "ssr_mode": False,
+        "pwa": False,
+        "mcp_server": False,
+        "num_workers": 1,
+        "strict_cors": True,
+        "show_error": False,
+        "inbrowser": False,
+        "debug": False,
+        "max_file_size": 0,
+        "allowed_paths": ["/__carerisk_no_allowed_files__"],
+        "blocked_paths": ["/"],
     }
+
+def test_running_surface_has_no_effective_file_history_or_monitoring_capability(
+    running_local_app: RunningLocalApp,
+) -> None:
+    assert get(running_local_app.base_url, "/").status_code == 200
+    assert get(running_local_app.base_url, "/config").status_code == 200
+    assert_static_ui_assets_load(running_local_app.base_url)
+    sentinel = Path("/__carerisk_no_allowed_files__").resolve(strict=False)
+    assert sentinel.is_absolute()
+    assert not sentinel.exists()
+    assert_capability_unavailable(running_local_app.base_url, "run_history")
+    assert_capability_unavailable(running_local_app.base_url, "monitoring")
+    assert_file_and_upload_probes_denied_without_echo(
+        running_local_app.base_url,
+        requested_path="/CANARY_7419",
+        expected_max_upload_size=0,
+    )
 ```
 
-The running test discovers the sole private dependency from `/config`, asserts its one-input/one-output bound and fixed event metadata, and submits the full adversarial matrix through that dependency. With event preprocessing disabled, every invalid payload must reach the bounded callback and return HTTP 200 whose sole parsed output exactly equals `render_scenario(None)`; status alternatives and substring-only no-echo checks are insufficient because framework-generated choice errors may include the raw value. The nested and oversized sentinel probes also require the sentinel and `repr(payload)` to be absent from both the raw response and the fixture's captured logging/stdout/stderr. The evidence-failure startup probe separately requires exactly the bounded reason and no manifest sentinel in captured logs. The test also verifies that `/gradio_api/info` returns HTTP 200 with exactly empty `named_endpoints` and `unnamed_endpoints`, matching `Blocks.get_api_info()`. The probe recognizes the internal UI transport and proves fail-closed/no-echo behavior; it does not claim that no transport exists. A launch-contract test captures the entry-point launch arguments and asserts the exact host, port, empty footer and allowed paths, one thread, one state session, and absence of auth/request/static/user-path/env/CLI configuration.
+The running test discovers the sole private dependency from `/config`, asserts its one-input/one-output bound and fixed event metadata, and submits the full adversarial matrix through that dependency. With event preprocessing disabled, every invalid payload must reach the bounded callback and return HTTP 200 whose sole parsed output exactly equals `render_scenario(None)`; status alternatives and substring-only no-echo checks are insufficient because framework-generated choice errors may include the raw value. The nested and oversized sentinel probes also require the sentinel and `repr(payload)` to be absent from both the raw response and the fixture's captured logging/stdout/stderr. The evidence-failure startup probe separately requires exactly the bounded reason and no manifest sentinel in captured logs. The test also verifies that `/gradio_api/info` returns HTTP 200 with exactly empty `named_endpoints` and `unnamed_endpoints`, matching `Blocks.get_api_info()`.
+
+The poisoned-environment fixture covers application construction, launch capture, and a running server. It requires main/config HTTP 200 and normal static UI assets while proving the allowed sentinel is absent, root blocking wins, `max_file_size` is zero, and monitoring, run-history, arbitrary file-read, and upload capabilities cannot be obtained. `assert_capability_unavailable` accepts the framework's bounded denial behavior without fixing 403 or 404 as the unique cross-deployment status. Every denied file/upload response and captured log must exclude the requested path, file bytes, canary, and `repr(payload)`. These probes recognize internal UI and file transports and prove bounded capabilities; they do not claim those framework routes are absent. The launch-contract test captures and compares the complete exact mapping above, not a subset or default-derived configuration.
 
 - [ ] **Step 5: Run GREEN and all six UI states**
 
@@ -1283,6 +1360,23 @@ def test_runtime_account_is_non_root_and_non_login_without_claiming_bin_sh_absen
     assert final_user(dockerfile) == "10001:10001"
     assert 'CMD ["python", "app.py"]' in dockerfile
     assert "test ! -e /bin/sh" not in dockerfile
+
+def test_runtime_entrypoint_clears_injected_environment_before_python_import() -> None:
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    assert json_instruction(dockerfile, "ENTRYPOINT") == [
+        "/usr/bin/env", "-i",
+        "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
+        "LANG=C.UTF-8", "LC_ALL=C.UTF-8",
+        "PYTHONUNBUFFERED=1", "PYTHONDONTWRITEBYTECODE=1",
+        "GRADIO_ANALYTICS_ENABLED=False", "HF_HUB_DISABLE_TELEMETRY=1",
+        "GRADIO_WATCH_DIRS=", "GRADIO_VIBE_MODE=", "GRADIO_HOT_RELOAD=false",
+        "GRADIO_RUN_HISTORY=False", "GRADIO_SSR_MODE=False",
+        "GRADIO_MCP_SERVER=False", "GRADIO_ALLOWED_PATHS=",
+        "GRADIO_BLOCKED_PATHS=/",
+    ]
+    assert json_instruction(dockerfile, "CMD") == ["python", "app.py"]
+    assert "SPACE_ID=" not in dockerfile
+    assert "PORT=" not in dockerfile
 ```
 
 - [ ] **Step 2: Run RED**
@@ -1298,7 +1392,7 @@ Expected: FAIL because the Space Dockerfile and smoke contract do not exist.
 
 The generated Dockerfile must expose named `test` and `runtime` stages with no ancestry between them. `test` starts from the exact official Playwright Python reviewer tag plus recorded linux/amd64 digest, installs the complete `requirements-dev.lock` union closure with hashes and no dependency resolution, and contains the six public test modules. Its Playwright Python version is exactly the one matched by the reviewer image and it uses only the Chromium/Firefox/WebKit bytes already embedded in that pinned image; it runs no browser download, `playwright install`, or unrecorded `apt` acquisition. This stage never becomes or contributes a filesystem layer to the deployed stage.
 
-`runtime` starts independently from the exact CPython 3.11 slim-bookworm runtime tag plus recorded linux/amd64 digest. It uses explicit `COPY` for runtime files only, creates numeric UID/GID `10001`, assigns `/usr/sbin/nologin`, retains no writable home, installs `requirements.lock` with hashes and no dependency resolution, excludes tests/dev tools/browser/reviewer layers from the final image, sets immutable framework cache/temp paths under `/tmp`, disables analytics/telemetry, and uses `USER 10001:10001` plus exec-form `CMD ["python", "app.py"]`. Tests inspect the final image history/package inventory and fail if Playwright, pytest, browser files, or a reviewer-layer digest appears.
+`runtime` starts independently from the exact CPython 3.11 slim-bookworm runtime tag plus recorded linux/amd64 digest. It uses explicit `COPY` for runtime files only, creates numeric UID/GID `10001`, assigns `/usr/sbin/nologin`, retains no writable home, installs `requirements.lock` with hashes and no dependency resolution, excludes tests/dev tools/browser/reviewer layers from the final image, and uses `USER 10001:10001`. The image inventory must prove `/usr/bin/env` exists and record its owning Debian package/version. The exec-form `ENTRYPOINT` is exactly `/usr/bin/env -i` followed by the fixed assignments `PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin`, `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`, `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1`, `GRADIO_ANALYTICS_ENABLED=False`, `HF_HUB_DISABLE_TELEMETRY=1`, `GRADIO_WATCH_DIRS=`, `GRADIO_VIBE_MODE=`, `GRADIO_HOT_RELOAD=false`, `GRADIO_RUN_HISTORY=False`, `GRADIO_SSR_MODE=False`, `GRADIO_MCP_SERVER=False`, `GRADIO_ALLOWED_PATHS=`, and `GRADIO_BLOCKED_PATHS=/`; exec-form `CMD ["python", "app.py"]` follows it. This clears Docker/Hugging Face environment injection before any Python or Gradio import while retaining only the reviewed runtime variables. No `SPACE_ID`, `PORT`, Secret, Variable, or credential is required or preserved. Tests inspect final image history/package inventory and fail if Playwright, pytest, browser files, or a reviewer-layer digest appears.
 
 Do not add an assertion or removal step for `/bin/sh`. The accepted proof is non-login passwd metadata plus absence of shell calls in application AST and exec-form startup.
 
@@ -1310,7 +1404,7 @@ $env:PYTHONPATH = (Resolve-Path space)
 .venv-space\Scripts\python.exe scripts/build_hf_space_supply_chain.py verify --repo-root .
 ```
 
-Expected: Dockerfile/two-base/union-lock/account/startup/source contracts pass. Do not build from `space/` directly because it intentionally lacks tag-sourced evidence/legal files, and do not invent a provisional manifest. Actual image, final-stage inventory, UID/GID, read-only/tmpfs, CPU, no-network, loopback, and cold-start evidence is required from the two-commit clean export in Task 13 before any runtime success claim.
+Expected: Dockerfile/two-base/union-lock/account/startup/source contracts pass, including the exact `/usr/bin/env -i` entrypoint allowlist and absence of `SPACE_ID`/`PORT` configuration. Do not build from `space/` directly because it intentionally lacks tag-sourced evidence/legal files, and do not invent a provisional manifest. Actual `/usr/bin/env` inventory, image, final-stage inventory, injected-environment stripping, UID/GID, read-only/tmpfs, CPU, no-network, loopback, file-capability, and cold-start evidence is required from the two-commit clean export in Task 13 before any runtime success claim.
 
 - [ ] **Step 5: Run tests and commit exact files**
 
@@ -1649,11 +1743,11 @@ if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'In
 1. Re-check clean-worktree and two-commit preconditions. Create `candidate` and `review` children only beneath the owned run root. Run exporter and `verify-export` before any controlled acquisition/build command. Export code is restricted by source tests to local Git object reads and has no networking API/import/call path.
 2. Read both exact tag/platform-digest records from `base-image.json`. For each, run `docker image inspect` against the concatenated recorded tag and linux/amd64 digest and verify `RepoDigests`; if and only if that exact image is absent, perform a logged controlled `docker pull` of the same immutable reference, then re-inspect. Reject a tag-only or wrong-platform image. This is controlled supply-chain acquisition, not test execution.
 3. In the same controlled supply-chain/build phase, build `--target test` and `--target runtime` from the exact candidate. Network access is permitted only for digest/hash-pinned base and Python package acquisition and every accepted byte must match the image digest or lock hash. `--pull=false` may be used only after exact local image verification and is never evidence that the build was offline. Verify built image histories/inventories: test uses the reviewer base; runtime uses only the CPython base and contains no dev/browser/model package.
-4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`; run the final runtime UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. No command in these execution phases downloads a dependency.
-5. Create a GUID-labeled Docker `--internal` network and run the final app plus exact reviewer image for normal/five-failure, four-scenario, 1440×900/390×844, keyboard/focus, WCAG, console, and external-request review. Only reviewer-to-app traffic is possible; all egress is absent. Record reviewer image/tag/platform digest and browser revisions in the in-memory receipt.
+4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run the UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start additionally passes adversarial Docker values for multiple `GRADIO_*` names, `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect `/proc/1/environ` and every runtime child process environment from inside the container and require exactly the fixed `ENTRYPOINT` allowlist: none of the injected values or names may survive. Prove the app still binds only fixed port 7860, exact instance/launch/config values do not drift, and monitoring/run-history functionality remains unavailable. No command in these execution phases downloads a dependency.
+5. Create a GUID-labeled Docker `--internal` network and run the final app plus exact reviewer image for normal/five-failure, four-scenario, 1440×900/390×844, keyboard/focus, WCAG, console, and external-request review. Repeat adversarial environment injection for the app container and require the same PID 1/child allowlist. Verify main/config and normal static assets remain healthy, the absolute allowed sentinel does not exist, the root block takes precedence, `max_file_size=0`, and file/upload probes cannot read or disclose requested paths, bytes, canaries, or payload representations. Monitoring/run-history/file denials may use bounded framework 403 or 404 behavior; the verifier does not hard-code one status as universally required. Only reviewer-to-app traffic is possible; all egress is absent. Record reviewer image/tag/platform digest and browser revisions in the in-memory receipt.
 6. In `finally`, stop/remove only containers and the internal network carrying the current GUID label, then validate and delete only the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect directory untouched for manual inspection; it never broadens the delete target.
 
-Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest, both base/platform digests, lock/SBOM/license hashes, test counts, final runtime image digest, cold-start observations, viewport/state results, cleanup status, and no-egress observations.
+Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest, both base/platform digests, lock/SBOM/license hashes, test counts, final runtime image digest, `/usr/bin/env` inventory, exact PID 1/child environment observations, poisoned-environment behavior, file/upload/history/monitoring capability results, cold-start observations, viewport/state results, cleanup status, and no-egress observations. If `/usr/bin/env -i` is absent, fails to clear the exact candidate environment, or is later shown incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
 
 - [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
 
@@ -1675,7 +1769,13 @@ Expected: the existing repository suite and all Space source-only gates pass. No
 - [ ] **Step 4: Assert the final receipt proves all container/live gates and cleanup**
 
 ```powershell
-$requiredTrue = @('public_tests_passed', 'runtime_inventory_clean', 'runtime_network_none', 'runtime_read_only', 'runtime_non_root_nologin', 'browser_network_internal', 'accessibility_passed', 'cleanup_passed')
+$requiredTrue = @(
+    'public_tests_passed', 'runtime_inventory_clean', 'runtime_network_none',
+    'runtime_read_only', 'runtime_non_root_nologin', 'runtime_env_binary_inventoried',
+    'runtime_environment_scrubbed', 'runtime_fixed_port',
+    'runtime_file_capabilities_closed', 'runtime_history_monitoring_closed',
+    'browser_network_internal', 'accessibility_passed', 'cleanup_passed'
+)
 foreach ($field in $requiredTrue) {
     if ($receipt.$field -ne $true) { throw "Final receipt gate failed: $field" }
 }
@@ -1683,7 +1783,7 @@ if ($receipt.cold_starts -ne 3 -or $receipt.viewport_count -ne 2 -or $receipt.pa
 if ($receipt.external_request_count -ne 0 -or $receipt.console_error_count -ne 0) { throw 'Final browser evidence is not clean' }
 ```
 
-Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, container-loopback HTTP/claim, and three cold starts. Browser evidence separately proves normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. Cleanup is proven. The test does not require `/bin/sh` to be absent.
+Expected: container evidence proves non-root/nologin, read-only/tmpfs, CPU/no-network, inventoried `/usr/bin/env`, exact environment scrubbing before import, fixed port/config, closed file/upload/history/monitoring capabilities, container-loopback HTTP/claim, and three cold starts. Browser evidence separately proves normal/five-failure, four-scenario, desktop/mobile, keyboard/focus, accessibility, console, and external-request gates on an internal no-egress Docker network. Cleanup is proven. The test does not require `/bin/sh` to be absent.
 
 - [ ] **Step 5: Verify clean scope and provenance one final time**
 

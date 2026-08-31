@@ -287,7 +287,7 @@ Application-source AST and import-graph tests reject:
 - Application writes through `open` write/append/update modes, `Path.write_text`, `Path.write_bytes`, rename, replace, delete, mkdir, or persistence APIs.
 - Reading environment variables, command-line file paths, user home, current working directory discovery, or arbitrary absolute paths.
 
-The only application file reads are package-relative reads of the three committed JSON files. Docker and test infrastructure may use operational environment values, but product code has no environment-based configuration and the deployed Space requires zero user-defined Secrets or Variables.
+The only application file reads are package-relative reads of the three committed JSON files. Application source does not import `os` or read the process environment. Docker and test infrastructure may set or poison operational environment values to verify the boundary, but product code has no environment-based configuration and the deployed Space requires zero user-defined Secrets or Variables.
 
 ## 10. Dependency and supply-chain contract
 
@@ -311,10 +311,12 @@ The only application file reads are package-relative reads of the three committe
 - Runtime image excludes tests, development lock, SBOM tooling, compiler, package cache, Git, curl, wget, and shell utilities not required to launch Python.
 - Workspace, application source, evidence, legal files, and dependency environment are read-only.
 - Product code performs zero filesystem writes. Framework-required temporary operations, if any, are confined to an empty bounded tmpfs mounted at `/tmp`; no persistent or workspace path is writable.
-- Gradio analytics and Hugging Face telemetry are disabled through immutable image configuration. No application analytics are implemented.
+- Before Python or Gradio imports, the exec-form Docker `ENTRYPOINT` invokes `/usr/bin/env -i` and rebuilds only this fixed process-environment allowlist: `PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin`, `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`, `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1`, `GRADIO_ANALYTICS_ENABLED=False`, `HF_HUB_DISABLE_TELEMETRY=1`, `GRADIO_WATCH_DIRS=`, `GRADIO_VIBE_MODE=`, `GRADIO_HOT_RELOAD=false`, `GRADIO_RUN_HISTORY=False`, `GRADIO_SSR_MODE=False`, `GRADIO_MCP_SERVER=False`, `GRADIO_ALLOWED_PATHS=`, and `GRADIO_BLOCKED_PATHS=/`. The Dockerfile retains exec-form `CMD ["python", "app.py"]`. `/usr/bin/env` is a required, inventoried runtime binary; the app never invokes a shell.
+- The runtime contract includes no `SPACE_ID`, `PORT`, secret, credential, or user-provided environment value. Docker- or Hugging-Face-injected variables are discarded by `/usr/bin/env -i`; Gradio analytics, Hugging Face telemetry, watch/vibe/hot-reload, run history, SSR, MCP, and environment-derived file allowlists are fixed closed before import. No application analytics are implemented.
 - Runtime smoke uses `--network none`, `--read-only`, a bounded `--tmpfs /tmp:rw,noexec,nosuid,size=64m`, `--cpus=2`, empty CUDA visibility, and no mounted secrets or host files.
 - Smoke asserts non-root UID, non-writable workspace/evidence files, successful app construction, local loopback health response, visible exact claim copy, and absence of model libraries.
 - Network-disabled runtime is the authoritative no-fetch proof. Static source scans are defense in depth, not a substitute.
+- If the exact candidate image lacks a usable `/usr/bin/env -i` boundary, or a later authorized Hugging Face Docker Space compatibility review shows that boundary cannot operate, implementation stops for central review; it must not replace or weaken the environment threat boundary implicitly.
 
 ## 12. Evidence-failure UX
 
@@ -337,15 +339,17 @@ The normal app may contain only static HTML/Markdown output, one `Radio` input w
 
 The application and capability tests are pinned to Gradio `6.26.0`. The Gradio config contract verifies:
 
+- `create_app` explicitly neutralizes the exact-version instance state to `dev_mode=False`, `vibe_mode=False`, `root_path=""`, `api_open=False`, and `space_id=None`. This is ordinary per-instance configuration, not a framework-global monkeypatch. Application source neither imports `os` nor reads environment variables, and poisoned-host-environment tests prove that these attributes and the launch contract do not drift.
 - No `Textbox`, `Code`, `File`, `UploadButton`, `Dataframe`, editable `JSON`, input `Image`, input `Audio`, input `Video`, chatbot, multimodal, gallery upload, or state initialized from request data.
 - The only input component is the single-select scenario radio. Its config exposes no prop or schema capability for arbitrary custom values; `choices` is exactly the four label/ID pairs, `value` is unselected, `type == "value"`, and its input schema is a string enum containing exactly the four IDs.
 - The sole event dependency has exactly one input and one bounded output. It uses the fixed internal name `api_name="select_scenario"`, `api_visibility="private"`, `api_description=False`, `preprocess=False`, `postprocess=True`, `queue=False`, `batch=False`, and `concurrency_limit=1`; it exposes no examples API. Disabling component preprocessing is a load-bearing requirement so Gradio never constructs an input-echoing choice error before the bounded callback runs. Output postprocessing remains enabled only for the callback's canonical bounded HTML.
 - Both `Blocks.get_api_info()` and the running `/gradio_api/info` response have empty `named_endpoints` and `unnamed_endpoints`. This proves that the dependency is absent from public API metadata, not that Gradio’s internal UI event transport is absent.
 - The callback independently validates exact type, a fixed maximum scenario-ID character length, and the four-ID allowlist before lookup. Direct calls and running internal-transport calls with unknown strings, oversized strings, nested data, lists, mappings, nulls, booleans, or numbers return the exact same canonical `unknown_synthetic_scenario` HTML without echoing input; direct multi-value probes are likewise rejected rather than partially consumed.
-- Launch is hard-coded to `server_name="0.0.0.0"`, `server_port=7860`, `footer_links=[]`, `max_threads=1`, `allowed_paths=[]`, and `state_session_capacity=1`. It exposes no authentication or authentication dependency, request object, static mount, user-provided path, environment-derived configuration, or CLI-derived configuration.
+- Launch is hard-coded to `share=False`, `server_name="0.0.0.0"`, `server_port=7860`, `root_path=""`, `footer_links=[]`, `run_history=False`, `max_threads=1`, `state_session_capacity=1`, `enable_monitoring=False`, `ssr_mode=False`, `pwa=False`, `mcp_server=False`, `num_workers=1`, `strict_cors=True`, `show_error=False`, `inbrowser=False`, `debug=False`, and `max_file_size=0`. It exposes no authentication or authentication dependency, request object, static mount, user-provided path, environment-derived configuration, or CLI-derived configuration.
+- Gradio `6.26.0` treats empty file-path lists as permission to consult environment variables, so empty lists are forbidden here. Launch uses the truthy exact sentinel `allowed_paths=["/__carerisk_no_allowed_files__"]` and `blocked_paths=["/"]`. The allowed sentinel resolves to an absolute path and must not exist; the root block takes priority. The capability claim is therefore **no effective application file-serving capability**, not literal absence of internal Gradio file routes.
 - Gradio flagging, feedback, analytics, and persistence are absent.
 
-Tests inspect `Blocks.get_config_file()`, the pinned event dependency object, and launch arguments; assert that framework input preprocessing is disabled and output postprocessing remains enabled; compare both in-process and running-server API metadata to the exact empty-endpoint object; invoke the callback directly with adversarial values; and submit the same adversarial matrix through the sole running internal transport. Every invalid direct result and every parsed transport output must equal the canonical unknown-state HTML byte-for-byte. A nested sentinel payload and an oversized string are additionally checked against the raw HTTP response and captured server logs; neither their raw value nor representation may appear. The contract is capability-based: the acknowledged internal transport is acceptable only when every value beyond the four enumerated IDs fails closed without echo and every response remains bounded state HTML.
+Tests inspect `Blocks.get_config_file()`, the pinned event dependency object, instance attributes, and the complete launch argument mapping; assert that framework input preprocessing is disabled and output postprocessing remains enabled; compare both in-process and running-server API metadata to the exact empty-endpoint object; invoke the callback directly with adversarial values; and submit the same adversarial matrix through the sole running internal transport. Every invalid direct result and every parsed transport output must equal the canonical unknown-state HTML byte-for-byte. A nested sentinel payload and an oversized string are additionally checked against the raw HTTP response and captured server logs; neither their raw value nor representation may appear. Under poisoned `GRADIO_*`, `SPACE_ID`, and `PORT` values, tests require the fixed instance/launch state, HTTP 200 for the main page and config, normal static UI assets, an absent file sentinel, root-block precedence, `max_file_size=0`, and inability to obtain run-history, monitoring, file, or upload capabilities. A denied capability may yield the framework's bounded 403 or 404 behavior; no single denial status is a cross-deployment contract, but no response may disclose a requested path, file bytes, canary, or payload representation. The contract is capability-based: the acknowledged internal transport and framework routes are acceptable only when every value beyond the four enumerated IDs fails closed without echo and every file/history/monitoring capability remains unavailable.
 
 ## 14. Space card and licensing
 
@@ -389,9 +393,10 @@ Tests must not import the existing dashboard, model package, data parser, guard,
 ### 15.2 Container gates
 
 - Build from the digest-pinned base using the exact runtime lock and no credentials.
-- Verify final user is non-root and no shell or writable workspace exists.
+- Verify final user is non-root and no shell or writable workspace exists; inventory and execute the required `/usr/bin/env` binary without invoking a shell.
+- Start the candidate with adversarial `GRADIO_*`, `SPACE_ID`, `PORT`, and secret-shaped Docker environment values; prove that PID 1 and every child receive only the fixed allowlist rebuilt by `/usr/bin/env -i`, that the app still binds fixed port 7860, and that no runtime behavior or capability is overridden.
 - Run under read-only root, bounded tmpfs, two CPUs, no GPU, and `--network none`.
-- Perform launch-free app construction and a same-container loopback HTTP health/claim probe.
+- Perform launch-free app construction and a same-container loopback HTTP health/claim/config probe. Verify normal static assets still load, the allowed-path sentinel does not exist, root blocking takes priority, upload/file reads disclose nothing, maximum upload size is zero, and monitoring/run-history functionality cannot be obtained without fixing a single 403/404 response code as the only valid implementation.
 - Verify normal and each bounded evidence-failure startup mode without altering committed files.
 - Generate and compare image SBOM to the committed dependency SBOM; inventory differences fail.
 - Scan vulnerabilities and licenses under the contract in Section 10.
@@ -457,7 +462,7 @@ Implementation is eligible for deployment review only when all statements below 
 - Every displayed quantitative value is derived from the validated exact receipt.
 - Receipt, release, tag, app-source commit, export paths, hashes, locks, base digest, SBOM, and licenses are mutually consistent.
 - App source has no model/data/scoring imports, no product filesystem writes, no environment configuration, and no outbound network capability.
-- Container passes non-root, read-only, bounded tmpfs, CPU-only, network-disabled smoke.
+- Container passes non-root, read-only, bounded tmpfs, CPU-only, network-disabled smoke; its `/usr/bin/env -i` entrypoint removes injected environment values before import and preserves only the reviewed allowlist.
 - Gradio config and direct event probes prove there is no arbitrary data-entry or upload capability.
 - Normal, four scenario, and five evidence-failure states pass desktop/mobile/accessibility/live review.
 - Space creation, upload, and GitHub About remain unperformed until their explicit gates are approved.
