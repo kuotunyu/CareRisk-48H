@@ -12,9 +12,10 @@
 
 - Preserve the current Task 7 partials until the implementation session begins and its controller validates the custody table below. This docs-only correction does not authorize changing them.
 - All bytes in a public export, candidate, runtime stage, final runtime, deployment artifact, saved archive, pushed image, uploaded artifact, published image, emitted build output, or other distributed output require an approved redistribution-compatible record. Unknown, missing, incompatible, or non-redistributable licensing is a hard stop.
-- The sole exception is metadata inventory for reviewer tag `mcr.microsoft.com/playwright/python:v1.62.0-noble`, index `sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d`, linux/amd64 manifest `sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59`, Playwright `1.62.0`/tag `v1.62.0`, WebKit revision `2336`, version `26.5`, canonical-tree SHA-256 `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`, and upstream base commit `343e13bf22dca9d0ec227801419aab0f9001a32f`.
+- The sole exception is metadata inventory for reviewer tag `mcr.microsoft.com/playwright/python:v1.62.0-noble`, index `sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d`, linux/amd64 manifest `sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59`, Playwright `1.62.0`/tag `v1.62.0`, WebKit revision `2336`, version `26.5`, immutable tree count/size `38`/`306401261`, and canonical-tree SHA-256 `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`. Its separate external source reference is exact: tag commit `e3950d9c140d007bd52853b45813c6274b24e36f`, relative path `browser_patches/webkit/UPSTREAM_CONFIG.sh`, raw URL `https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh`, raw length `126`, raw SHA-256 `3554c5b666ed87032fb22e78956f8a2fffe1faede63ae8dcae60a26961f6419c`, parsed `REMOTE_URL=https://github.com/WebKit/WebKit.git`, `BASE_BRANCH=main`, and `BASE_REVISION=343e13bf22dca9d0ec227801419aab0f9001a32f`.
 - Its SPDX package values are exactly `licenseDeclared="NOASSERTION"` and `licenseConcluded="NOASSERTION"`; its policy value is exactly `review_disposition="reviewer_test_only_not_redistributed"`; and its notice status is exactly `complete_digest_bound_notice=false`.
-- Do not claim bitwise source-to-binary attestation, a complete digest-bound notice set, redistribution approval, or any guessed SPDX expression.
+- The source reference proves only that Playwright `v1.62.0` source configuration declares the WebKit base revision. Do not claim that its file is in the binary image, bitwise source-to-binary attestation, a complete digest-bound notice set, redistribution approval, or any guessed SPDX expression.
+- The controlled-acquisition phase may read only the exact commit-pinned raw URL and validates its raw bytes before retaining metadata; it never writes the raw source file or browser bytes into a public bundle, runtime, export, candidate, SBOM payload, or license-inventory payload. The later verify phase has no egress and reads only locked metadata/artifacts.
 - Chromium revision `1234`, Firefox revision `1538`, ffmpeg revision `1011`, both base/OS inventories, every Python package, and every deployed/public component remain on the ordinary approved-only path.
 - The reviewer image and all Chromium/Firefox/WebKit/ffmpeg bytes are local/CI-only. They may be pulled and executed by exact digest but never saved, exported, pushed, uploaded, published, deployed, emitted as build output, copied into a public candidate, or inherited by/present in the final runtime.
 - Task 9, Task 11, and Task 13 are local/CI-only. Creating/changing an Actions Environment or variable, pushing Git/Hugging Face content, publishing an image/artifact, deploying, or changing any remote metadata remains forbidden.
@@ -68,8 +69,14 @@ class WebKitReviewerPolicy:
     browsers_json_url: str
     registry_source_url: str
     cdn_artifact_url: str
-    upstream_config_path: str
-    upstream_base_commit: str
+    playwright_tag_commit: str
+    repository_relative_path: str
+    commit_pinned_raw_url: str
+    raw_byte_length: int
+    raw_sha256: str
+    remote_url: str
+    base_branch: str
+    base_revision: str
     webkit_revision: str
     webkit_version: str
     webkit_tree_algorithm: str
@@ -133,8 +140,14 @@ def exact_webkit_policy_dict() -> dict[str, object]:
         "browsers_json_url": "https://github.com/microsoft/playwright/blob/v1.62.0/packages/playwright-core/browsers.json",
         "registry_source_url": "https://github.com/microsoft/playwright/blob/v1.62.0/packages/playwright-core/src/server/registry/index.ts",
         "cdn_artifact_url": "https://cdn.playwright.dev/dbazure/download/playwright/builds/webkit/2336/webkit-ubuntu-24.04.zip",
-        "upstream_config_path": "/ms-playwright/webkit-2336/UPSTREAM_CONFIG",
-        "upstream_base_commit": "343e13bf22dca9d0ec227801419aab0f9001a32f",
+        "playwright_tag_commit": "e3950d9c140d007bd52853b45813c6274b24e36f",
+        "repository_relative_path": "browser_patches/webkit/UPSTREAM_CONFIG.sh",
+        "commit_pinned_raw_url": "https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh",
+        "raw_byte_length": 126,
+        "raw_sha256": "3554c5b666ed87032fb22e78956f8a2fffe1faede63ae8dcae60a26961f6419c",
+        "remote_url": "https://github.com/WebKit/WebKit.git",
+        "base_branch": "main",
+        "base_revision": "343e13bf22dca9d0ec227801419aab0f9001a32f",
         "webkit_revision": "2336",
         "webkit_version": "26.5",
         "webkit_tree_algorithm": "sha256-canonical-tree-v1",
@@ -153,7 +166,7 @@ def exact_webkit_policy_dict() -> dict[str, object]:
 
 - [ ] **Step 2: Add and run the single-field mutation matrix**
 
-Create `test_exact_webkit_reviewer_exception_rejects_every_single_field_drift`, parameterized over every fixture key after `package`/`version`, explicitly including `playwright_tag_url` and `webkit_tree_algorithm`, plus missing key, extra key, alternate list order, alternate case, integer revision, truthy string flag, guessed license expression, `approved` disposition, and `complete_digest_bound_notice=True`.
+Create `test_exact_webkit_reviewer_exception_rejects_every_single_field_drift`, parameterized over every fixture key after `package`/`version`, explicitly including `playwright_tag_commit`, `repository_relative_path`, `commit_pinned_raw_url`, `raw_byte_length`, `raw_sha256`, `remote_url`, `base_branch`, `base_revision`, `playwright_tag_url`, and `webkit_tree_algorithm`, plus missing key, extra key, alternate list order, alternate case, integer revision, truthy string flag, guessed license expression, `approved` disposition, and `complete_digest_bound_notice=True`. Add `test_webkit_source_relative_file_is_absent_from_immutable_image_tree` so absence, rather than a fictitious image member, is fixed evidence.
 
 Run:
 
@@ -191,7 +204,7 @@ Keep ordinary records on `review_disposition == "approved"` with nonempty, non-`
 
 - [ ] **Step 2: Extend the frozen measured base record without re-resolution**
 
-Under `images.reviewer.embedded_browsers.webkit`, add exact `version="26.5"`, `tree_algorithm="sha256-canonical-tree-v1"`, Playwright tag URL and tagged source references, CDN URL, `upstream_config.path`, `upstream_config.base_commit`, and the ordered official WebKit reference list from the fixture. Preserve the existing tag/index/manifest/content-tree values byte-for-byte. The current correction must call only the read-only `verify-images --input tools/space/base-image.json`; it must not call `resolve-images`, query for a replacement, overwrite the record from registry output, or select another tag/platform. A legitimate future re-resolution is outside this plan and requires separate central design approval, a newly fixed tuple, fresh measurement/license review, updated single-field and surface mutations, and a new custody baseline. Validate that `UPSTREAM_CONFIG` is already inside the canonical 38-file tree; do not claim that the tree proves complete license notice coverage.
+Under `images.reviewer.embedded_browsers.webkit`, add exact `version="26.5"`, `tree_algorithm="sha256-canonical-tree-v1"`, Playwright tag URL and tagged source references, CDN URL, and an external `source_reference` object containing every exact tag-commit/relative-path/raw-URL/raw-byte/parsed-assignment field from the fixture. Preserve the existing tag/index/manifest/content-tree values byte-for-byte. The current correction must call only the read-only `verify-images --input tools/space/base-image.json`; it must not call `resolve-images`, query for a replacement, overwrite the record from registry output, or select another tag/platform. A legitimate future re-resolution is outside this plan and requires separate central design approval, a newly fixed tuple, fresh measurement/license review, updated single-field and surface mutations, and a new custody baseline. Validate that the source relative file is absent from the canonical 38-file image tree; separately acquire and validate the source file only during the controlled HTTPS source-reference phase. Do not claim that either result proves complete license notice coverage.
 
 - [ ] **Step 3: Emit policy, license inventory, and SPDX**
 
@@ -354,7 +367,8 @@ WEBKIT_REVIEWER_POLICY_TUPLE_FIELDS = (
     "reviewer_image_tag", "reviewer_index_digest", "reviewer_linux_amd64_digest",
     "playwright_version", "playwright_tag", "playwright_tag_url",
     "browsers_json_url", "registry_source_url", "cdn_artifact_url",
-    "upstream_config_path", "upstream_base_commit", "webkit_revision",
+    "playwright_tag_commit", "repository_relative_path", "commit_pinned_raw_url",
+    "raw_byte_length", "raw_sha256", "remote_url", "base_branch", "base_revision", "webkit_revision",
     "webkit_version", "webkit_tree_algorithm", "webkit_tree_sha256",
     "official_webkit_licensing_references", "license_declared",
     "license_concluded", "review_disposition", "complete_digest_bound_notice",
@@ -379,7 +393,7 @@ The receipt serializes `webkit_reviewer_policy_tuple` as the ordered values for 
 
 - [ ] **Step 1: Write receipt RED tests**
 
-Add `test_final_receipt_binds_complete_webkit_reviewer_policy_tuple`, parameterized `test_final_verifier_rejects_reviewer_bytes_on_each_distribution_surface`, `test_final_receipt_requires_zero_count_for_each_distribution_surface`, and `test_final_verifier_rejects_nonclosed_distribution_surface_registry`. The tuple test compares all `WEBKIT_REVIEWER_POLICY_TUPLE_FIELDS` against `exact_webkit_policy_dict()`, including tag URL, tagged `browsers.json`, registry, CDN, `UPSTREAM_CONFIG`, base commit, tree algorithm, tree digest, and the ordered official licensing references. Parameterize tuple mutations over every field and surface mutations over all eleven names plus omitted, duplicate, unknown, empty, and unclassified registries.
+Add `test_final_receipt_binds_complete_webkit_reviewer_policy_tuple`, parameterized `test_final_verifier_rejects_reviewer_bytes_on_each_distribution_surface`, `test_final_receipt_requires_zero_count_for_each_distribution_surface`, and `test_final_verifier_rejects_nonclosed_distribution_surface_registry`. The tuple test compares all `WEBKIT_REVIEWER_POLICY_TUPLE_FIELDS` against `exact_webkit_policy_dict()`, including tag URL, tagged `browsers.json`, registry, CDN, exact source tag commit/relative path/raw URL/raw length/raw hash/parsed `REMOTE_URL`/`BASE_BRANCH`/`BASE_REVISION`, explicit image-tree absence, tree algorithm, tree digest, and the ordered official licensing references. Parameterize tuple mutations over every field and surface mutations over all eleven names plus omitted, duplicate, unknown, empty, and unclassified registries.
 
 Require booleans `webkit_reviewer_exception_tuple_exact`, `webkit_spdx_declared_noassertion_exact`, `webkit_spdx_concluded_noassertion_exact`, `webkit_reviewer_test_only_not_redistributed_exact`, `webkit_complete_digest_bound_notice_false`, `public_export_approved_bytes_only`, `candidate_reviewer_bytes_absent`, `runtime_stage_reviewer_bytes_absent`, `final_image_reviewer_bytes_absent`, `deployment_artifact_reviewer_bytes_absent`, `saved_archive_reviewer_bytes_absent`, `pushed_image_reviewer_bytes_absent`, `uploaded_artifact_reviewer_bytes_absent`, `published_image_reviewer_bytes_absent`, `build_output_reviewer_bytes_absent`, `other_distributed_output_reviewer_bytes_absent`, `distribution_surface_registry_exact`, and `reviewer_distribution_commands_absent`. Require every value in `REVIEWER_BYTE_COUNT_FIELDS` to be present as an integer and equal zero; a missing, non-integer, duplicate/aliased, or nonzero count fails.
 
@@ -410,10 +424,10 @@ Task 13 is verification-only after the app-source and manifest commits. Require 
 
 ## Plan self-review checklist
 
-- [ ] Exact tuple strings and digests occur consistently in design, main plan, generated policy, inventory, SPDX, and final receipt expectations.
+- [ ] Exact tuple strings and digests, source-reference names, and image-tree-absence evidence occur consistently in design, main plan, generated policy, inventory, SPDX, and final receipt expectations.
 - [ ] Only WebKit has `NOASSERTION`; both SPDX fields use it; no ordinary component is excepted.
 - [ ] `reviewer_test_only_not_redistributed` and `complete_digest_bound_notice=false` are exact, typed values.
-- [ ] Tests cover public/deployed `NOASSERTION`, every other-component `NOASSERTION`, every tuple/provenance/notice/exclusion field drift, and reviewer/browser bytes on every named distribution/runtime surface.
+- [ ] Tests cover public/deployed `NOASSERTION`, every other-component `NOASSERTION`, every tuple/provenance/notice/exclusion field drift, image-tree absence, and reviewer/browser bytes on every named distribution/runtime surface.
 - [ ] Task 8, Task 9, Task 11, and Task 13 have independent enforcement; metadata presence is never confused with byte distribution.
-- [ ] No prose claims source/binary attestation, complete notice, redistribution approval, or a guessed license expression.
+- [ ] No prose claims that a source file is in the binary image, source/binary attestation, complete notice, redistribution approval, or a guessed license expression.
 - [ ] No remote action, private data, Set B/Set C, Task 8 implementation, or product partial change occurs during the docs-only corrective commit.
