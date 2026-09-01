@@ -177,11 +177,13 @@ def test_git_plumbing_ignores_ambient_repository_routing(
     monkeypatch.setenv("GIT_DIR", str(alternate_git_dir))
     monkeypatch.setenv("GIT_WORK_TREE", str(alternate_work_tree))
 
-    actual = _git_bytes(
-        REPOSITORY_ROOT,
-        "rev-parse",
-        "--absolute-git-dir",
-    ).decode("ascii").strip()
+    actual = _git_path_line(
+        _git_bytes(
+            REPOSITORY_ROOT,
+            "rev-parse",
+            "--absolute-git-dir",
+        )
+    )
 
     assert Path(actual).resolve(strict=True) == (REPOSITORY_ROOT / ".git").resolve(
         strict=True
@@ -331,9 +333,7 @@ def test_git_plumbing_failures_are_constant_and_nonsecret(
         hashlib.sha256(synthetic_raw).hexdigest(),
     )
 
-    typed_stages: tuple[
-        tuple[str, tuple[str, ...], Callable[[], object]], ...
-    ] = (
+    typed_stages: tuple[tuple[str, tuple[str, ...], Callable[[], object]], ...] = (
         (
             "positive_path_object_id",
             ("rev-parse", "HEAD:space/tests/test_gradio_contract.py"),
@@ -396,25 +396,35 @@ def test_git_plumbing_failures_are_constant_and_nonsecret(
         "non-ascii-\N{LATIN SMALL LETTER E WITH ACUTE}".encode("utf-8"),
     )
 
+    def poisoning_run_for(
+        expected_suffix: tuple[str, ...],
+        output: bytes,
+    ) -> Callable[..., subprocess.CompletedProcess[bytes]]:
+        def poisoning_run(
+            command: tuple[str, ...],
+            **kwargs: Any,
+        ) -> subprocess.CompletedProcess[bytes]:
+            assert kwargs["timeout"] == 10.0
+            completed = real_run(command, **kwargs)
+            if tuple(command[-len(expected_suffix) :]) == expected_suffix:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=output,
+                    stderr=synthetic_secret,
+                )
+            return completed
+
+        return poisoning_run
+
     for _stage, suffix, action in typed_stages:
         for poisoned_output in invalid_typed_outputs:
-            def poisoning_run(
-                command: tuple[str, ...],
-                **kwargs: Any,
-            ) -> subprocess.CompletedProcess[bytes]:
-                assert kwargs["timeout"] == 10.0
-                completed = real_run(command, **kwargs)
-                if tuple(command[-len(suffix):]) == suffix:
-                    return subprocess.CompletedProcess(
-                        command,
-                        0,
-                        stdout=poisoned_output,
-                        stderr=synthetic_secret,
-                    )
-                return completed
-
             with monkeypatch.context() as context:
-                context.setattr(subprocess, "run", poisoning_run)
+                context.setattr(
+                    subprocess,
+                    "run",
+                    poisoning_run_for(suffix, poisoned_output),
+                )
                 assert_constant_failure(action)
 ```
 
@@ -432,7 +442,7 @@ Expected strict RED: exactly 5 collected and 5 failed; no collection error or sk
 
 - [ ] **Step 3: Implement the deterministic runner and repository identity boundary**
 
-Add `from dataclasses import dataclass`, `import shutil`, and `from typing import Any, Callable, NoReturn`. `Any` and `Callable` are used only by the subprocess-recording RED doubles; production helpers retain concrete types. Preserve all existing imports still used elsewhere.
+Add `from dataclasses import dataclass` and `import shutil`; extend the existing import to `from collections.abc import Callable, Iterable`, and add `from typing import Any, NoReturn`. `Any` and `Callable` are used only by the subprocess-recording RED doubles; production helpers retain concrete types. Importing `Callable` from `typing` is forbidden by Ruff `UP035`. Preserve all existing imports still used elsewhere.
 
 Add the fixed constants and failure helper exactly:
 
