@@ -17,7 +17,7 @@
 - Do not read `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation assets, private ledgers/final locks, or Set C.
 - Do not run the receipt exporter, model code, training, evaluation, or persistent service.
 - Do not create, upload, deploy, or modify a GitHub or Hugging Face resource; do not push this branch.
-- Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; calls through `__getattribute__`, `__getattr__`, `__setattr__`, or `__delattr__`; `__dict__` access; `operator.attrgetter`/`operator.methodcaller`; and `inspect.getattr_static`.
+- Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; the implicit `__builtins__` mapping; every double-underscore attribute reference; every double-underscore function definition except `__init__` and `__call__`; every double-underscore name load except `__name__` and `__file__`; `operator.attrgetter`/`operator.methodcaller`; and `inspect.getattr_static`. `__all__` may be assigned but does not authorize a load.
 - Enforcement rejects forbidden builtin `Name` loads and forbidden reflective/helper `Attribute` references at the source token. It does not resolve arbitrary downstream alias flow. Violations are deduplicated and returned in deterministic sorted order.
 - Syntax-defined `__future__`, `__name__`, `__file__`, `__all__`, `__init__`, and `__call__` uses remain permitted when they are not used to retrieve or mutate another attribute.
 - The entry point still requires direct named construction: one `FastAPI(...)`, one `gr.mount_gradio_app(...)`, one `build_package_asset_membership()`, one `PublicSurfaceGuard(...)`, and one `uvicorn.run(...)` beneath the exact main guard.
@@ -83,7 +83,7 @@ def test_application_forbidden_reflection_name_load_is_denied(
         assert f"synthetic.py:{forbidden_name}" in scan_capabilities((synthetic,))
 ```
 
-The named-expression case intentionally reuses the builtin identifier as its store target; the `Load` on the right remains the violation. Keep the existing direct dynamic-code tests as independent legacy coverage. Add the same direct-expression plus ordinary-alias pair for every forbidden reflective attribute and named helper:
+The named-expression case intentionally reuses the builtin identifier as its store target; the `Load` on the right remains the violation. Add a second parametrized test over the same exact builtin-name tuple that writes both `f'captured = __builtins__["{forbidden_name}"]'` and `f'captured = __builtins__.get("{forbidden_name}")'` and requires `synthetic.py:__builtins__` for every case. Keep the existing direct dynamic-code tests as independent legacy coverage. Add the same direct-expression plus ordinary-alias pair for every forbidden reflective attribute and named helper:
 
 ```python
 @pytest.mark.parametrize(  # type: ignore[untyped-decorator]
@@ -94,6 +94,8 @@ The named-expression case intentionally reuses the builtin identifier as its sto
         ("target.__setattr__", "__setattr__"),
         ("target.__delattr__", "__delattr__"),
         ("target.__dict__", "__dict__"),
+        ("target.__globals__", "__globals__"),
+        ("target.__class__", "__class__"),
         ("operator.attrgetter", "operator.attrgetter"),
         ("operator.methodcaller", "operator.methodcaller"),
         ("inspect.getattr_static", "inspect.getattr_static"),
@@ -108,6 +110,25 @@ def test_application_forbidden_reflective_attribute_load_is_denied(
         synthetic = tmp_path / "synthetic.py"
         synthetic.write_text(source, encoding="utf-8")
         assert f"synthetic.py:{expected_suffix}" in scan_capabilities((synthetic,))
+```
+
+Add a separate protocol-definition mutation because a method definition is not an `ast.Attribute`:
+
+```python
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+    "hook_name",
+    ("__getattribute__", "__getattr__", "__setattr__", "__delattr__", "__iter__"),
+)
+def test_application_dynamic_protocol_definitions_are_denied(
+    tmp_path: Path,
+    hook_name: str,
+) -> None:
+    synthetic = tmp_path / "synthetic.py"
+    synthetic.write_text(
+        f"class Dynamic:\n    def {hook_name}(self, *args):\n        return None\n",
+        encoding="utf-8",
+    )
+    assert f"synthetic.py:{hook_name}" in scan_capabilities((synthetic,))
 ```
 
 - [ ] **Step 3: Add entry-point and guard-helper bypass mutations**
@@ -149,7 +170,7 @@ def _compose(parent):
     return guard(parent, membership)
 ```
 
-Repeat the guard mutation with `vars(ui_module)[...]`, `ui_module.__dict__[...]`, and a nonliteral member on the `ui_module` root. Preserve the existing positive test for direct bounded builder/guard aliases. Add one explicit acceptance test whose functions contain only `getattr(other, "get")`, `getattr(inner, "original_router", None)`, and `getattr(socket, "AF_UNIX", None)` and assert `_guard_helper_violations(tree) == []`; a sensitive word on an unrelated receiver is not helper candidacy.
+Repeat the guard mutation with `vars(ui_module)[...]`, `ui_module.__dict__[...]`, and a nonliteral member on the `ui_module` root. Add the exact bounded builtin-alias mutation `reflect = getattr; member = runtime_member; guard = reflect(ui_module, member)` and the implicit-mapping mutation `reflect = __builtins__["getattr"]; guard = reflect(ui_module, "PublicSurfaceGuard")`; both must produce a nonempty guard-helper violation even though no direct guard call resolves. Preserve the existing positive test for direct bounded builder/guard aliases. Add one explicit acceptance test whose functions contain only `getattr(other, "get")`, `getattr(inner, "original_router", None)`, and `getattr(socket, "AF_UNIX", None)` and assert `_guard_helper_violations(tree) == []`; a sensitive word on an unrelated receiver is not helper candidacy.
 
 - [ ] **Step 4: Add a positive syntax-identity contract**
 
@@ -177,7 +198,9 @@ Run only the newly added tests:
 ```powershell
 .venv-space\Scripts\python.exe -m pytest -q `
   tests/test_hf_space_source_boundary.py::test_application_forbidden_reflection_name_load_is_denied `
+  tests/test_hf_space_source_boundary.py::test_application_implicit_builtins_mapping_is_denied `
   tests/test_hf_space_source_boundary.py::test_application_forbidden_reflective_attribute_load_is_denied `
+  tests/test_hf_space_source_boundary.py::test_application_dynamic_protocol_definitions_are_denied `
   tests/test_hf_space_source_boundary.py::test_entrypoint_scanner_rejects_reflection_without_resolving_forbidden_flow `
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_rejects_sensitive_reflection_candidates `
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_allows_unrelated_test_introspection `
@@ -204,11 +227,11 @@ _FORBIDDEN_REFLECTION_NAMES = frozenset(
         "exec",
         "compile",
         "__import__",
+        "__builtins__",
     }
 )
-_FORBIDDEN_REFLECTIVE_ATTRIBUTES = frozenset(
-    {"__getattribute__", "__getattr__", "__setattr__", "__delattr__", "__dict__"}
-)
+_ALLOWED_DUNDER_NAME_LOADS = frozenset({"__name__", "__file__"})
+_ALLOWED_DUNDER_DEFINITIONS = frozenset({"__init__", "__call__"})
 _FORBIDDEN_REFLECTION_HELPERS = frozenset(
     {"operator.attrgetter", "operator.methodcaller", "inspect.getattr_static"}
 )
@@ -228,13 +251,13 @@ _SENSITIVE_COMPOSITION_MEMBERS = frozenset(
 )
 ```
 
-Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`; reject every `ast.Attribute` whose attribute is in `_FORBIDDEN_REFLECTIVE_ATTRIBUTES`; and reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`. Do not evaluate Python, fold arbitrary expressions, import a module, or follow the value after the forbidden reference. Direct calls, assignments, defaults, lambdas, named expressions, containers, and later alias calls all fail at the original forbidden load.
+Implement `_is_dunder(name: str) -> bool` as `len(name) > 4 and name.startswith("__") and name.endswith("__")`. Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`, or when it is a dunder outside `_ALLOWED_DUNDER_NAME_LOADS`; reject every dunder `ast.Attribute`; reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`; and reject an `ast.FunctionDef` or `ast.AsyncFunctionDef` with a dunder name outside `_ALLOWED_DUNDER_DEFINITIONS`. `__all__` assignment is an `ast.Store` and remains permitted, but loading it is rejected. Do not evaluate Python, fold arbitrary expressions, import a module, or follow the value after the forbidden reference. Direct calls, assignments, defaults, lambdas, named expressions, containers, mapping access, dynamic protocol definitions, and later alias calls all fail at the original forbidden token.
 
 Integrate it in three places:
 
 1. `scan_capabilities` accumulates existing and dynamic-reflection findings in a set of full `path.name:suffix` strings and returns one deterministic sorted list. Overlap with legacy `eval`, `exec`, or `__import__` checks produces one result, not duplicates.
 2. `_entrypoint_violations` adds `builtin_reflection` whenever the entry-point tree contains a dynamic-reflection violation. It continues the existing checks, but reflective mutations are not required to produce structural tags. Direct and ordinary non-reflective aliases remain subject to mount/router/monkeypatch/server counts.
-3. `_guard_helper_violations` performs a fail-closed candidate pre-pass before `if not all_guard_calls: continue`. `_sensitive_reflection_in_helper` may use `_bounded_aliases` only to resolve ordinary aliases of `ui_module`, `gr`, `parent`, and `uvicorn`. It returns true only when a reflective builtin/attribute/helper acts on one of those resolved roots, or a named helper is applied to such a root. A literal member string without a sensitive receiver is insufficient. A nonliteral member on a sensitive receiver fails. The accepted unrelated receiver mutations are mandatory regression coverage.
+3. `_guard_helper_violations` performs a fail-closed candidate pre-pass before `if not all_guard_calls: continue`. `_sensitive_reflection_in_helper` may use `_bounded_aliases` only to resolve ordinary assignment aliases of `ui_module`, `gr`, `parent`, `uvicorn`, and the forbidden builtin names, including `reflect = getattr`; it does not follow defaults, returns, containers, control flow, or arbitrary expressions. It returns true only when a reflective builtin/attribute/helper acts on one of the resolved sensitive roots, when `__builtins__` access occurs in a function that also applies the result to a sensitive root, or when a named helper is applied to such a root. A literal member string without a sensitive receiver is insufficient. A nonliteral member on a sensitive receiver fails. The accepted unrelated receiver mutations are mandatory regression coverage.
 
 - [ ] **Step 7: Run GREEN and mutation coverage**
 
@@ -243,7 +266,9 @@ Run:
 ```powershell
 .venv-space\Scripts\python.exe -m pytest -q `
   tests/test_hf_space_source_boundary.py::test_application_forbidden_reflection_name_load_is_denied `
+  tests/test_hf_space_source_boundary.py::test_application_implicit_builtins_mapping_is_denied `
   tests/test_hf_space_source_boundary.py::test_application_forbidden_reflective_attribute_load_is_denied `
+  tests/test_hf_space_source_boundary.py::test_application_dynamic_protocol_definitions_are_denied `
   tests/test_hf_space_source_boundary.py::test_entrypoint_scanner_rejects_reflection_without_resolving_forbidden_flow `
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_rejects_sensitive_reflection_candidates `
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_allows_unrelated_test_introspection `
@@ -282,7 +307,7 @@ Expected: one implementation commit with exactly `tests/test_hf_space_source_bou
 
 - [ ] **Step 10: Independent acceptance and old-breaker release (controller only)**
 
-The SDD controller generates a review package from the exact recorded implementation BASE to the implementation HEAD and dispatches an independent reviewer. Acceptance requires Spec ✅, Quality Approved, Critical `0`, Important `0`; Minor findings are recorded under the standard SDD policy. The controller then reruns the six exact node IDs, the complete Task 6 boundary suite, Gradio contract, Ruff, strict Mypy, immutable-scope diff, commit identity, and clean-worktree checks.
+The SDD controller generates a review package from the exact recorded implementation BASE to the implementation HEAD and dispatches an independent reviewer. Acceptance requires Spec ✅, Quality Approved, Critical `0`, Important `0`; Minor findings are recorded under the standard SDD policy. The controller then reruns the eight exact node IDs, the complete Task 6 boundary suite, Gradio contract, Ruff, strict Mypy, immutable-scope diff, commit identity, and clean-worktree checks.
 
 Only after both gates pass, resolve `corrective_head` from `git rev-parse HEAD`, then append these state transitions to the original plan's ignored ledger `.superpowers/sdd/2026-08-31-carerisk-hf-space/progress.md` using that full SHA in both named positions and the actual evidence counts:
 
@@ -292,4 +317,4 @@ Task 6: complete (commits 3ef0963..corrective_head, five-round breaker resolved 
 Task 7: released — Tasks 7–13 may resume from corrective_head; remote Hugging Face/GitHub operations remain out of scope.
 ```
 
-`corrective_head` above names the resolved controller variable; the literal word is never written to the ledger. Append the matching `Task 1: complete` line to this corrective plan's ledger. If review or controller verification fails, append a `Task 1: BLOCKED` line naming the exact reviewer or command finding only to this corrective ledger and do not release Task 7.
+`corrective_head` above names the resolved controller variable; the literal word is never written to the ledger. Append the matching `Task 1: complete` line to the exact corrective ledger `.superpowers/sdd/2026-09-01-carerisk-reflection-boundary-corrective/progress.md`. If review or controller verification fails, append a `Task 1: BLOCKED` line naming the exact reviewer or command finding only to that corrective ledger and do not release Task 7.
