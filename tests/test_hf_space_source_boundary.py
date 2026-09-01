@@ -450,6 +450,62 @@ def _has_type_binding(tree: ast.AST) -> bool:
     return False
 
 
+def _alias_original_and_effective_names(
+    node: ast.alias,
+    parent: ast.AST | None,
+) -> tuple[str, str]:
+    original_name = node.name.rsplit(".", 1)[-1]
+    if isinstance(parent, ast.Import):
+        effective_name = node.asname or node.name.split(".", 1)[0]
+    else:
+        effective_name = node.asname or node.name
+    return original_name, effective_name
+
+
+def _semantic_dunder_bindings(
+    tree: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+    permitted_all_target: ast.Name | None,
+) -> set[str]:
+    violations: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            try:
+                context = node.ctx
+            except AttributeError:
+                context = ast.Load()
+            if (
+                isinstance(context, (ast.Store, ast.Del))
+                and _is_dunder(node.id)
+                and node is not permitted_all_target
+            ):
+                violations.add(node.id)
+        elif isinstance(node, ast.arg) and _is_dunder(node.arg):
+            violations.add(node.arg)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            method_exception = node.name in _ALLOWED_DUNDER_DEFINITIONS and isinstance(
+                parents.get(node), ast.ClassDef
+            )
+            if _is_dunder(node.name) and not method_exception:
+                violations.add(node.name)
+        elif isinstance(node, ast.ClassDef) and _is_dunder(node.name):
+            violations.add(node.name)
+        elif isinstance(node, ast.alias):
+            for name in _alias_original_and_effective_names(node, parents.get(node)):
+                if _is_dunder(name):
+                    violations.add(name)
+        elif isinstance(node, ast.ExceptHandler) and node.name and _is_dunder(node.name):
+            violations.add(node.name)
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+            if _is_dunder(node.name):
+                violations.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest and _is_dunder(node.rest):
+            violations.add(node.rest)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            violations.update(name for name in node.names if _is_dunder(name))
+    return violations
+
+
 def _permitted_type_loads(
     tree: ast.AST,
     parents: dict[ast.AST, ast.AST],
@@ -488,6 +544,7 @@ def _dynamic_reflection_violations(tree: ast.AST) -> list[str]:
     violations: set[str] = set()
     parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
     permitted_all_target = _permitted_all_target(tree)
+    violations.update(_semantic_dunder_bindings(tree, parents, permitted_all_target))
     has_type_binding = _has_type_binding(tree)
     permitted_type_loads = set() if has_type_binding else _permitted_type_loads(tree, parents)
     if has_type_binding:
@@ -507,12 +564,6 @@ def _dynamic_reflection_violations(tree: ast.AST) -> list[str]:
                     violations.add(node.id)
                 elif node.id == "type" and node not in permitted_type_loads:
                     violations.add("dynamic_type")
-            elif (
-                isinstance(context, (ast.Store, ast.Del))
-                and _is_dunder(node.id)
-                and node is not permitted_all_target
-            ):
-                violations.add(node.id)
         elif isinstance(node, ast.Attribute):
             if _is_dunder(node.attr):
                 violations.add(node.attr)
@@ -522,9 +573,6 @@ def _dynamic_reflection_violations(tree: ast.AST) -> list[str]:
                 violations.add(call_name)
             if node.attr in _FORBIDDEN_STDLIB_CLASS_FACTORIES:
                 violations.add("dynamic_class_factory")
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if _is_dunder(node.name) and node.name not in _ALLOWED_DUNDER_DEFINITIONS:
-                violations.add(node.name)
         elif (
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)
@@ -1161,6 +1209,20 @@ def test_application_dunder_assignment_and_dynamic_class_construction_are_denied
             "dynamic_type_binding",
         ),
         ("match value:\n    case type:\n        pass", "dynamic_type_binding"),
+        ("type: object = factory", "dynamic_type_binding"),
+        ("type += factory", "dynamic_type_binding"),
+        ("captured = (type := factory)", "dynamic_type_binding"),
+        ("for type in values:\n    pass", "dynamic_type_binding"),
+        ("captured = [value for type in values]", "dynamic_type_binding"),
+        ("with manager() as type:\n    pass", "dynamic_type_binding"),
+        ("def positional_only(type, /):\n    pass", "dynamic_type_binding"),
+        ("def variadic(*type):\n    pass", "dynamic_type_binding"),
+        ("def keyword_only(*, type):\n    pass", "dynamic_type_binding"),
+        ("def variadic_keyword(**type):\n    pass", "dynamic_type_binding"),
+        ("capture = lambda type: type", "dynamic_type_binding"),
+        ("async def type():\n    pass", "dynamic_type_binding"),
+        ("match values:\n    case [*type]:\n        pass", "dynamic_type_binding"),
+        ("match mapping:\n    case {**type}:\n        pass", "dynamic_type_binding"),
         (
             "from types import new_class\nDynamic = new_class('Dynamic')",
             "dynamic_class_factory",
@@ -1197,6 +1259,24 @@ def test_application_dunder_assignment_and_dynamic_class_construction_are_denied
             "dynamic_class_factory",
         ),
         ("from typing import *", "dynamic_class_factory"),
+        ("class __all__:\n    pass", "__all__"),
+        ("class __init__:\n    pass", "__init__"),
+        ("def __init__():\n    pass", "__init__"),
+        ("import json as __all__", "__all__"),
+        ("from json import loads as __all__", "__all__"),
+        (
+            "from carerisk_space.ui import __builtins__ as builtin_map",
+            "__builtins__",
+        ),
+        ("def validate(__all__):\n    pass", "__all__"),
+        (
+            "try:\n    raise RuntimeError\nexcept RuntimeError as __all__:\n    pass",
+            "__all__",
+        ),
+        ("match value:\n    case __all__:\n        pass", "__all__"),
+        ("match values:\n    case [*__all__]:\n        pass", "__all__"),
+        ("match mapping:\n    case {**__all__}:\n        pass", "__all__"),
+        ("def declare():\n    global __all__", "__all__"),
     )
     synthetic = tmp_path / "synthetic.py"
     for source, expected_suffix in mutations:
@@ -1660,6 +1740,10 @@ def test_entrypoint_scanner_rejects_builtin_reflection_alias_chains(
         "member = runtime_member\nmount = gr.__getattribute__(member)\nmount(parent, demo)",
         'mount = vars(gr)["mount_gradio_app"]\nmount(parent, demo)',
         'mount = gr.__dict__["mount_gradio_app"]\nmount(parent, demo)',
+        "from carerisk_space.ui import __builtins__ as builtin_map\n"
+        'reflect = builtin_map["getattr"]\n'
+        'hidden_mount = reflect(gr, "mount_gradio_app")\n'
+        "hidden_mount(parent, demo)",
     ),
 )
 def test_entrypoint_scanner_rejects_reflection_without_resolving_forbidden_flow(
@@ -2002,32 +2086,193 @@ def _expected_rejection_guard_calls(
     return calls
 
 
-def _sensitive_reflection_in_helper(
-    function: ast.FunctionDef,
+_ReflectionAliasState = tuple[set[str], set[str], set[str], set[str]]
+_SENSITIVE_ALIAS = "sensitive"
+_BUILTIN_MODULE_ALIAS = "builtin_module"
+_BUILTIN_MAPPING_ALIAS = "builtin_mapping"
+_REFLECTION_CALLABLE_ALIAS = "reflection_callable"
+
+
+def _owned_nodes(statements: Iterable[ast.stmt]) -> list[ast.AST]:
+    owned: list[ast.AST] = []
+    pending: list[ast.AST] = list(statements)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        owned.append(node)
+        pending.extend(ast.iter_child_nodes(node))
+    return owned
+
+
+def _assignment_names(node: ast.AST) -> set[str]:
+    return {target.id for target in _assignment_targets(node) if isinstance(target, ast.Name)}
+
+
+def _effective_import_name(node: ast.alias, parent: ast.AST) -> str:
+    if isinstance(parent, ast.Import):
+        return node.asname or node.name.split(".", 1)[0]
+    return node.asname or node.name
+
+
+def _state_has_name(node: ast.expr, names: set[str]) -> bool:
+    return isinstance(node, ast.Name) and node.id in names
+
+
+def _mapping_source(node: ast.expr, state: _ReflectionAliasState) -> bool:
+    _, builtin_modules, builtin_mappings, _ = state
+    if _state_has_name(node, builtin_mappings):
+        return True
+    if (
+        isinstance(node, ast.Attribute)
+        and node.attr == "__dict__"
+        and _state_has_name(node.value, builtin_modules)
+    ):
+        return True
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "vars"
+        and len(node.args) == 1
+        and not node.keywords
+        and _state_has_name(node.args[0], builtin_modules)
+    )
+
+
+def _reflection_callable_source(
+    node: ast.expr,
+    state: _ReflectionAliasState,
+) -> bool:
+    _, builtin_modules, builtin_mappings, reflection_callables = state
+    if isinstance(node, ast.Name):
+        return node.id in reflection_callables
+    if isinstance(node, ast.Attribute):
+        if _call_name(node) in reflection_callables:
+            return True
+        return node.attr != "__dict__" and _state_has_name(node.value, builtin_modules)
+    if isinstance(node, ast.Subscript):
+        return _state_has_name(node.value, builtin_mappings)
+    if isinstance(node, ast.Call):
+        return (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and _state_has_name(node.func.value, builtin_mappings)
+        )
+    return False
+
+
+def _bounded_reflection_state(
+    statements: Iterable[ast.stmt],
+    inherited: _ReflectionAliasState | None = None,
+    *,
+    include_parent: bool = False,
+) -> _ReflectionAliasState:
+    if inherited is None:
+        sensitive_aliases = {"ui_module", "gr", "uvicorn"}
+        builtin_module_aliases: set[str] = set()
+        builtin_mapping_aliases = {"__builtins__"}
+        reflection_callable_aliases = set(
+            (_FORBIDDEN_REFLECTION_NAMES - {"__builtins__"}) | _FORBIDDEN_REFLECTION_HELPERS
+        )
+    else:
+        (
+            sensitive_aliases,
+            builtin_module_aliases,
+            builtin_mapping_aliases,
+            reflection_callable_aliases,
+        ) = (set(items) for items in inherited)
+    if include_parent:
+        sensitive_aliases.add("parent")
+    state = (
+        sensitive_aliases,
+        builtin_module_aliases,
+        builtin_mapping_aliases,
+        reflection_callable_aliases,
+    )
+    owned = _owned_nodes(statements)
+    for node in owned:
+        if isinstance(node, ast.Import):
+            for imported in node.names:
+                if imported.name == "builtins":
+                    builtin_module_aliases.add(_effective_import_name(imported, node))
+        elif isinstance(node, ast.ImportFrom):
+            for imported in node.names:
+                effective_name = _effective_import_name(imported, node)
+                if imported.name == "__builtins__":
+                    builtin_mapping_aliases.add(effective_name)
+                if (
+                    node.module == "builtins"
+                    and imported.name in _FORBIDDEN_REFLECTION_NAMES
+                    and imported.name != "__builtins__"
+                ):
+                    reflection_callable_aliases.add(effective_name)
+
+    assignments = [
+        node
+        for node in owned
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None
+    ]
+    for _ in range(len(assignments) + 1):
+        changed = False
+        for assignment in assignments:
+            value = assignment.value
+            if value is None:
+                continue
+            targets = _assignment_names(assignment)
+            transitions = (
+                (sensitive_aliases, _state_has_name(value, sensitive_aliases)),
+                (builtin_module_aliases, _state_has_name(value, builtin_module_aliases)),
+                (builtin_mapping_aliases, _mapping_source(value, state)),
+                (reflection_callable_aliases, _reflection_callable_source(value, state)),
+            )
+            for aliases, applies in transitions:
+                if applies and not targets <= aliases:
+                    aliases.update(targets)
+                    changed = True
+        if not changed:
+            break
+    return state
+
+
+def _reflection_state_aliases(state: _ReflectionAliasState) -> dict[str, str]:
+    categories: dict[str, set[str]] = {}
+    for marker, names in zip(
+        (
+            _SENSITIVE_ALIAS,
+            _BUILTIN_MODULE_ALIAS,
+            _BUILTIN_MAPPING_ALIAS,
+            _REFLECTION_CALLABLE_ALIAS,
+        ),
+        state,
+        strict=True,
+    ):
+        for name in names:
+            categories.setdefault(name, set()).add(marker)
+    return {name: "|".join(sorted(markers)) for name, markers in categories.items()}
+
+
+def _aliases_in_category(aliases: dict[str, str], marker: str) -> set[str]:
+    return {name for name, categories in aliases.items() if marker in categories.split("|")}
+
+
+def _sensitive_reflection_in_nodes(
+    nodes: Iterable[ast.AST],
     aliases: dict[str, str],
 ) -> bool:
-    sensitive_roots = frozenset({"ui_module", "gr", "parent", "uvicorn"})
+    state = (
+        _aliases_in_category(aliases, _SENSITIVE_ALIAS),
+        _aliases_in_category(aliases, _BUILTIN_MODULE_ALIAS),
+        _aliases_in_category(aliases, _BUILTIN_MAPPING_ALIAS),
+        _aliases_in_category(aliases, _REFLECTION_CALLABLE_ALIAS),
+    )
+    sensitive_aliases = state[0]
 
     def is_sensitive_receiver(node: ast.expr) -> bool:
-        resolved = _resolved_name(node, aliases)
-        return resolved is not None and any(
-            resolved == root or resolved.startswith(f"{root}.") for root in sensitive_roots
-        )
+        while isinstance(node, ast.Attribute):
+            node = node.value
+        return _state_has_name(node, sensitive_aliases)
 
-    builtin_mapping_aliases: set[str] = set()
-    for node in ast.walk(function):
-        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
-            continue
-        if not any(
-            isinstance(item, ast.Name) and item.id == "__builtins__"
-            for item in ast.walk(node.value)
-        ):
-            continue
-        builtin_mapping_aliases.update(
-            target.id for target in _assignment_targets(node) if isinstance(target, ast.Name)
-        )
-
-    for node in ast.walk(function):
+    for node in nodes:
         if (
             isinstance(node, ast.Attribute)
             and node.attr
@@ -2035,56 +2280,51 @@ def _sensitive_reflection_in_helper(
             and is_sensitive_receiver(node.value)
         ):
             return True
-        if not isinstance(node, ast.Call):
-            continue
-        call_name = _resolved_name(node.func, aliases)
         if (
-            call_name in _FORBIDDEN_REFLECTION_NAMES
+            isinstance(node, ast.Call)
             and node.args
-            and is_sensitive_receiver(node.args[0])
-        ):
-            return True
-        if (
-            call_name in _FORBIDDEN_REFLECTION_HELPERS
-            and node.args
-            and is_sensitive_receiver(node.args[0])
-        ):
-            return True
-        if (
-            isinstance(node.func, ast.Call)
-            and _resolved_name(node.func.func, aliases) in _FORBIDDEN_REFLECTION_HELPERS
-            and node.args
-            and is_sensitive_receiver(node.args[0])
-        ):
-            return True
-        if (
-            node.args
             and is_sensitive_receiver(node.args[0])
             and (
-                isinstance(node.func, ast.Name)
-                and node.func.id in builtin_mapping_aliases
-                or any(
-                    isinstance(item, ast.Name) and item.id == "__builtins__"
-                    for item in ast.walk(node.func)
-                )
+                _reflection_callable_source(node.func, state)
+                or isinstance(node.func, ast.Call)
+                and _call_name(node.func.func) in _FORBIDDEN_REFLECTION_HELPERS
             )
         ):
             return True
     return False
 
 
+def _sensitive_reflection_in_helper(
+    function: ast.FunctionDef,
+    aliases: dict[str, str],
+) -> bool:
+    return _sensitive_reflection_in_nodes(_owned_nodes(function.body), aliases)
+
+
 def _guard_helper_violations(tree: ast.Module) -> list[str]:
     violations: list[str] = []
+    module_state = _bounded_reflection_state(tree.body)
+    if _sensitive_reflection_in_nodes(
+        _owned_nodes(tree.body),
+        _reflection_state_aliases(module_state),
+    ):
+        violations.append("module:sensitive_reflection")
     functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
     for function in functions:
+        function_state = _bounded_reflection_state(
+            function.body,
+            module_state,
+            include_parent=True,
+        )
+        reflection_aliases = _reflection_state_aliases(function_state)
+        if _sensitive_reflection_in_helper(function, reflection_aliases):
+            violations.append(f"{function.name}:sensitive_reflection")
         aliases, _ = _bounded_aliases(
             function,
             frozenset({"ui_module", "gr", "parent", "uvicorn"})
             | _FORBIDDEN_REFLECTION_NAMES
             | _FORBIDDEN_REFLECTION_HELPERS,
         )
-        if _sensitive_reflection_in_helper(function, aliases):
-            violations.append(f"{function.name}:sensitive_reflection")
         all_guard_calls = _resolved_calls(function, aliases, "ui_module.PublicSurfaceGuard")
         if not all_guard_calls:
             continue
@@ -2288,6 +2528,83 @@ def _compose(parent):
     assert isinstance(membership, frozenset)
     assert membership
     return guard(parent, membership)
+""",
+        """
+def _compose(parent):
+    builtins_map = __builtins__
+    return builtins_map["getattr"](ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    builtins_map = __builtins__
+    mapping_alias = builtins_map
+    reflect = mapping_alias.get("getattr")
+    reflect_alias = reflect
+    return reflect_alias(ui_module, "PublicSurfaceGuard")
+""",
+        """
+from carerisk_space.ui import __builtins__ as builtin_map
+
+def _compose(parent):
+    return builtin_map["getattr"](ui_module, "PublicSurfaceGuard")
+""",
+        """
+builtins_map = __builtins__
+reflect = builtins_map["getattr"]
+
+def _compose(parent):
+    return reflect(ui_module, "PublicSurfaceGuard")
+""",
+        """
+import builtins as builtin_map
+
+def _compose(parent):
+    return builtin_map.getattr(ui_module, "PublicSurfaceGuard")
+""",
+        """
+from builtins import getattr as reflect
+sensitive_alias = ui_module
+
+def _compose(parent):
+    return reflect(sensitive_alias, "PublicSurfaceGuard")
+""",
+        """
+guard = getattr(ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+guard = __builtins__["getattr"](ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+import builtins as b
+mapping = b.__dict__
+reflect = mapping["getattr"]
+
+def _compose(parent):
+    return reflect(ui_module, "PublicSurfaceGuard")
+""",
+        """
+import builtins as b
+mapping = vars(b)
+reflect = mapping["getattr"]
+
+def _compose(parent):
+    return reflect(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as builtin_map
+    return builtin_map.getattr(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    from builtins import getattr as reflect
+    return reflect(ui_module, "PublicSurfaceGuard")
 """,
     )
     for source in sources:
