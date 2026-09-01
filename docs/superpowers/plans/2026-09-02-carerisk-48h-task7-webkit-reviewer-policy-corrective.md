@@ -104,10 +104,24 @@ class DistributionSurface:
     command_tokens: tuple[str, ...]
 
 def exact_webkit_reviewer_policy() -> WebKitReviewerPolicy: ...
-def acquire_webkit_source_reference(url: str, *, allow_network: bool) -> Mapping[str, object]: ...
+@dataclass(frozen=True)
+class WebKitSourceReference:
+    playwright_tag_commit: str
+    repository_relative_path: str
+    commit_pinned_raw_url: str
+    raw_byte_length: int
+    raw_sha256: str
+    remote_url: str
+    base_branch: str
+    base_revision: str
+
+def acquire_webkit_source_reference(*, url: str, metadata_output: Path, run_guid: str, allow_network: Literal[True]) -> WebKitSourceReference: ...
+def load_webkit_source_reference(path: Path) -> WebKitSourceReference: ...
+def verify_existing_locks(runtime_lock: Path, development_lock: Path, *, source_reference: WebKitSourceReference, offline: Literal[True], network_bomb: Literal[True]) -> None: ...
+def verify_all(repo_root: Path, *, source_reference: WebKitSourceReference, offline: Literal[True], network_bomb: Literal[True]) -> None: ...
+def run_network_bombed_child(*, source_reference: Path, offline: Literal[True], network_bomb: Literal[True], child_argv: Sequence[str]) -> int: ...
 def validate_license_policy(document: Mapping[str, object]) -> Mapping[tuple[str, str], Mapping[str, object]]: ...
 def validate_distribution_exclusion(surfaces: Sequence[DistributionSurface]) -> None: ...
-def verify_all(repo_root: Path) -> None: ...
 ```
 
 `DISTRIBUTION_SURFACE_NAMES` is the exact ordered eleven-member tuple `("public_export", "candidate", "runtime_stage", "final_image", "deployment_artifact", "saved_archive", "pushed_image", "uploaded_artifact", "published_image", "build_output", "other_distributed_output")`. The validator rejects an omitted, duplicate, unknown, empty, or unclassified member before it inspects content. `other_distributed_output` is a mandatory fail-closed catchall for any real distribution mechanism that does not match the ten specifically named mechanisms.
@@ -127,7 +141,27 @@ The exception validator compares a fully constructed immutable value to `exact_w
 - Consumes: current partial generator/base/locks and the fixed dataclasses above.
 - Produces: named RED tests that fail against the current universal-approved parser and missing policy outputs.
 
-**Controlled-session precondition:** The Task 7 controller first starts the GUID-owned OS-temp session shown in Task 2 Step 4 and runs its one `acquire-webkit-source-reference` command. It retains `$sourceRef` through all Task 1/2 test/build commands and performs the shown `try`/`finally` cleanup only after outputs/receipts succeed. Every later pytest, `verify-images`, `inventory`, and `verify` command must pass `$sourceRef --offline --network-bomb`; no source-reference file is tracked or exported.
+**Controlled-session chronology:** Before any Task 7 RED/test, the controller runs Task 0 below once, retains `$sourceRef` through Task 1/2 work, and performs the Task 2 `try`/`finally` cleanup only after outputs/receipts succeed. Every later pytest, `verify-images`, `verify-locks`, `inventory`, and `verify` command must pass `$sourceRef --offline --network-bomb`; the runner validates it and installs the bomb before any in-process work or child pytest `argv`. No source-reference file is tracked or exported.
+
+- [ ] **Task 0: Start the sole controlled source-reference acquisition before RED**
+
+The actual locks and image measurement are frozen partials. Do not invoke `lock`, `resolve-images`, registry inspection, or any historic dependency/wheel acquisition in this corrective resume. The only permitted egress is the exact raw-source metadata acquisition below.
+
+```powershell
+$task7Guid = [guid]::NewGuid().ToString('N')
+$task7OsTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$task7TempRoot = Join-Path $task7OsTempRoot "carerisk-task7-$task7Guid"
+$sourceRef = Join-Path $task7TempRoot 'webkit-source-reference.json'
+if (([IO.Path]::GetFileName($task7TempRoot) -cne "carerisk-task7-$task7Guid") -or -not ([IO.Path]::GetFullPath($task7TempRoot).StartsWith($task7OsTempRoot, [StringComparison]::Ordinal)) -or [IO.Path]::GetFullPath($task7TempRoot).Equals($task7OsTempRoot, [StringComparison]::Ordinal)) { throw 'Task 7 temp root is not an owned OS-temp child' }
+New-Item -ItemType Directory -LiteralPath $task7TempRoot -ErrorAction Stop | Out-Null
+try {
+    & .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py acquire-webkit-source-reference --url https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh --metadata-output $sourceRef --run-guid $task7Guid --allow-network
+    if (-not (Test-Path -LiteralPath $sourceRef -PathType Leaf)) { throw 'Task 7 source-reference metadata was not created' }
+} catch {
+    if ((Test-Path -LiteralPath $task7TempRoot -PathType Container) -and ([IO.Path]::GetFileName((Resolve-Path -LiteralPath $task7TempRoot).Path) -ceq "carerisk-task7-$task7Guid")) { Remove-Item -LiteralPath $task7TempRoot -Recurse -Force -ErrorAction Stop }
+    throw
+}
+```
 
 - [ ] **Step 1: Add the exact positive-record fixture**
 
@@ -182,12 +216,12 @@ def exact_webkit_policy_dict() -> dict[str, object]:
 
 - [ ] **Step 2: Add and run the single-field mutation matrix**
 
-Create `test_exact_webkit_reviewer_exception_rejects_every_single_field_drift`, parameterized over every fixture key after `package`/`version`, explicitly including `playwright_tag_commit`, `repository_relative_path`, `commit_pinned_raw_url`, `raw_byte_length`, `raw_sha256`, `remote_url`, `base_branch`, `base_revision`, `webkit_tree_file_count`, `webkit_tree_total_bytes`, `image_tree_source_relative_path_absence_proof`, `playwright_tag_url`, and `webkit_tree_algorithm`, plus missing key, extra key, alternate list order, alternate case, integer revision, truthy string flag, guessed license expression, `approved` disposition, and `complete_digest_bound_notice=True`. Mutate every nested absence-proof member independently as well. Add `test_webkit_source_relative_file_is_absent_from_immutable_image_tree`; it derives the whole typed absence proof from the canonical inventory's ordered paths while independently checking exact count, total bytes, algorithm, and digest, rather than accepting any self-asserted boolean or nested map.
+Create `test_exact_webkit_reviewer_exception_rejects_every_single_field_drift`, parameterized over every fixture key after `package`/`version`, explicitly including `playwright_tag_commit`, `repository_relative_path`, `commit_pinned_raw_url`, `raw_byte_length`, `raw_sha256`, `remote_url`, `base_branch`, `base_revision`, `webkit_tree_file_count`, `webkit_tree_total_bytes`, `image_tree_source_relative_path_absence_proof`, `playwright_tag_url`, and `webkit_tree_algorithm`, plus missing key, extra key, alternate list order, alternate case, integer revision, truthy string flag, guessed license expression, `approved` disposition, and `complete_digest_bound_notice=True`. Mutate every nested absence-proof member independently as well. Add `test_webkit_source_relative_file_is_absent_from_immutable_image_tree`; it derives the whole typed absence proof from the canonical inventory's ordered paths while independently checking exact count, total bytes, algorithm, and digest, rather than accepting any self-asserted boolean or nested map. Add `test_source_reference_phase_contract_rejects_every_control_mutation` for omitted/false `--allow-network`, nonliteral or alternate URL, metadata path outside the GUID child, missing/wrong run GUID, any offline command missing/false `--offline` or `--network-bomb`, source-reference path drift, and phase inversion; add `test_offline_test_installs_network_bomb_before_child_argv` and reject a positive test call that omits a required typed argument.
 
 Run:
 
 ```powershell
-& .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
+& .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --offline --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
 ```
 
 Expected: FAIL because `policy_records` rejects all `NOASSERTION` records and the policy/SBOM/license files do not exist.
@@ -229,19 +263,13 @@ For the WebKit inventory record, emit exact `licenseDeclared`, `licenseConcluded
 - [ ] **Step 4: Run GREEN and deterministic regeneration**
 
 ```powershell
-$task7Guid = [guid]::NewGuid().ToString('N')
-$task7OsTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$task7TempRoot = Join-Path $task7OsTempRoot "carerisk-task7-$task7Guid"
-$sourceRef = Join-Path $task7TempRoot 'webkit-source-reference.json'
-if (([IO.Path]::GetFileName($task7TempRoot) -cne "carerisk-task7-$task7Guid") -or -not ([IO.Path]::GetFullPath($task7TempRoot).StartsWith($task7OsTempRoot, [StringComparison]::Ordinal)) -or [IO.Path]::GetFullPath($task7TempRoot).Equals($task7OsTempRoot, [StringComparison]::Ordinal)) { throw 'Task 7 temp root is not an owned OS-temp child' }
-New-Item -ItemType Directory -LiteralPath $task7TempRoot -ErrorAction Stop | Out-Null
 $task7Succeeded = $false
 try {
-& .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py acquire-webkit-source-reference --url https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh --metadata-output $sourceRef --run-guid $task7Guid
 & .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json --source-reference $sourceRef --offline --network-bomb
+& .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify-locks --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --source-reference $sourceRef --offline --network-bomb
 & .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference $sourceRef --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline --network-bomb
 & .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify --repo-root . --source-reference $sourceRef --offline --network-bomb
-& .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
+& .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --offline --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
 $task7InventoryOutputs = @('space/SBOM.spdx.json', 'space/THIRD_PARTY_LICENSES.json')
 $first = @($task7InventoryOutputs | ForEach-Object { $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_; '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant() })
 & .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference $sourceRef --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline --network-bomb
@@ -258,7 +286,7 @@ $task7Succeeded = $true
 }
 ```
 
-`acquire-webkit-source-reference` is the sole network-enabled interface and accepts only the literal URL. It validates raw length/hash and exact `REMOTE_URL`, `BASE_BRANCH`, and `BASE_REVISION`; it records only bounded parsed canonical metadata/evidence in the named GUID-owned OS-temp file, never raw source bytes. It is not a twelfth repository file or export input. Every later `verify-images`, both `inventory` runs, `verify`, and pytest command takes that exact `$sourceRef` under `--offline --network-bomb`; no later command may fetch or refetch. The finalizer cleans only an existing, resolved, exact GUID-named child of the verified OS temp root after all outputs/receipts succeed. A failed run retains the bounded owned metadata file for diagnosis, but it is never staged, copied into the repository, exported, uploaded, or used as a public bundle input. Only parsed canonical metadata necessary downstream is represented in the sanctioned policy/inventory outputs. Expected: GREEN; every mutation fails closed; ordinary records are approved-only; exact WebKit metadata is `NOASSERTION`/review-only/not-distributed.
+Task 0's `acquire-webkit-source-reference` is the sole network-enabled interface and accepts only the literal URL, literal `--allow-network`, owned metadata path, and GUID. It validates raw length/hash and exact `REMOTE_URL`, `BASE_BRANCH`, and `BASE_REVISION`; it records only bounded parsed canonical metadata/evidence in the named GUID-owned OS-temp file, never raw source bytes. It is not a twelfth repository file or export input. Every later `verify-images`, `verify-locks`, both `inventory` runs, `verify`, and pytest command takes that exact `$sourceRef` under `--offline --network-bomb`; the runner loads/validates it and installs the bomb before work or child execution, so no later command may fetch or refetch. The finalizer cleans only an existing, resolved, exact GUID-named child of the verified OS temp root after all outputs/receipts succeed. A failed run retains the bounded owned metadata file for diagnosis, but it is never staged, copied into the repository, exported, uploaded, or used as a public bundle input. Only parsed canonical metadata necessary downstream is represented in the sanctioned policy/inventory outputs. Expected: GREEN; every mutation fails closed; ordinary records are approved-only; exact WebKit metadata is `NOASSERTION`/review-only/not-distributed.
 
 - [ ] **Step 5: Commit the complete Task 7 source and outputs**
 
