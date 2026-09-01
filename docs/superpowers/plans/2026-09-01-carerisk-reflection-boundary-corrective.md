@@ -21,7 +21,7 @@
 - Enforcement rejects forbidden builtin `Name` loads and forbidden reflective/helper `Attribute` references at the source token. It does not resolve arbitrary downstream alias flow. Violations are deduplicated and returned in deterministic sorted order.
 - Syntax-defined `__future__`, `__name__`, `__file__`, `__all__`, `__init__`, and `__call__` uses remain permitted when they are not used to retrieve or mutate another attribute.
 - The entry point still requires direct named construction: one `FastAPI(...)`, one `gr.mount_gradio_app(...)`, one `build_package_asset_membership()`, one `PublicSurfaceGuard(...)`, and one `uvicorn.run(...)` beneath the exact main guard.
-- Existing unrelated test introspection in `space/tests/test_gradio_contract.py`, such as reading `original_router` or `AF_UNIX`, is not an application capability and must remain valid. Guard-helper classification uses a bounded fixed point for ordinary name aliases of `__builtins__`, literal-key `[...]`/`.get(...)` callables derived from that mapping, and further ordinary callable aliases; it does not interpret containers, defaults, returns, or control flow.
+- Existing unrelated test introspection in `space/tests/test_gradio_contract.py`, such as reading `original_router` or `AF_UNIX`, is not an application capability and must remain valid. Guard-helper classification builds bounded module-level seeds from imports and ordinary assignments, passes them into each function, and extends them locally for sensitive roots, `__builtins__`/`builtins` mapping aliases, attribute/subscript/`.get(...)` callables derived from those mappings, and further ordinary callable aliases; it does not interpret other containers, defaults, returns, or control flow.
 - This corrective is a distinct plan authorized after the old Task 6 five-round breaker, not fix round 6. It does not release original-plan Task 7 by implementation alone: independent task review, controller verification, explicit old-ledger Task 6 completion, and a `Task 7 released` ledger entry are mandatory first.
 - Use exact path staging only. Never use `git add .`, `git add -A`, directory staging, or wildcard staging.
 
@@ -419,9 +419,31 @@ def _compose(parent):
     reflect = mapping_alias.get("getattr")
     reflect_alias = reflect
     return reflect_alias(ui_module, "PublicSurfaceGuard")
+
+from carerisk_space.ui import __builtins__ as builtin_map
+
+def _compose(parent):
+    return builtin_map["getattr"](ui_module, "PublicSurfaceGuard")
+
+builtins_map = __builtins__
+reflect = builtins_map["getattr"]
+
+def _compose(parent):
+    return reflect(ui_module, "PublicSurfaceGuard")
+
+import builtins as builtin_map
+
+def _compose(parent):
+    return builtin_map.getattr(ui_module, "PublicSurfaceGuard")
+
+from builtins import getattr as reflect
+sensitive_alias = ui_module
+
+def _compose(parent):
+    return reflect(sensitive_alias, "PublicSurfaceGuard")
 ```
 
-The fixed point is limited to ordinary `Name` assignments, literal forbidden-builtin keys, and `[...]`/`.get(...)`; it does not evaluate arbitrary mappings or expressions. Preserve the existing positive test for direct bounded builder/guard aliases. Add one explicit acceptance test whose functions contain only `getattr(other, "get")`, `getattr(inner, "original_router", None)`, and `getattr(socket, "AF_UNIX", None)` and assert `_guard_helper_violations(tree) == []`; a sensitive word on an unrelated receiver is not helper candidacy.
+The fixed point is limited to relevant import tokens and ordinary `Name` assignments plus tracked mapping/module attribute, `[...]`, and `.get(...)` sources; it does not evaluate arbitrary mappings or expressions. The last four mutations prove that module-scope mapping, callable, import, and sensitive-root aliases are inherited by the function audit. Add equivalent function-local `import builtins as builtin_map` and `from builtins import getattr as reflect` mutations. Preserve the existing positive test for direct bounded builder/guard aliases. Add one explicit acceptance test whose functions contain only `getattr(other, "get")`, `getattr(inner, "original_router", None)`, and `getattr(socket, "AF_UNIX", None)` and assert `_guard_helper_violations(tree) == []`; a sensitive word on an unrelated receiver is not helper candidacy.
 
 - [ ] **Step 4: Add a positive syntax-identity contract**
 
@@ -525,7 +547,9 @@ Integrate it in three places:
 
 1. `scan_capabilities` accumulates existing and dynamic-reflection findings in a set of full `path.name:suffix` strings and returns one deterministic sorted list. Overlap with legacy `eval`, `exec`, or `__import__` checks produces one result, not duplicates.
 2. `_entrypoint_violations` adds `builtin_reflection` whenever the entry-point tree contains a dynamic-reflection violation. It continues the existing checks, but reflective mutations are not required to produce structural tags. Direct and ordinary non-reflective aliases remain subject to mount/router/monkeypatch/server counts.
-3. `_guard_helper_violations` performs a fail-closed candidate pre-pass before `if not all_guard_calls: continue`. `_sensitive_reflection_in_helper` uses bounded fixed-point sets. Sensitive-root and direct forbidden-builtin aliases still use `_bounded_aliases`. A second fixed point seeds the mapping name `__builtins__`, propagates only exact ordinary `Name = Name` assignments, marks any callable obtained from a tracked mapping through `mapping[...]` or `mapping.get(...)`, and propagates further exact ordinary callable aliases. A nonliteral mapping key fails closed when that callable is applied to a sensitive root. It does not follow defaults, returns, other containers, control flow, or arbitrary expressions. The helper returns true only when a reflective builtin/attribute/helper or tracked mapping-derived callable acts on one of the resolved sensitive roots. A literal member string without a sensitive receiver is insufficient. A nonliteral member on a sensitive receiver fails. The accepted unrelated receiver mutations are mandatory regression coverage.
+3. `_guard_helper_violations` performs a fail-closed candidate pre-pass before `if not all_guard_calls: continue`. Build a bounded alias state `(sensitive_aliases, builtin_mapping_aliases, reflection_callable_aliases)` from module-owned imports and ordinary assignments while excluding nested function/class bodies. Seed sensitive roots with `ui_module`, `gr`, `uvicorn`; seed mappings with `__builtins__` plus the effective local name of `import builtins` and any import whose original name is `__builtins__`; seed callables with direct forbidden builtin/helper names plus effective aliases from `from builtins import <forbidden name>`. Iterate exact `Name` assignment propagation to a fixed point. Mark a callable source when it is a forbidden direct name/helper, an attribute of a tracked `builtins` module mapping, a subscript of a tracked mapping, or `.get(...)` on a tracked mapping; then propagate further exact ordinary callable aliases. Extend a copy of this inherited state over each function's owned imports and assignments, including its `parent` sensitive root, before auditing its calls. Module-level `sensitive_alias = ui_module` therefore remains sensitive inside the helper, and module-level mapping/callable aliases cannot disappear at the function boundary.
+
+`_sensitive_reflection_in_helper` treats a direct or tracked callable, including an immediate tracked attribute/subscript/`.get(...)` expression, as a violation only when its first argument resolves to an inherited or local sensitive root. A nonliteral mapping key fails closed in that application. The fixed point does not follow defaults, returns, other containers, control flow, or arbitrary expressions, and it does not recursively enter a nested scope while constructing the parent scope's state. A literal member string without a sensitive receiver is insufficient. A nonliteral member on a sensitive receiver fails. The accepted unrelated receiver mutations are mandatory regression coverage.
 
 - [ ] **Step 7: Run GREEN and mutation coverage**
 
