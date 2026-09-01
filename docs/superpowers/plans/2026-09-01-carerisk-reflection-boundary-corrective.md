@@ -17,7 +17,7 @@
 - Do not read `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation assets, private ledgers/final locks, or Set C.
 - Do not run the receipt exporter, model code, training, evaluation, or persistent service.
 - Do not create, upload, deploy, or modify a GitHub or Hugging Face resource; do not push this branch.
-- Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; the implicit `__builtins__` mapping; every double-underscore attribute reference; every double-underscore function definition except `__init__` and `__call__`; every double-underscore name load except `__name__` and `__file__`; `operator.attrgetter`/`operator.methodcaller`; and `inspect.getattr_static`. `__all__` may be assigned but does not authorize a load.
+- Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; the implicit `__builtins__` mapping; every double-underscore attribute reference; every double-underscore function definition except `__init__` and `__call__`; every double-underscore name load except `__name__` and `__file__`; every double-underscore store/delete except one module-level literal-string `__all__` declaration; exact dynamic protocol-name string literals; `operator.attrgetter`/`operator.methodcaller`; `inspect.getattr_static`; aliased or class-construction `type`; and dynamic class factories. Existing direct one-argument `type(value)` validation remains permitted. From `types`, only `MappingProxyType` may be imported.
 - Enforcement rejects forbidden builtin `Name` loads and forbidden reflective/helper `Attribute` references at the source token. It does not resolve arbitrary downstream alias flow. Violations are deduplicated and returned in deterministic sorted order.
 - Syntax-defined `__future__`, `__name__`, `__file__`, `__all__`, `__init__`, and `__call__` uses remain permitted when they are not used to retrieve or mutate another attribute.
 - The entry point still requires direct named construction: one `FastAPI(...)`, one `gr.mount_gradio_app(...)`, one `build_package_asset_membership()`, one `PublicSurfaceGuard(...)`, and one `uvicorn.run(...)` beneath the exact main guard.
@@ -56,7 +56,7 @@ Expected: HEAD equals the BASE supplied by the SDD controller; root is exactly `
 
 - [ ] **Step 2: Add product-source reflection mutations**
 
-Add three independent parametrized tests. The first proves every forbidden builtin is rejected at the `Name` load, including alias sources that require no call-signature knowledge:
+Add five independent mutation-test groups. The first proves every forbidden builtin is rejected at the `Name` load, including alias sources that require no call-signature knowledge:
 
 ```python
 @pytest.mark.parametrize(  # type: ignore[untyped-decorator]
@@ -131,6 +131,37 @@ def test_application_dynamic_protocol_definitions_are_denied(
     assert f"synthetic.py:{hook_name}" in scan_capabilities((synthetic,))
 ```
 
+Add one test named `test_application_dunder_assignment_and_dynamic_class_construction_are_denied`. Its mutations and required suffixes are exact:
+
+```python
+(
+    "class Dynamic:\n    __getattr__ = lambda self, name: None",
+    "__getattr__",
+),
+(
+    "class Dynamic:\n    __getattr__: object = handler",
+    "__getattr__",
+),
+(
+    "class Dynamic:\n    __getattr__ += handler",
+    "__getattr__",
+),
+(
+    "Dynamic = type('Dynamic', (), {'__getattr__': handler})",
+    "dynamic_type",
+),
+(
+    "class_factory = type\nDynamic = class_factory('Dynamic', (), {})",
+    "dynamic_type",
+),
+(
+    "from types import new_class\nDynamic = new_class('Dynamic')",
+    "dynamic_class_factory",
+),
+```
+
+Also mutate a module-level `__all__ = ["Allowed"]` declaration into a class-body `__all__ = ["NotAllowed"]` and require `__all__`; the permitted declaration is exactly one top-level `Assign` or `AnnAssign`, targets only `__all__`, and its value is a list or tuple containing only string literals. Add positive assertions that existing `type(value)` calls and that exact module-level `__all__` declaration produce no reflection finding.
+
 - [ ] **Step 3: Add entry-point and guard-helper bypass mutations**
 
 Extend entry-point mutation coverage with the following exact families. Each mutation is appended to a parsed copy of `space/app.py` and must include `builtin_reflection`. It must not require `mount_count` or `parent_route`: reflection is already forbidden, so the scanner deliberately does not resolve the hidden data flow. Existing direct and ordinary-alias mutations continue to prove structural counts.
@@ -201,6 +232,7 @@ Run only the newly added tests:
   tests/test_hf_space_source_boundary.py::test_application_implicit_builtins_mapping_is_denied `
   tests/test_hf_space_source_boundary.py::test_application_forbidden_reflective_attribute_load_is_denied `
   tests/test_hf_space_source_boundary.py::test_application_dynamic_protocol_definitions_are_denied `
+  tests/test_hf_space_source_boundary.py::test_application_dunder_assignment_and_dynamic_class_construction_are_denied `
   tests/test_hf_space_source_boundary.py::test_entrypoint_scanner_rejects_reflection_without_resolving_forbidden_flow `
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_rejects_sensitive_reflection_candidates `
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_allows_unrelated_test_introspection `
@@ -232,6 +264,9 @@ _FORBIDDEN_REFLECTION_NAMES = frozenset(
 )
 _ALLOWED_DUNDER_NAME_LOADS = frozenset({"__name__", "__file__"})
 _ALLOWED_DUNDER_DEFINITIONS = frozenset({"__init__", "__call__"})
+_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS = frozenset(
+    {"__getattribute__", "__getattr__", "__setattr__", "__delattr__"}
+)
 _FORBIDDEN_REFLECTION_HELPERS = frozenset(
     {"operator.attrgetter", "operator.methodcaller", "inspect.getattr_static"}
 )
@@ -251,7 +286,7 @@ _SENSITIVE_COMPOSITION_MEMBERS = frozenset(
 )
 ```
 
-Implement `_is_dunder(name: str) -> bool` as `len(name) > 4 and name.startswith("__") and name.endswith("__")`. Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`, or when it is a dunder outside `_ALLOWED_DUNDER_NAME_LOADS`; reject every dunder `ast.Attribute`; reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`; and reject an `ast.FunctionDef` or `ast.AsyncFunctionDef` with a dunder name outside `_ALLOWED_DUNDER_DEFINITIONS`. `__all__` assignment is an `ast.Store` and remains permitted, but loading it is rejected. Do not evaluate Python, fold arbitrary expressions, import a module, or follow the value after the forbidden reference. Direct calls, assignments, defaults, lambdas, named expressions, containers, mapping access, dynamic protocol definitions, and later alias calls all fail at the original forbidden token.
+Implement `_is_dunder(name: str) -> bool` as `len(name) > 4 and name.startswith("__") and name.endswith("__")`. Identify the sole permitted `__all__` target node only when it belongs to an exact top-level `Assign` or `AnnAssign` whose only target is `__all__` and whose value is a literal list or tuple of strings. Identify the sole permitted `type` load nodes only when an `ast.Call` has exact direct `ast.Name(id="type")` callee, exactly one positional argument, and no keywords; every other `type` load is `dynamic_type`. Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`, when it is a dunder outside `_ALLOWED_DUNDER_NAME_LOADS`, or when it is `type` outside the permitted node set; reject every dunder `ast.Name` in `Store` or `Del` context except that one recorded `__all__` target; reject every dunder `ast.Attribute`; reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`; reject an `ast.FunctionDef` or `ast.AsyncFunctionDef` with a dunder name outside `_ALLOWED_DUNDER_DEFINITIONS`; and reject an exact string constant in `_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS`. Reject every `ast.Import` of `types`; for `ImportFrom(module="types")`, require every original imported name to equal `MappingProxyType`, regardless of local alias. Do not evaluate Python, fold arbitrary expressions, import a module, or follow the value after the forbidden reference.
 
 Integrate it in three places:
 
@@ -269,6 +304,7 @@ Run:
   tests/test_hf_space_source_boundary.py::test_application_implicit_builtins_mapping_is_denied `
   tests/test_hf_space_source_boundary.py::test_application_forbidden_reflective_attribute_load_is_denied `
   tests/test_hf_space_source_boundary.py::test_application_dynamic_protocol_definitions_are_denied `
+  tests/test_hf_space_source_boundary.py::test_application_dunder_assignment_and_dynamic_class_construction_are_denied `
   tests/test_hf_space_source_boundary.py::test_entrypoint_scanner_rejects_reflection_without_resolving_forbidden_flow `
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_rejects_sensitive_reflection_candidates `
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_allows_unrelated_test_introspection `
@@ -307,7 +343,7 @@ Expected: one implementation commit with exactly `tests/test_hf_space_source_bou
 
 - [ ] **Step 10: Independent acceptance and old-breaker release (controller only)**
 
-The SDD controller generates a review package from the exact recorded implementation BASE to the implementation HEAD and dispatches an independent reviewer. Acceptance requires Spec ✅, Quality Approved, Critical `0`, Important `0`; Minor findings are recorded under the standard SDD policy. The controller then reruns the eight exact node IDs, the complete Task 6 boundary suite, Gradio contract, Ruff, strict Mypy, immutable-scope diff, commit identity, and clean-worktree checks.
+The SDD controller generates a review package from the exact recorded implementation BASE to the implementation HEAD and dispatches an independent reviewer. Acceptance requires Spec ✅, Quality Approved, Critical `0`, Important `0`; Minor findings are recorded under the standard SDD policy. The controller then reruns the nine exact node IDs, the complete Task 6 boundary suite, Gradio contract, Ruff, strict Mypy, immutable-scope diff, commit identity, and clean-worktree checks.
 
 Only after both gates pass, resolve `corrective_head` from `git rev-parse HEAD`, then append these state transitions to the original plan's ignored ledger `.superpowers/sdd/2026-08-31-carerisk-hf-space/progress.md` using that full SHA in both named positions and the actual evidence counts:
 
