@@ -30,6 +30,8 @@
 - The successor closed-world source-token architecture also ended after three rejected candidates: `84e2eaa508ac37f9b4d533efffc2da79c8ca1099`, `28e8ce88c8a6248516bf36d7bcbd624f0af8d24e`, and `b256f1757e604302d7c5cbfc52b2dd44ce26236e`.
 - The decisive third-candidate Critical was architectural: canonical mutation ownership compared only a nearest function name, so duplicate, nested, or dead same-named functions could replace or suppress the executable pytest test while both candidate-controlled scanners returned no findings.
 - All three candidates remain rejected. Architecture C may reuse the already-reviewed target Gradio blob as an immutable input, but it does not retroactively approve any retired scanner implementation.
+- The initial Architecture C implementation `e9650ed00468f8bcc95b6972d44d1d9923e14b9f` is also rejected, with Critical `0`, Important `2`, Minor `0`: inherited Git routing/config environment could redirect repository identity, and every Git subprocess was unbounded. Its generic identity model remains approved, but its command wrapper is not accepted.
+- `docs/superpowers/plans/2026-09-01-carerisk-git-object-identity-fix-round-1.md` exclusively governs the bounded wrapper correction. The `_git_bytes` and temporary-repository pseudocode in this plan records the rejected first candidate and must not be reused as current implementation authority; all other target/product/tuple/scope and review gates remain in force.
 
 ## File and interface map
 
@@ -538,6 +540,7 @@ After Architecture C acceptance, the controller performs all ledger writes in ig
 - reflection-boundary alias-evaluator candidates remain rejected and are superseded by Architecture C;
 - closed-world candidates `84e2eaa508ac37f9b4d533efffc2da79c8ca1099`, `28e8ce88c8a6248516bf36d7bcbd624f0af8d24e`, and `b256f1757e604302d7c5cbfc52b2dd44ce26236e` remain rejected, with no fix round 3;
 - the new corrective's direct raw-object review is approved for blob `7c75d61c53eccdc93f69e7e3bb1eb09346eb5f04`, raw size `64847`, raw SHA-256 `101893daf6f20f9b507a00d0ac8da7fa383f83007520b4db61b710d1814df2a8`;
+- initial Architecture C candidate `e9650ed00468f8bcc95b6972d44d1d9923e14b9f` remains rejected and cannot be recorded as the Task 6 completion or Task 7 release SHA;
 - the Architecture C implementation candidate is accepted only after independent review and controller reruns;
 - original HF Space plan Task 6 is complete via that accepted Architecture C commit, not via any rejected predecessor;
 - the original ledger contains one `Task 7 released` entry whose `CARERISK_TASK7_RELEASE_SHA` is the accepted full lowercase 40-hex Architecture C commit;
