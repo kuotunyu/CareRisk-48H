@@ -832,14 +832,235 @@ test "$(git cat-file blob "$CARERISK_GRADIO_CONTRACT_BLOB_SHA1" | wc -c | tr -d 
 test "$(git cat-file blob "$CARERISK_GRADIO_CONTRACT_BLOB_SHA1" | sha256sum | cut -d' ' -f1)" = "$CARERISK_GRADIO_CONTRACT_RAW_SHA256"
 ```
 
-Scan for forbidden regressions:
+Run the executable source-structure gate below. This gate inspects actual AST
+definitions and calls, not source substrings. It therefore preserves denylist
+constants such as `_PROCESS_CALLS = {"subprocess.Popen", ...}`, source fixtures,
+and the required `monkeypatch.setenv("GIT_DIR", ...)` / `GIT_WORK_TREE` RED rows.
+Those strings are evidence, not process execution.
 
 ```powershell
-rg -n '_gradio_test_source_violations|_guard_helper_violations' tests/test_hf_space_source_boundary.py
-rg -n 'shell=True|subprocess\.Popen|timeout=None|GIT_DIR.*os\.environ|GIT_WORK_TREE.*os\.environ' tests/test_hf_space_source_boundary.py
+$structuralGate = @'
+import ast
+from pathlib import Path
+
+SOURCE_PATH = Path("tests/test_hf_space_source_boundary.py")
+source = SOURCE_PATH.read_text(encoding="utf-8")
+tree = ast.parse(source, filename=str(SOURCE_PATH))
+violations: list[str] = []
+
+
+def qualified_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        owner = qualified_name(node.value)
+        return f"{owner}.{node.attr}" if owner else node.attr
+    return ""
+
+
+def only_module_function(name: str) -> ast.FunctionDef | None:
+    matches = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    ]
+    if len(matches) != 1:
+        violations.append(f"{name}: expected exactly one module function")
+        return None
+    return matches[0]
+
+
+def keyword_value(call: ast.Call, name: str) -> ast.AST | None:
+    matches = [keyword.value for keyword in call.keywords if keyword.arg == name]
+    if len(matches) > 1:
+        violations.append(f"{qualified_name(call.func)}: duplicate {name}")
+        return None
+    return matches[0] if matches else None
+
+
+def is_name(node: ast.AST | None, name: str) -> bool:
+    return isinstance(node, ast.Name) and node.id == name
+
+
+retired_definitions = {
+    "_gradio_test_source_violations",
+    "_guard_helper_violations",
+}
+subprocess_api_names = {
+    "Popen",
+    "run",
+    "call",
+    "check_call",
+    "check_output",
+}
+
+for node in ast.walk(tree):
+    if (
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in retired_definitions
+    ):
+        violations.append(f"retired definition remains: {node.name}")
+    if not isinstance(node, ast.Call):
+        continue
+    name = qualified_name(node.func)
+    if name in {"Popen", "subprocess.Popen"}:
+        violations.append(f"process creation call is forbidden: {name}")
+    is_subprocess_api = name.startswith("subprocess.") or name in subprocess_api_names
+    if not is_subprocess_api:
+        continue
+    shell = keyword_value(node, "shell")
+    if shell is not None and not (
+        isinstance(shell, ast.Constant) and shell.value is False
+    ):
+        violations.append(f"{name}: shell must be absent or literal False")
+    timeout = keyword_value(node, "timeout")
+    if isinstance(timeout, ast.Constant) and timeout.value is None:
+        violations.append(f"{name}: timeout=None is forbidden")
+
+timeout_assignments = [
+    statement
+    for statement in tree.body
+    if isinstance(statement, ast.Assign)
+    and any(
+        isinstance(target, ast.Name) and target.id == "_GIT_TIMEOUT_SECONDS"
+        for target in statement.targets
+    )
+]
+if len(timeout_assignments) != 1 or not (
+    isinstance(timeout_assignments[0].value, ast.Constant)
+    and timeout_assignments[0].value.value == 10.0
+):
+    violations.append("_GIT_TIMEOUT_SECONDS must be one literal 10.0 assignment")
+
+runner = only_module_function("_run_git_process")
+if runner is not None:
+    if any(
+        isinstance(node, ast.Attribute) and qualified_name(node) == "os.environ"
+        for node in ast.walk(runner)
+    ):
+        violations.append("_run_git_process must not read or forward os.environ")
+    if any(
+        isinstance(node, ast.Name)
+        and node.id == "environment"
+        and isinstance(node.ctx, ast.Store)
+        for node in ast.walk(runner)
+    ):
+        violations.append("_run_git_process must not replace its sanitized environment")
+    runner_calls = [
+        node
+        for node in ast.walk(runner)
+        if isinstance(node, ast.Call) and qualified_name(node.func) == "subprocess.run"
+    ]
+    if len(runner_calls) != 1:
+        violations.append("_run_git_process must contain one subprocess.run call")
+    else:
+        call = runner_calls[0]
+        required_keywords = {
+            "cwd": "cwd",
+            "env": "environment",
+            "input": "input_bytes",
+            "timeout": "_GIT_TIMEOUT_SECONDS",
+        }
+        for keyword, required_name in required_keywords.items():
+            if not is_name(keyword_value(call, keyword), required_name):
+                violations.append(
+                    f"_run_git_process subprocess.run {keyword} must be {required_name}"
+                )
+        for keyword in ("capture_output", "check"):
+            value = keyword_value(call, keyword)
+            if not (isinstance(value, ast.Constant) and value.value is True):
+                violations.append(
+                    f"_run_git_process subprocess.run {keyword} must be literal True"
+                )
+        shell = keyword_value(call, "shell")
+        if shell is not None and not (
+            isinstance(shell, ast.Constant) and shell.value is False
+        ):
+            violations.append("_run_git_process subprocess.run shell is unsafe")
+
+sanitizer = only_module_function("_sanitized_git_environment")
+if sanitizer is not None:
+    sanitizer_literals = {
+        node.value
+        for node in ast.walk(sanitizer)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    if not {"GIT_", "CARERISK_"} <= sanitizer_literals:
+        violations.append("sanitizer must reject GIT_ and CARERISK_ prefixes")
+    environment_reads = [
+        node
+        for node in ast.walk(sanitizer)
+        if isinstance(node, ast.Call)
+        and qualified_name(node.func) == "os.environ.items"
+    ]
+    if len(environment_reads) != 1:
+        violations.append("sanitizer must inspect os.environ.items exactly once")
+    fixed_updates = [
+        node
+        for node in ast.walk(sanitizer)
+        if isinstance(node, ast.Call)
+        and qualified_name(node.func) == "environment.update"
+        and len(node.args) == 1
+        and is_name(node.args[0], "_GIT_FIXED_ENVIRONMENT")
+        and not node.keywords
+    ]
+    if len(fixed_updates) != 1:
+        violations.append("sanitizer must add only reviewed fixed Git controls")
+    returns = [node for node in ast.walk(sanitizer) if isinstance(node, ast.Return)]
+    if len(returns) != 1 or not is_name(returns[0].value, "environment"):
+        violations.append("sanitizer must return the constructed environment")
+
+git_bytes = only_module_function("_git_bytes")
+if git_bytes is not None:
+    sanitized_assignments = [
+        node
+        for node in ast.walk(git_bytes)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and is_name(node.targets[0], "environment")
+        and isinstance(node.value, ast.Call)
+        and qualified_name(node.value.func) == "_sanitized_git_environment"
+        and not node.value.args
+        and not node.value.keywords
+    ]
+    if len(sanitized_assignments) != 1:
+        violations.append("_git_bytes must construct one sanitized environment")
+    if any(
+        isinstance(node, ast.Attribute) and qualified_name(node) == "os.environ"
+        for node in ast.walk(git_bytes)
+    ):
+        violations.append("_git_bytes must not read or forward os.environ")
+
+for node in ast.walk(tree):
+    if not isinstance(node, ast.Call):
+        continue
+    if qualified_name(node.func) not in {
+        "_resolve_git_repository",
+        "_run_git_process",
+    }:
+        continue
+    if len(node.args) < 3 or not is_name(node.args[2], "environment"):
+        violations.append(
+            f"{qualified_name(node.func)} must receive the sanitized environment"
+        )
+
+if violations:
+    raise AssertionError(
+        "plumbing structural gate failed:\n" + "\n".join(sorted(set(violations)))
+    )
+print("plumbing structural gate passed")
+'@
+$structuralGate | .venv-space\Scripts\python.exe -
+if ($LASTEXITCODE -ne 0) { throw 'plumbing structural gate failed' }
 ```
 
-Expected: both searches return no match. Do not weaken unrelated application, guard, entrypoint, exporter, denylist, secret, symlink, binary, or frozen-product tests to make counts pass.
+Expected: the structural gate prints `plumbing structural gate passed`. It
+rejects real retired function definitions, `Popen` calls, unsafe subprocess
+shell/timeout calls, a missing or non-10-second Git-runner timeout, ambient
+environment forwarding, and loss of the sanitizer boundary. It deliberately
+allows denylist/test-fixture strings and `monkeypatch.setenv` RED setup. Do not
+weaken unrelated application, guard, entrypoint, exporter, denylist, secret,
+symlink, binary, or frozen-product tests to make counts pass.
 
 - [ ] **Step 7: Commit exact implementation scope and request fresh review**
 
