@@ -8,7 +8,7 @@
 
 **Tech Stack:** CPython 3.11 slim-bookworm runtime image pinned by patch tag and OCI digest; an official Playwright Python test/reviewer image pinned by matching Playwright patch tag plus OCI index/linux-amd64 digests; Gradio `6.26.0`; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
 
-**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. The current Task 5 docs-only executable-correction gate starts from exact parent `7b116846c9ed9fcfc1ed0ab4f62ad803f7322050`; Task 5 may resume only after a fresh review of the resulting design/plan commit reports Critical=0, Important=0, and Minor=0. No provisional self-SHA is fabricated in this document.
+**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is complete and frozen at `3ef09639c4b08f1fc70e931507af79f4ff717fcb`. Task 6 remains blocked after its original five-round breaker and two rejected successor architectures; only the reviewed Architecture C sequence may complete it and release Task 7. No provisional self-SHA is fabricated in this document.
 
 ## Global Constraints
 
@@ -47,9 +47,9 @@
 - Ruff and Mypy executables are absent from the current global Python. `pip check` reports unrelated global Anaconda conflicts. Implementation must therefore use isolated, lock-installed verification environments and must not repair or rely on the global environment.
 - Baseline commands used `PYTHONDONTWRITEBYTECODE=1`, disabled pytest cache, used two CPU threads, and left the worktree clean.
 
-## Task 5 Authority and Pinned-Source Evidence
+## Completed Task 5 Authority and Pinned-Source Evidence
 
-- Central authorized local implementation at plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is currently held at exact docs parent `7b116846c9ed9fcfc1ed0ab4f62ad803f7322050`; this executable correction changes only the governing design and plan. Product/test files remain byte-frozen until a fresh authority review reports Critical=0, Important=0, and Minor=0.
+- Central authorized local implementation at plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 completed at `3ef09639c4b08f1fc70e931507af79f4ff717fcb`; its product/test bytes remain frozen while Task 6 is corrected through Architecture C.
 - Pinned `.venv-space` reports Gradio `6.26.0`. `inspect.signature(gr.mount_gradio_app)` contains every fixed Task 5 mount argument, including `favicon_path`; `inspect.signature(uvicorn.run)` contains the fixed programmatic options, including `http`; no `launch` or CLI path is required. The server call fixes `http="h11"` independently of whether `httptools` happens to be installed.
 - Direct composition `app = PublicSurfaceGuard(parent, build_package_asset_membership())` after `gr.mount_gradio_app(...)` was probed with hostile headers: permitted root/config requests remained healthy after scope sanitization, while `OPTIONS` and upload paths returned the fixed 404 outside Gradio with no canary, CORS, or compression. Every implementation and test construction uses this exact two-argument interface with the nonempty membership derived from the two pinned roots; there is no optional default or empty-set substitute.
 - Pinned source registers both `GET` and `HEAD` for root, but GET-only handlers for config, theme, manifest, favicon, and package routes. The governing outer method table therefore allows root GET/HEAD, allows only GET for the other exact read-only resources, and returns its own fixed 404 for all other methods before Gradio.
@@ -1332,18 +1332,27 @@ deprecated wrapper for either retired scanner remains.
 
 - [ ] **Step 4: Run GREEN**
 
+The Architecture C controller injects and validates the three custody values
+exactly as specified by the successor corrective plan before this pytest run.
+
 ```powershell
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_source_boundary.py space/tests/test_export_contract.py -q
 ```
 
 Expected: all boundary tests pass without importing the existing application or model package.
 
-- [ ] **Step 5: Commit the exact files**
+- [ ] **Step 5: Commit the Architecture C corrective scope**
+
+The already accepted `space/tests/test_export_contract.py` boundary is frozen
+and is not restaged. The successor corrective plan governs the exact one-file
+implementation commit:
 
 ```powershell
-git add -- tests/test_hf_space_source_boundary.py space/tests/test_export_contract.py
+git add -- tests/test_hf_space_source_boundary.py
+$staged = @(git diff --cached --name-only)
+if ($staged.Count -ne 1 -or $staged[0] -cne 'tests/test_hf_space_source_boundary.py') { throw 'unexpected Task 6 corrective scope' }
 git diff --cached --check
-git commit -m 'test(space): enforce public capability boundary'
+git commit -m 'test(space): replace source self-policing with Git object identity'
 ```
 
 ### Task 7: Build reproducible dependency, base-image, SBOM, and license workflows
@@ -1361,6 +1370,33 @@ value is a lowercase 40-hex commit supplied by the controller ledger and equals
 the independently accepted Architecture C candidate. Task 7 preflight requires
 `HEAD` to equal that ledger SHA, the worktree to be clean, and the Gradio path
 object to equal the custodied blob.
+
+**External custody transport for Tasks 7–13:** Before dispatching any later local
+task whose command includes `tests/test_hf_space_source_boundary.py`, the
+controller reads the exact accepted tuple from the ignored custody ledger and
+injects these three process variables: `CARERISK_GRADIO_CONTRACT_BLOB_SHA1`,
+`CARERISK_GRADIO_CONTRACT_RAW_SIZE`, and
+`CARERISK_GRADIO_CONTRACT_RAW_SHA256`. The task must run the following preflight
+in its own process before pytest; it may not reconstruct values from this plan,
+tracked source, a manifest, or Git history:
+
+```powershell
+$custodyPatterns = @{
+    CARERISK_GRADIO_CONTRACT_BLOB_SHA1 = '^[0-9a-f]{40}$'
+    CARERISK_GRADIO_CONTRACT_RAW_SIZE = '^(0|[1-9][0-9]*)$'
+    CARERISK_GRADIO_CONTRACT_RAW_SHA256 = '^[0-9a-f]{64}$'
+}
+foreach ($entry in $custodyPatterns.GetEnumerator()) {
+    $value = [Environment]::GetEnvironmentVariable($entry.Key)
+    if ([string]::IsNullOrWhiteSpace($value) -or $value -cnotmatch $entry.Value) {
+        throw "missing or malformed external custody: $($entry.Key)"
+    }
+}
+```
+
+This block validates transport only; the boundary test performs the authoritative
+path-object/type/size/raw-hash comparison. The controller reinjects custody for
+each task/session rather than relying on inherited shell state.
 
 **Files:**
 - Create: `tools/space/requirements-runtime.in`
@@ -1695,6 +1731,10 @@ The generated Dockerfile must expose named `test` and `runtime` stages with no a
 Do not add an assertion or removal step for `/bin/sh`. The accepted proof is non-login passwd metadata plus absence of shell calls in application AST and exec-form startup.
 
 - [ ] **Step 4: Run the static Docker/source GREEN available before provenance freeze**
+
+The controller injects the three external custody values for this Task 9
+process. Repeat the exact Tasks 7–13 custody preflight before this pytest command;
+absence or malformed input stops before collection.
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path space)
@@ -2363,7 +2403,15 @@ git commit -m 'test(space): gate local accessibility and cold start'
 
 **Interfaces:**
 - Consumes: complete app source, tests, locks, supply-chain outputs, exporter, and Docker contract.
+- Consumes locally: the controller-injected three-value custody transport.
+- Consumes in Actions only after separate remote authorization: GitHub Actions Environment `carerisk-contract-custody` with three external variables named exactly `CARERISK_GRADIO_CONTRACT_BLOB_SHA1`, `CARERISK_GRADIO_CONTRACT_RAW_SIZE`, and `CARERISK_GRADIO_CONTRACT_RAW_SHA256`.
 - Produces: a reviewed app-source commit whose SHA is the immutable `space_app_source_git_sha`.
+
+Creating the Actions Environment or setting/changing any of its variables is
+remote metadata mutation and is not authorized by Task 11. The tracked workflow
+and its local contract tests may be committed while the remote channel is
+absent; any remote run must then fail closed until separate written
+authorization provisions the exact external values.
 
 - [ ] **Step 1: Write failing workflow-contract tests**
 
@@ -2398,9 +2446,57 @@ def test_app_source_workflow_runs_source_gates_only_without_manifest() -> None:
     assert "verify_hf_space_candidate.py" not in source_commands
     assert "verify_hf_space_candidate.py" in candidate_commands
     assert "provisional" not in SPACE_CI.read_text(encoding="utf-8").lower()
+
+CUSTODY_ENVIRONMENT = "carerisk-contract-custody"
+CUSTODY_NAMES = (
+    "CARERISK_GRADIO_CONTRACT_BLOB_SHA1",
+    "CARERISK_GRADIO_CONTRACT_RAW_SIZE",
+    "CARERISK_GRADIO_CONTRACT_RAW_SHA256",
+)
+
+def test_space_ci_transports_external_custody_without_literal_values() -> None:
+    workflow_text = SPACE_CI.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    expected_values = _controller_gradio_contract_identity()
+    for job_name in ("source_gates", "candidate_gates"):
+        job = workflow["jobs"][job_name]
+        assert job["environment"] == CUSTODY_ENVIRONMENT
+        assert set(job["env"]) >= set(CUSTODY_NAMES)
+        assert {
+            name for name in job["env"] if name.startswith("CARERISK_GRADIO_CONTRACT_")
+        } == set(CUSTODY_NAMES)
+        for name in CUSTODY_NAMES:
+            assert job["env"][name] == "${{ vars." + name + " }}"
+        custody_steps = [step for step in job["steps"] if step.get("id") == "custody"]
+        assert len(custody_steps) == 1
+        custody_command = custody_steps[0]["run"]
+        assert "^[0-9a-f]{40}$" in custody_command
+        assert "^(0|[1-9][0-9]*)$" in custody_command
+        assert "^[0-9a-f]{64}$" in custody_command
+        guarded_steps = [
+            index
+            for index, step in enumerate(job["steps"])
+            if any(
+                token in step.get("run", "")
+                for token in ("pytest", "docker run", "verify_hf_space_candidate.py")
+            )
+        ]
+        assert guarded_steps
+        assert job["steps"].index(custody_steps[0]) < min(guarded_steps)
+    source_commands = "\n".join(
+        step.get("run", "") for step in workflow["jobs"]["source_gates"]["steps"]
+    )
+    for name in CUSTODY_NAMES:
+        assert f"--env {name}" in source_commands
+    for value in (expected_values[0], str(expected_values[1]), expected_values[2]):
+        assert value not in workflow_text
 ```
 
 - [ ] **Step 2: Run RED**
+
+The controller injects the three external custody values for this Task 11 local
+process. Repeat the exact Tasks 7–13 custody preflight before pytest; local RED
+is about the absent workflow, never about absent custody.
 
 ```powershell
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_source_boundary.py tests/test_hf_space_supply_chain.py tests/test_hf_space_exporter.py -q
@@ -2412,9 +2508,58 @@ Expected: FAIL because the workflow does not exist.
 
 Resolve official action tag commits read-only and write the resulting real 40-character SHAs directly into the workflow. The `source_gates` job always runs and binds `REVIEWER_IMAGE` to the same exact reviewer tag plus linux/amd64 digest recorded in `base-image.json`. A controlled acquisition step fills an ephemeral wheelhouse from `space/requirements-dev.lock` and rejects every non-matching hash. A separate invocation of that reviewer image uses `--network none`, mounts the repository read-only plus the wheelhouse, installs the development union lock alone with `--no-index --require-hashes --no-deps`, verifies the runtime-package/version subset relation, and runs source/Space/static/supply-chain gates. The job exports a literal `manifest_present` output from an exact Linux check (`if [ -f space/deployment-manifest.json ]; then echo 'present=true' >> "$GITHUB_OUTPUT"; else echo 'present=false' >> "$GITHUB_OUTPUT"; fi`). It never calls manifest generation, export, candidate build, or candidate verification.
 
+Both jobs declare `environment: carerisk-contract-custody`. Their tracked `env`
+maps contain exactly these custody references and no tuple values:
+`${{ vars.CARERISK_GRADIO_CONTRACT_BLOB_SHA1 }}`,
+`${{ vars.CARERISK_GRADIO_CONTRACT_RAW_SIZE }}`, and
+`${{ vars.CARERISK_GRADIO_CONTRACT_RAW_SHA256 }}`. Before any pytest or Docker
+command, a Bash step requires lowercase 40-hex blob SHA-1, canonical unsigned
+decimal size, and lowercase 64-hex SHA-256; absent, empty, uppercase, signed,
+leading-zero, or otherwise malformed values exit nonzero. The `source_gates`
+reviewer `docker run` passes all three explicitly as `--env
+CARERISK_GRADIO_CONTRACT_BLOB_SHA1`, `--env
+CARERISK_GRADIO_CONTRACT_RAW_SIZE`, and `--env
+CARERISK_GRADIO_CONTRACT_RAW_SHA256`; it never bakes them into an image, command
+literal, artifact, cache, or log. The candidate verifier receives the same
+process environment and must use explicit `--env` forwarding for any reviewer
+container that invokes the boundary test. Workflow-contract tests prove the
+three-name mapping, both jobs' environment binding, fail-closed preflight,
+explicit reviewer-container forwarding, and absence of the controller-supplied
+values from tracked workflow text. The Architecture C controller gate also scans
+`.github`, `tests`, `space`, `scripts`, and `tools` for tuple-value leakage.
+
+Use this exact custody fragment in each job before its first pytest or Docker
+step; `source_gates` then appends the three shown `--env` flags to its reviewer
+`docker run` command:
+
+```yaml
+environment: carerisk-contract-custody
+env:
+  CARERISK_GRADIO_CONTRACT_BLOB_SHA1: ${{ vars.CARERISK_GRADIO_CONTRACT_BLOB_SHA1 }}
+  CARERISK_GRADIO_CONTRACT_RAW_SIZE: ${{ vars.CARERISK_GRADIO_CONTRACT_RAW_SIZE }}
+  CARERISK_GRADIO_CONTRACT_RAW_SHA256: ${{ vars.CARERISK_GRADIO_CONTRACT_RAW_SHA256 }}
+steps:
+  - id: custody
+    shell: bash
+    run: |
+      [[ "$CARERISK_GRADIO_CONTRACT_BLOB_SHA1" =~ ^[0-9a-f]{40}$ ]] || exit 1
+      [[ "$CARERISK_GRADIO_CONTRACT_RAW_SIZE" =~ ^(0|[1-9][0-9]*)$ ]] || exit 1
+      [[ "$CARERISK_GRADIO_CONTRACT_RAW_SHA256" =~ ^[0-9a-f]{64}$ ]] || exit 1
+  - name: Run source gates in reviewer
+    run: >-
+      docker run --rm --network none --read-only
+      --env CARERISK_GRADIO_CONTRACT_BLOB_SHA1
+      --env CARERISK_GRADIO_CONTRACT_RAW_SIZE
+      --env CARERISK_GRADIO_CONTRACT_RAW_SHA256
+      "$REVIEWER_IMAGE" python -m pytest tests/test_hf_space_source_boundary.py
+```
+
 The separate `candidate_gates` job has `needs: source_gates` and the exact condition `${{ needs.source_gates.outputs.manifest_present == 'true' }}`. Thus it is skipped on the app-source commit, where the manifest does not yet exist, and becomes required after the manifest commit exists. Only that job invokes the ownership-safe clean-export verifier, controlled digest/hash-pinned image/dependency acquisition and build, followed by no-egress tests/runtime/browser review, vulnerability/license scan, and no public artifact upload. Workflow-contract tests assert both branches. A fabricated, empty, copied, or provisional manifest is forbidden; absence is a normal source-only state, not something CI repairs.
 
 - [ ] **Step 4: Run the complete app-source verification locally**
+
+The controller reinjects the same three values into this fresh local process and
+the exact Tasks 7–13 custody preflight must pass before the combined pytest run.
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'
@@ -2541,6 +2686,10 @@ if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'In
 Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime and four derived image digests; exact parser identity `h11`; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; normal-only static radio visibility transitions; failure-only zero-surface counts; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; three normal cold starts; ten viewport/state records; four controller-retained variant reference/ID/digest/base/code/GUID/label/delta records; five-code owning-gate/live-reachability/evidence-type/precedence/status records; exact role-specific normal/reviewer/network/failure cleanup records including failure container names and actual image/container-to-record identity comparisons; and no-egress observations. `receipt_schema_invalid` is recorded as unit/component/ASGI evidence with its exact three-part failure copy and sole bounded code, dominated by the immutable receipt anchor, and `not_live_reviewed`, never as a passed live state. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the explicit h11 parser, direct outer ASGI/authority boundary, exact package membership, accepted Host identity, or role-specific cleanup identity is absent, ineffective, ambiguous, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
 
 - [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
+
+The controller injects the three external custody values for this final local
+Task 13 process. Repeat the exact Tasks 7–13 custody preflight before either
+pytest command that includes the boundary suite.
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'

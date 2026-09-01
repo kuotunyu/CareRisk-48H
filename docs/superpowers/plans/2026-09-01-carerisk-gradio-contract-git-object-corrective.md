@@ -87,9 +87,16 @@ git cat-file blob "$CARERISK_GRADIO_CONTRACT_BLOB_SHA1"
 
 The last command is the review source. The reviewer must inspect those raw bytes directly, not a checkout, `Path.read_bytes`, or `Get-Content`, and report whether the executable tests meaningfully cover static component/API absence, evidence-failure surfaces, the outer guard, exact entrypoint/mount/Uvicorn composition, route classification, package-asset containment, no-network/no-write effects, and the claimed monkeypatch/fixture seams. Approval requires Critical `0` and Important `0`; a hash match without that source finding is HOLD.
 
-The reviewer also runs the exact object as the tracked target suite with controller custody already validated:
+After those raw-object gates pass, the reviewer requires a clean tracked checkout
+and runs pytest against the tracked target path whose `HEAD:` object was just
+bound to the reviewed blob. Pytest imports checkout files under normal clean-tree
+execution semantics; it does not execute the `cat-file` pipe, a temporary file,
+or an extracted object. Checkout bytes therefore serve execution only and never
+replace raw Git-object identity authority:
 
 ```powershell
+if (@(git status --porcelain=v1 --untracked-files=all).Count -ne 0) { throw 'target-suite review requires a clean tracked checkout' }
+if ((git rev-parse HEAD:space/tests/test_gradio_contract.py).Trim() -cne $env:CARERISK_GRADIO_CONTRACT_BLOB_SHA1) { throw 'checkout target is not bound to reviewed blob' }
 $env:PYTHONPATH = (Resolve-Path space).Path
 .venv-space\Scripts\python.exe -m pytest space/tests/test_gradio_contract.py -q
 ```
@@ -204,7 +211,7 @@ def _assert_git_blob_identity(
     del repository, object_id, expected
 ```
 
-Create the frozen source bytes only through `git cat-file blob`, create a task-owned bare repository below pytest's `tmp_path`, and write each mutation as a real temporary Git blob using `git hash-object -w --stdin`. Parameterize exactly these deterministic categories:
+Create the frozen source bytes only through `git cat-file blob`. Initialize every task-owned bare repository below pytest's `tmp_path` with exact `git init --bare --object-format=sha1`, require `git rev-parse --show-object-format` to return exact `sha1`, and only then write each mutation as a real temporary Git blob using `git hash-object -w --stdin`. Parameterize exactly these deterministic categories:
 
 ```python
 _GRADIO_GIT_OBJECT_MUTATIONS = (
@@ -249,8 +256,20 @@ Use these concrete helpers; all source and mutation bytes remain binary:
 ```python
 def _init_temporary_bare_repository(tmp_path: Path) -> Path:
     repository = tmp_path / "gradio-contract-objects.git"
-    _git_bytes(tmp_path, "init", "--bare", str(repository))
+    _git_bytes(
+        tmp_path,
+        "init",
+        "--bare",
+        "--object-format=sha1",
+        str(repository),
+    )
     assert repository.is_dir()
+    object_format = _git_bytes(
+        repository,
+        "rev-parse",
+        "--show-object-format",
+    ).decode("ascii").strip()
+    assert object_format == "sha1"
     return repository
 
 def _write_temporary_blob(repository: Path, raw: bytes) -> str:
@@ -329,7 +348,7 @@ def _assert_git_blob_identity(
     assert actual == (expected_blob, expected_size, expected_sha256)
 ```
 
-The generic command wrapper must reject NULs/newlines in arguments, must invoke `git` without `shell=True`, and must never decode blob output. The temporary bare-repository helpers use the same wrapper for `git init --bare` and `git hash-object -w --stdin`; they validate the returned object ID as lowercase 40-hex before passing it to `cat-file`.
+The generic command wrapper must reject NULs/newlines in arguments, must invoke `git` without `shell=True`, and must never decode blob output. The temporary bare-repository helpers use the same wrapper for exact `git init --bare --object-format=sha1`, verify exact `sha1` before `git hash-object -w --stdin`, and validate the returned object ID as lowercase 40-hex before passing it to `cat-file`.
 
 Add the positive path-binding test and strict no-fallback custody tests:
 
@@ -392,7 +411,7 @@ Run the positive identity, strict custody, and eight temporary-object cases:
 
 Expected: one positive case, four strict-custody cases, and eight mutation cases all pass; no skip or collection error.
 
-Prove that executable code and manifests do not embed the expected values. Each `git grep` must return exit 1 and no match when scoped to `tests`, `space`, `scripts`, and `tools`; tracked governance docs are intentionally outside this scan:
+Prove that executable code, workflows, and manifests do not embed the expected values. Each `git grep` must return exit 1 and no match when scoped to `.github`, `tests`, `space`, `scripts`, and `tools`; tracked governance docs are intentionally outside this scan:
 
 ```powershell
 foreach ($value in @(
@@ -400,7 +419,7 @@ foreach ($value in @(
     $env:CARERISK_GRADIO_CONTRACT_RAW_SIZE,
     $env:CARERISK_GRADIO_CONTRACT_RAW_SHA256
 )) {
-    git grep -n -F -- $value -- tests space scripts tools
+    git grep -n -F -- $value -- .github tests space scripts tools
     if ($LASTEXITCODE -eq 0) { throw 'controller custody leaked into candidate code or manifest' }
     if ($LASTEXITCODE -ne 1) { throw 'custody leak scan failed' }
 }
@@ -484,6 +503,33 @@ This workflow governs every future legitimate change to `space/tests/test_gradio
 6. Activate the tuple only after all gates pass. Any mismatch restores the last accepted custody and leaves the target candidate unreleased.
 
 No target-file commit can update, infer, or carry its own expected tuple. No single reviewer approves both a target source change and a same-candidate tuple update.
+
+## Post-acceptance external custody transport
+
+Architecture C remains active after Task 6. For every local Task 7–13 process
+that invokes `tests/test_hf_space_source_boundary.py`, the controller reads the
+accepted tuple from the ignored custody ledger and injects exactly the same three
+environment values used by this corrective. Each fresh task validates the
+40-hex SHA-1, canonical unsigned decimal size, and 64-hex SHA-256 before pytest;
+missing, inherited-but-stale, uppercase, signed, leading-zero, or otherwise
+malformed values fail before collection. No later task reads governance docs or
+Git history to reconstruct custody.
+
+Task 11 may add tracked references to the three names only after its local
+workflow-contract RED. A future remote run requires separate written authority
+to create/use GitHub Actions Environment `carerisk-contract-custody` and set the
+three external Actions variables. Both workflow jobs bind that environment and
+map `${{ vars.CARERISK_GRADIO_CONTRACT_BLOB_SHA1 }}`,
+`${{ vars.CARERISK_GRADIO_CONTRACT_RAW_SIZE }}`, and
+`${{ vars.CARERISK_GRADIO_CONTRACT_RAW_SHA256 }}` into the process. The reviewer
+`docker run` forwards every value with an explicit same-name `--env` argument.
+The workflow performs the same fail-closed shape checks before tests or Docker,
+and workflow-contract tests prove exact three-name transfer, preflight ordering,
+explicit container forwarding, and absence of tuple values from tracked
+workflow text. Controller leak scans cover `.github`, `tests`, `space`,
+`scripts`, and `tools`. Task 11 does not authorize creating the Environment,
+setting variables, triggering a remote workflow, or changing any other remote
+metadata.
 
 ## Exact Task 7 release reconciliation
 
