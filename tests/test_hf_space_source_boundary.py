@@ -2159,6 +2159,9 @@ _GRADIO_FORBIDDEN_BUILTIN_LOADS = frozenset(
 _GRADIO_FORBIDDEN_PATCH_NAMES = frozenset({"unittest", "mock", "patch", "pytest_mock", "mocker"})
 _GRADIO_FORBIDDEN_DYNAMIC_MEMBERS = frozenset(
     {
+        "import_module",
+        "load_module",
+        "load",
         "importorskip",
         "importer",
         "import_from_string",
@@ -2199,6 +2202,9 @@ _GRADIO_PROTECTED_MEMBERS = frozenset(
         "AF_UNIX",
         "spec_from_file_location",
         "module_from_spec",
+        "exec_module",
+        "Config",
+        "Server",
         "PublicSurfaceGuard",
         "create_app",
         "build_package_asset_membership",
@@ -2206,6 +2212,105 @@ _GRADIO_PROTECTED_MEMBERS = frozenset(
         "run",
     }
 )
+_GRADIO_EXACT_MEMBER_NAMES = frozenset(
+    {
+        "signature",
+        "Parameter",
+        "empty",
+        "spec_from_file_location",
+        "module_from_spec",
+        "exec_module",
+        "Config",
+        "Server",
+        "mount_gradio_app",
+    }
+)
+_GRADIO_MONKEYPATCH_SETATTR_SIGNATURES = (
+    ("test_static_document_prerenders_four_exact_scenarios_once", "ui_module", "render_scenario"),
+    ("test_package_asset_missing_root_fails_closed", "ui_module", "BUILD_PATH_LIB"),
+    ("_fake_asset_roots", "ui_module", "BUILD_PATH_LIB"),
+    ("_fake_asset_roots", "ui_module", "STATIC_PATH_LIB"),
+    ("test_linux_symlink_fixture_failure_is_a_failure_not_a_skip", "sys", "platform"),
+    ("test_linux_symlink_fixture_failure_is_a_failure_not_a_skip", "Path", "symlink_to"),
+    ("test_package_asset_root_symlink_fails_closed", "ui_module", "BUILD_PATH_LIB"),
+    ("test_package_asset_root_symlink_fails_closed", "ui_module", "STATIC_PATH_LIB"),
+    ("test_package_asset_containment_escape_fails_closed", "Path", "is_symlink"),
+    ("test_package_asset_duplicate_url_fails_closed", "ui_module", "_canonical_asset_relative"),
+    (
+        "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
+        "gradio_routes",
+        "secure_url_stream_response",
+    ),
+    (
+        "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
+        "gradio_routes",
+        "file_fetch",
+    ),
+    (
+        "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
+        "gradio_routes.tempfile",
+        "NamedTemporaryFile",
+    ),
+    (
+        "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
+        "gradio_routes.tempfile",
+        "TemporaryDirectory",
+    ),
+    (
+        "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
+        "gradio_routes.tempfile",
+        "tempdir",
+    ),
+    (
+        "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
+        "gradio_routes",
+        "secure_url_stream_response",
+    ),
+    (
+        "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
+        "gradio_routes",
+        "file_fetch",
+    ),
+    (
+        "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
+        "gradio_routes.tempfile",
+        "NamedTemporaryFile",
+    ),
+    (
+        "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
+        "gradio_routes.tempfile",
+        "TemporaryDirectory",
+    ),
+    (
+        "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
+        "gradio_routes.tempfile",
+        "tempdir",
+    ),
+    ("test_entrypoint_mount_and_uvicorn_contract_are_exact", "ui_module", "create_app"),
+    (
+        "test_entrypoint_mount_and_uvicorn_contract_are_exact",
+        "ui_module",
+        "build_package_asset_membership",
+    ),
+    ("test_entrypoint_mount_and_uvicorn_contract_are_exact", "gr", "mount_gradio_app"),
+    ("test_entrypoint_mount_and_uvicorn_contract_are_exact", "entrypoint.uvicorn", "run"),
+    ("make_unit_failure_bundle", "evidence_module", "RECEIPT_SHA256"),
+    ("make_unit_failure_bundle", "evidence_module", "RECEIPT_GIT_BLOB_SHA"),
+)
+_GRADIO_MONKEYPATCH_HELPER_CALLS = {
+    "make_unit_failure_bundle": (
+        ("test_app_owned_root_is_not_a_nested_main_landmark", 2),
+        ("test_failure_page_is_one_static_document_with_no_capabilities", 2),
+        ("test_schema_failure_controlled_seam_has_exact_copy_and_no_partial_surface", 2),
+    ),
+    "_fake_asset_roots": (
+        ("test_package_asset_file_or_directory_symlink_fails_closed", 0),
+        ("test_package_asset_containment_escape_fails_closed", 0),
+        ("test_package_asset_special_file_fails_closed", 0),
+        ("test_package_asset_duplicate_url_fails_closed", 0),
+        ("test_package_asset_case_alias_fails_closed", 0),
+    ),
+}
 _GRADIO_ENTRYPOINT_PATCH_SOURCE = (
     'monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)',
     'monkeypatch.setattr(ui_module, "build_package_asset_membership", lambda: membership)',
@@ -2329,9 +2434,109 @@ def _binding_is_canonical_import(
     return isinstance(node, ast.alias) and parents.get(node) in canonical_import_nodes
 
 
+def _is_within_annotation(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> bool:
+    current = node
+    while (parent := parents.get(current)) is not None:
+        if isinstance(parent, ast.arg) and parent.annotation is current:
+            return True
+        if isinstance(parent, ast.AnnAssign) and parent.annotation is current:
+            return True
+        if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return parent.returns is current
+        if isinstance(parent, ast.stmt):
+            return False
+        current = parent
+    return False
+
+
+def _annotation_binding_key(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> tuple[str, str, str] | None:
+    current = node
+    while (parent := parents.get(current)) is not None:
+        if isinstance(parent, ast.arg) and parent.annotation is current:
+            owner = _nearest_function(parent, parents)
+            return None if owner is None else ("arg", owner.name, parent.arg)
+        if isinstance(parent, ast.AnnAssign) and parent.annotation is current:
+            if not isinstance(parent.target, ast.Name):
+                return None
+            function_owner = _nearest_function(parent, parents)
+            if function_owner is not None:
+                return ("annassign", function_owner.name, parent.target.id)
+            class_owner = _nearest_class(parent, parents)
+            if class_owner is not None:
+                return ("annassign", class_owner.name, parent.target.id)
+            return None
+        if isinstance(parent, ast.stmt):
+            return None
+        current = parent
+    return None
+
+
+def _has_exact_function_header(
+    function: ast.FunctionDef,
+    parameters: tuple[tuple[str, str], ...],
+    return_annotation: str,
+) -> bool:
+    arguments = function.args
+    return (
+        not function.decorator_list
+        and not getattr(function, "type_params", [])
+        and not arguments.posonlyargs
+        and not arguments.kwonlyargs
+        and arguments.vararg is None
+        and arguments.kwarg is None
+        and not arguments.defaults
+        and not arguments.kw_defaults
+        and len(arguments.args) == len(parameters)
+        and all(
+            argument.arg == expected_name
+            and argument.annotation is not None
+            and ast.dump(argument.annotation, include_attributes=False)
+            == _expression_dump(expected_annotation)
+            for argument, (expected_name, expected_annotation) in zip(
+                arguments.args, parameters, strict=True
+            )
+        )
+        and function.returns is not None
+        and ast.dump(function.returns, include_attributes=False)
+        == _expression_dump(return_annotation)
+    )
+
+
+def _direct_monkeypatch_call_signature(
+    call: ast.Call,
+    parents: dict[ast.AST, ast.AST],
+) -> tuple[str, str, str] | None:
+    if not (
+        isinstance(call.func, ast.Attribute)
+        and call.func.attr == "setattr"
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "monkeypatch"
+        and len(call.args) == 3
+        and not call.keywords
+        and isinstance(call.args[1], ast.Constant)
+        and isinstance(call.args[1].value, str)
+    ):
+        return None
+    owner = _nearest_function(call, parents)
+    target_name = _call_name(call.args[0])
+    if owner is None or target_name is None:
+        return None
+    return owner.name, target_name, call.args[1].value
+
+
 def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
     violations: set[str] = set()
     parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    violations.update(
+        f"semantic_dunder:{name}"
+        for name in _semantic_dunder_bindings(tree, parents, permitted_all_target=None)
+    )
 
     module_imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
     import_dumps = tuple(ast.dump(node, include_attributes=False) for node in module_imports)
@@ -2565,6 +2770,22 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
         and isinstance(node.func.value, ast.Name)
         and node.func.value.id == "monkeypatch"
     ]
+    approved_monkeypatch_calls: set[ast.Call] = set()
+    allowed_monkeypatch_loads: set[ast.Name] = set()
+    for expected_signature in _GRADIO_MONKEYPATCH_SETATTR_SIGNATURES:
+        matches = [
+            call
+            for call in monkeypatch_calls
+            if _direct_monkeypatch_call_signature(call, parents) == expected_signature
+        ]
+        if len(matches) != 1:
+            violations.add("monkeypatch:load")
+        else:
+            approved_monkeypatch_calls.add(matches[0])
+            call_attribute = matches[0].func
+            assert isinstance(call_attribute, ast.Attribute)
+            assert isinstance(call_attribute.value, ast.Name)
+            allowed_monkeypatch_loads.add(call_attribute.value)
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr == "setattr":
             parent = parents.get(node)
@@ -2593,7 +2814,9 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
                 violations.add("monkeypatch:setattr_shape")
                 continue
             member = call.args[1].value
-            if member in _GRADIO_PROTECTED_MEMBERS and call not in entrypoint_patch_nodes:
+            if _is_dunder(member):
+                violations.add("monkeypatch:load")
+            elif member in _GRADIO_PROTECTED_MEMBERS and call not in entrypoint_patch_nodes:
                 violations.add(f"monkeypatch:protected:{member}")
         elif method != "setenv":
             violations.add(f"monkeypatch:method:{method}")
@@ -2611,21 +2834,6 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
     for name, node in binding_records:
         if name == "monkeypatch" and node not in monkeypatch_args:
             violations.add("monkeypatch:binding")
-    for node in ast.walk(tree):
-        if not (
-            isinstance(node, ast.Name)
-            and node.id == "monkeypatch"
-            and isinstance(node.ctx, ast.Load)
-        ):
-            continue
-        owner = _nearest_function(node, parents)
-        owner_arguments = (
-            []
-            if owner is None
-            else [*owner.args.posonlyargs, *owner.args.args, *owner.args.kwonlyargs]
-        )
-        if not any(argument in monkeypatch_args for argument in owner_arguments):
-            violations.add("monkeypatch:unowned_load")
 
     setenv_calls: list[ast.Call] = []
     for call in monkeypatch_calls:
@@ -2665,6 +2873,132 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
             and loop.body == [expression]
         ):
             violations.add("monkeypatch:setenv_shape")
+        else:
+            setenv_attribute = setenv_call.func
+            assert isinstance(setenv_attribute, ast.Attribute)
+            assert isinstance(setenv_attribute.value, ast.Name)
+            allowed_monkeypatch_loads.add(setenv_attribute.value)
+
+    helper_headers = {
+        "make_unit_failure_bundle": (
+            (
+                ("tmp_path", "Path"),
+                ("code", "EvidenceFailureCode"),
+                ("monkeypatch", "pytest.MonkeyPatch"),
+            ),
+            "Path",
+            2,
+            {
+                ("evidence_module", "RECEIPT_SHA256"),
+                ("evidence_module", "RECEIPT_GIT_BLOB_SHA"),
+            },
+        ),
+        "_fake_asset_roots": (
+            (("monkeypatch", "pytest.MonkeyPatch"), ("tmp_path", "Path")),
+            "tuple[Path, Path]",
+            0,
+            {("ui_module", "BUILD_PATH_LIB"), ("ui_module", "STATIC_PATH_LIB")},
+        ),
+    }
+    for helper_name, (
+        parameters,
+        return_annotation,
+        parameter_index,
+        internal_targets,
+    ) in helper_headers.items():
+        helper_contract_valid = True
+        helper_matches = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == helper_name
+        ]
+        helper = helper_matches[0] if len(helper_matches) == 1 else None
+        if helper is None or not _has_exact_function_header(helper, parameters, return_annotation):
+            helper_contract_valid = False
+
+        allowed_helper_callees: set[ast.Name] = set()
+        for owner_name, argument_index in _GRADIO_MONKEYPATCH_HELPER_CALLS[helper_name]:
+            matches = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == helper_name
+                and (owner := _nearest_function(node, parents)) is not None
+                and owner.name == owner_name
+                and len(node.args) == (3 if helper_name == "make_unit_failure_bundle" else 2)
+                and not node.keywords
+                and isinstance(node.args[argument_index], ast.Name)
+                and getattr(node.args[argument_index], "id", None) == "monkeypatch"
+            ]
+            if len(matches) != 1:
+                helper_contract_valid = False
+                continue
+            helper_callee = matches[0].func
+            assert isinstance(helper_callee, ast.Name)
+            allowed_helper_callees.add(helper_callee)
+            monkeypatch_argument = matches[0].args[argument_index]
+            assert isinstance(monkeypatch_argument, ast.Name)
+            allowed_monkeypatch_loads.add(monkeypatch_argument)
+
+        helper_name_loads = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name)
+            and node.id == helper_name
+            and isinstance(node.ctx, ast.Load)
+        ]
+        if len(helper_name_loads) != len(allowed_helper_callees) or any(
+            node not in allowed_helper_callees for node in helper_name_loads
+        ):
+            helper_contract_valid = False
+        for name, binding in binding_records:
+            if name == helper_name and binding is not helper:
+                helper_contract_valid = False
+
+        if helper is not None and parameter_index < len(helper.args.args):
+            helper_argument = helper.args.args[parameter_index]
+            internal_loads = [
+                node
+                for node in ast.walk(helper)
+                if isinstance(node, ast.Name)
+                and node.id == "monkeypatch"
+                and isinstance(node.ctx, ast.Load)
+                and _nearest_function(node, parents) is helper
+            ]
+            internal_calls: list[ast.AST | None] = []
+            for node in internal_loads:
+                attribute = parents.get(node)
+                if isinstance(attribute, ast.Attribute):
+                    internal_calls.append(parents.get(attribute))
+            internal_signatures = {
+                (_call_name(call.args[0]), call.args[1].value)
+                for call in internal_calls
+                if isinstance(call, ast.Call)
+                and _direct_monkeypatch_call_signature(call, parents) is not None
+                and isinstance(call.args[1], ast.Constant)
+                and isinstance(call.args[1].value, str)
+            }
+            if (
+                helper_argument.arg != "monkeypatch"
+                or len(internal_loads) != 2
+                or len(internal_calls) != 2
+                or internal_signatures != internal_targets
+            ):
+                helper_contract_valid = False
+        else:
+            helper_contract_valid = False
+        if not helper_contract_valid:
+            violations.add("monkeypatch:load")
+
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "monkeypatch"
+            and isinstance(node.ctx, ast.Load)
+            and node not in allowed_monkeypatch_loads
+        ):
+            violations.add("monkeypatch:load")
 
     allowed_pytest_names: set[ast.Name] = set()
     for node in ast.walk(tree):
@@ -2763,14 +3097,24 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
         and (owner := _nearest_function(node, parents)) is not None
         and owner.name == "test_outer_guard_constructor_is_exact_and_rejects_empty_membership"
     ]
-    parameter_empty_attrs = [
+    parameter_empty_compares = [
         node
         for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and ast.dump(node, include_attributes=False)
+        == _expression_dump("item.default is inspect.Parameter.empty")
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "test_outer_guard_constructor_is_exact_and_rejects_empty_membership"
+    ]
+    parameter_empty_attrs = [
+        node
+        for compare in parameter_empty_compares
+        for node in ast.walk(compare)
         if isinstance(node, ast.Attribute) and _call_name(node) == "inspect.Parameter.empty"
     ]
     if len(signature_calls) != 1:
         violations.add("inspect:signature")
-    if len(parameter_empty_attrs) != 1:
+    if len(parameter_empty_compares) != 1 or len(parameter_empty_attrs) != 1:
         violations.add("inspect:Parameter.empty")
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
@@ -3011,27 +3355,276 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
             violations.add("AppEntryMarker:load")
 
     allowed_sys_names: set[ast.Name] = set()
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Name) and node.id == "sys" and isinstance(node.ctx, ast.Load)):
-            continue
-        parent = parents.get(node)
-        if (isinstance(parent, ast.Attribute) and parent.attr == "platform") or (
-            isinstance(parent, ast.Call)
-            and parent.args
-            and parent.args[0] is node
-            and isinstance(parent.func, ast.Attribute)
-            and _call_name(parent.func) == "monkeypatch.setattr"
-            and len(parent.args) == 3
-            and isinstance(parent.args[1], ast.Constant)
-            and parent.args[1].value == "platform"
-        ):
-            allowed_sys_names.add(node)
+    sys_platform_compares = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and ast.dump(node, include_attributes=False) == _expression_dump("sys.platform == 'win32'")
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "_capability_skip_or_fail"
+    ]
+    sys_platform_patches = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_exact_call(node, 'monkeypatch.setattr(sys, "platform", "linux")')
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "test_linux_symlink_fixture_failure_is_a_failure_not_a_skip"
+    ]
+    if len(sys_platform_compares) != 1 or len(sys_platform_patches) != 1:
+        violations.add("sys:context")
+    for root in [*sys_platform_compares, *sys_platform_patches]:
+        allowed_sys_names.update(
+            node
+            for node in ast.walk(root)
+            if isinstance(node, ast.Name) and node.id == "sys" and isinstance(node.ctx, ast.Load)
+        )
+    if any(
+        isinstance(node, ast.Attribute)
+        and node.attr == "platform"
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+        for node in ast.walk(tree)
+    ):
+        violations.add("sys:context")
     if any(
         node not in allowed_sys_names
         for node in ast.walk(tree)
         if isinstance(node, ast.Name) and node.id == "sys" and isinstance(node.ctx, ast.Load)
     ):
         violations.add("sys:context")
+
+    allowed_protected_loads: dict[str, set[ast.Name]] = {
+        name: set()
+        for name in {
+            "getattr",
+            "type",
+            "super",
+            "inspect",
+            "importlib",
+            "uvicorn",
+            "gr",
+            "socket",
+            "sys",
+            "pytest",
+            "ui_module",
+            "isinstance",
+            "frozenset",
+        }
+    }
+    allowed_protected_loads["getattr"].update(allowed_getattr_names)
+    allowed_protected_loads["type"].update(allowed_type_names)
+    if len(super_calls) == 1:
+        allowed_protected_loads["super"].update(
+            node
+            for node in ast.walk(super_calls[0])
+            if isinstance(node, ast.Name) and node.id == "super"
+        )
+    if len(signature_calls) == 1:
+        allowed_protected_loads["inspect"].update(
+            node
+            for node in ast.walk(signature_calls[0])
+            if isinstance(node, ast.Name) and node.id == "inspect"
+        )
+    if len(parameter_empty_attrs) == 1:
+        allowed_protected_loads["inspect"].update(
+            node
+            for node in ast.walk(parameter_empty_attrs[0])
+            if isinstance(node, ast.Name) and node.id == "inspect"
+        )
+    if len(exact_entrypoint_statements) == 3:
+        allowed_protected_loads["importlib"].update(
+            node
+            for statement in exact_entrypoint_statements[:2]
+            for node in ast.walk(statement)
+            if isinstance(node, ast.Name) and node.id == "importlib"
+        )
+    if len(config_calls) == 1:
+        allowed_protected_loads["uvicorn"].update(
+            node
+            for node in ast.walk(config_calls[0])
+            if isinstance(node, ast.Name) and node.id == "uvicorn"
+        )
+    if len(server_calls) == 1:
+        allowed_protected_loads["uvicorn"].update(
+            node
+            for node in ast.walk(server_calls[0])
+            if isinstance(node, ast.Name) and node.id == "uvicorn"
+        )
+
+    gr_blocks_attributes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and _call_name(node) == "gr.Blocks"
+        and _is_within_annotation(node, parents)
+    ]
+    expected_gr_blocks_bindings = {
+        ("arg", "_only_document", "app"),
+        ("arg", "_compose", "demo"),
+        ("arg", "_queue_state_snapshot", "demo"),
+        ("annassign", "RunningWireApp", "demo"),
+        ("arg", "_assert_entrypoint_positional_identity", "mounted_demo"),
+        ("arg", "fake_mount", "mounted_demo"),
+        (
+            "annassign",
+            "test_entrypoint_mount_and_uvicorn_contract_are_exact",
+            "mount_positional",
+        ),
+    }
+    gr_mount_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_exact_call(
+            node,
+            "gr.mount_gradio_app(parent, demo, path='/', server_name='0.0.0.0', "
+            "server_port=7860, footer_links=[], run_history=False, root_path='', "
+            "allowed_paths=['/__carerisk_no_allowed_files__'], blocked_paths=['/'], "
+            "favicon_path=None, show_error=False, max_file_size=0, ssr_mode=False, "
+            "enable_monitoring=False, pwa=False, mcp_server=False)",
+        )
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "_compose"
+    ]
+    gr_entrypoint_patch_calls = [
+        node
+        for node in entrypoint_patch_nodes
+        if len(node.args) == 3
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "gr"
+        and isinstance(node.args[1], ast.Constant)
+        and node.args[1].value == "mount_gradio_app"
+    ]
+    if (
+        len(gr_blocks_attributes) != 7
+        or {
+            key
+            for attribute in gr_blocks_attributes
+            if (key := _annotation_binding_key(attribute, parents)) is not None
+        }
+        != expected_gr_blocks_bindings
+        or len(gr_mount_calls) != 1
+        or len(version_compares) != 1
+        or len(gr_entrypoint_patch_calls) != 1
+    ):
+        violations.add("protected_load:gr")
+    for root in [
+        *gr_blocks_attributes,
+        *gr_mount_calls,
+        *version_compares,
+        *gr_entrypoint_patch_calls,
+    ]:
+        allowed_protected_loads["gr"].update(
+            node for node in ast.walk(root) if isinstance(node, ast.Name) and node.id == "gr"
+        )
+
+    socket_connection_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_exact_call(node, "socket.create_connection(('127.0.0.1', 7860), timeout=5)")
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name in {"request", "request_early_response"}
+    ]
+    socket_constructor_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_exact_call(node, "socket.socket(unix_family, socket.SOCK_STREAM)")
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "test_package_asset_special_file_fails_closed"
+    ]
+    socket_getattr_names = [node for node in allowed_getattr_names if node.id == "getattr"]
+    socket_receiver_names = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_exact_call(node, "getattr(socket, 'AF_UNIX', None)")
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "test_package_asset_special_file_fails_closed"
+        for node in ast.walk(node)
+        if isinstance(node, ast.Name) and node.id == "socket"
+    ]
+    if (
+        len(socket_connection_calls) != 2
+        or len(socket_constructor_calls) != 1
+        or len(socket_getattr_names) != 2
+        or len(socket_receiver_names) != 1
+    ):
+        violations.add("protected_load:socket")
+    for root in [*socket_connection_calls, *socket_constructor_calls]:
+        allowed_protected_loads["socket"].update(
+            node for node in ast.walk(root) if isinstance(node, ast.Name) and node.id == "socket"
+        )
+    allowed_protected_loads["socket"].update(socket_receiver_names)
+    allowed_protected_loads["sys"].update(allowed_sys_names)
+    allowed_protected_loads["pytest"].update(allowed_pytest_names)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Name) or not isinstance(node.ctx, ast.Load):
+            continue
+        parent = parents.get(node)
+        if node.id == "ui_module" and (
+            isinstance(parent, ast.Attribute)
+            and parent.value is node
+            or isinstance(parent, ast.Call)
+            and parent in approved_monkeypatch_calls
+            and parent.args[0] is node
+        ):
+            allowed_protected_loads["ui_module"].add(node)
+        elif node.id == "isinstance" and isinstance(parent, ast.Call) and parent.func is node:
+            allowed_protected_loads["isinstance"].add(node)
+        elif node.id == "frozenset":
+            direct_call = isinstance(parent, ast.Call) and parent.func is node
+            isinstance_type = (
+                isinstance(parent, ast.Call)
+                and isinstance(parent.func, ast.Name)
+                and parent.func.id == "isinstance"
+                and len(parent.args) == 2
+                and parent.args[1] is node
+                and not parent.keywords
+            )
+            annotation = (
+                isinstance(parent, ast.Subscript)
+                and parent.value is node
+                and _is_within_annotation(parent, parents)
+            )
+            if direct_call or isinstance_type or annotation:
+                allowed_protected_loads["frozenset"].add(node)
+
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Name)
+            and isinstance(node.ctx, ast.Load)
+            and node.id in allowed_protected_loads
+            and node not in allowed_protected_loads[node.id]
+        ):
+            violations.add(f"protected_load:{node.id}")
+
+    allowed_exact_members: set[ast.Attribute] = set()
+    if len(signature_calls) == 1 and isinstance(signature_calls[0].func, ast.Attribute):
+        allowed_exact_members.add(signature_calls[0].func)
+    if len(parameter_empty_attrs) == 1:
+        allowed_exact_members.add(parameter_empty_attrs[0])
+        parameter_attribute = parameter_empty_attrs[0].value
+        if isinstance(parameter_attribute, ast.Attribute):
+            allowed_exact_members.add(parameter_attribute)
+    for statement in exact_entrypoint_statements:
+        allowed_exact_members.update(
+            node
+            for node in ast.walk(statement)
+            if isinstance(node, ast.Attribute) and node.attr in _GRADIO_EXACT_MEMBER_NAMES
+        )
+    for call in [*config_calls, *server_calls, *gr_mount_calls]:
+        if isinstance(call.func, ast.Attribute):
+            allowed_exact_members.add(call.func)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr in _GRADIO_EXACT_MEMBER_NAMES
+            and node not in allowed_exact_members
+        ):
+            violations.add(f"protected_member:{node.attr}")
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute) or node.attr not in {
@@ -3179,6 +3772,282 @@ def _mutated_gradio_contract_tree(old: str, new: str, *, count: int = 1) -> ast.
 
 def _gradio_contract_tree_with_appendix(appendix: str) -> ast.Module:
     return ast.parse(f"{_current_gradio_contract_source()}\n{appendix}\n")
+
+
+def _gradio_contract_tree_for_case(case: str | tuple[str, str, int]) -> ast.Module:
+    if isinstance(case, str):
+        return _gradio_contract_tree_with_appendix(case)
+    old, new, count = case
+    return _mutated_gradio_contract_tree(old, new, count=count)
+
+
+def _assert_gradio_contract_finding(case: str | tuple[str, str, int], expected: str) -> None:
+    tree = _gradio_contract_tree_for_case(case)
+    assert expected in _gradio_test_source_violations(tree)
+    assert expected in _guard_helper_violations(tree)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        (
+            "inspection = inspect\ninspection.signature(ui_module.PublicSurfaceGuard)",
+            "protected_load:inspect",
+        ),
+        (
+            "inspect.signature(ui_module.create_app)",
+            "protected_load:inspect",
+        ),
+        (
+            "api = importlib\napi.import_module('evil')",
+            "protected_load:importlib",
+        ),
+        (
+            "importlib.import_module('evil')",
+            "protected_load:importlib",
+        ),
+        (
+            "importlib.util.spec_from_file_location('extra', SPACE_ROOT / 'app.py')",
+            "protected_load:importlib",
+        ),
+        (
+            "api = importlib\napi.util.spec_from_file_location('extra', SPACE_ROOT / 'app.py')",
+            "protected_load:importlib",
+        ),
+        (
+            "module_factory = importlib.util.module_from_spec",
+            "protected_load:importlib",
+        ),
+        (
+            "importlib.util.module_from_spec(spec)",
+            "protected_load:importlib",
+        ),
+        (
+            "importlib.util.module_from_spec(spec).loader.exec_module(entrypoint)",
+            "protected_load:importlib",
+        ),
+        (
+            "importlib.machinery.SourceFileLoader('extra', 'extra.py').load_module()",
+            "protected_load:importlib",
+        ),
+        (
+            "gr.mount_gradio_app(parent, demo, path='/extra')",
+            "protected_load:gr",
+        ),
+        ("gr_alias = gr", "protected_load:gr"),
+        (
+            "uvicorn.Config(marker, host='127.0.0.1', port=7860)",
+            "protected_load:uvicorn",
+        ),
+        (
+            "runner = uvicorn\n"
+            "config = runner.Config('carerisk_space.ui:Public' + 'SurfaceGuard')\n"
+            "config.load()",
+            "protected_load:uvicorn",
+        ),
+        ("uvicorn.Server(config)", "protected_load:uvicorn"),
+        (
+            "runner = uvicorn\nserver = runner.Server(config)",
+            "protected_load:uvicorn",
+        ),
+        ("socket_alias = socket", "protected_load:socket"),
+        ("super_alias = super", "protected_load:super"),
+        ("ui_alias = ui_module", "protected_load:ui_module"),
+        ("isinstance_alias = isinstance", "protected_load:isinstance"),
+        ("frozenset_alias = frozenset", "protected_load:frozenset"),
+        ("extra_socket = socket.socket()", "protected_load:socket"),
+    ),
+)
+def test_gradio_contract_protected_identity_loads_are_exact(
+    case: str | tuple[str, str, int], expected: str
+) -> None:
+    _assert_gradio_contract_finding(case, expected)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        ("def __function__():\n    pass", "semantic_dunder:__function__"),
+        (
+            "async def __async_function__():\n    pass",
+            "semantic_dunder:__async_function__",
+        ),
+        ("class __class_name__:\n    pass", "semantic_dunder:__class_name__"),
+        ("def added(__posonly__, /):\n    pass", "semantic_dunder:__posonly__"),
+        ("def added(__normal__):\n    pass", "semantic_dunder:__normal__"),
+        ("def added(*, __kwonly__):\n    pass", "semantic_dunder:__kwonly__"),
+        ("def added(*__vararg__):\n    pass", "semantic_dunder:__vararg__"),
+        ("def added(**__kwarg__):\n    pass", "semantic_dunder:__kwarg__"),
+        ("__assigned__ = value", "semantic_dunder:__assigned__"),
+        ("__annotated__: object = value", "semantic_dunder:__annotated__"),
+        ("__augmented__ += value", "semantic_dunder:__augmented__"),
+        ("del __deleted__", "semantic_dunder:__deleted__"),
+        ("for __loop__ in values:\n    pass", "semantic_dunder:__loop__"),
+        (
+            "async def added():\n    async for __async_loop__ in values:\n        pass",
+            "semantic_dunder:__async_loop__",
+        ),
+        ("[value for __comprehension__ in values]", "semantic_dunder:__comprehension__"),
+        (
+            "with open('x') as __with_target__:\n    pass",
+            "semantic_dunder:__with_target__",
+        ),
+        (
+            "async def added():\n    async with manager as __async_with__:\n        pass",
+            "semantic_dunder:__async_with__",
+        ),
+        ("(__walrus__ := value)", "semantic_dunder:__walrus__"),
+        ("import __import_original__", "semantic_dunder:__import_original__"),
+        ("import os as __import_alias__", "semantic_dunder:__import_alias__"),
+        (
+            "from os import __from_original__",
+            "semantic_dunder:__from_original__",
+        ),
+        (
+            "from os import path as __from_alias__",
+            "semantic_dunder:__from_alias__",
+        ),
+        (
+            "try:\n    pass\nexcept Exception as __exception__:\n    pass",
+            "semantic_dunder:__exception__",
+        ),
+        (
+            "match value:\n    case __match_as__:\n        pass",
+            "semantic_dunder:__match_as__",
+        ),
+        (
+            "match value:\n    case [*__match_star__]:\n        pass",
+            "semantic_dunder:__match_star__",
+        ),
+        (
+            "match value:\n    case {**__match_rest__}:\n        pass",
+            "semantic_dunder:__match_rest__",
+        ),
+        (
+            "def added():\n    global __global__",
+            "semantic_dunder:__global__",
+        ),
+        (
+            "def outer():\n    __nonlocal__ = value\n"
+            "    def inner():\n        nonlocal __nonlocal__",
+            "semantic_dunder:__nonlocal__",
+        ),
+    ),
+)
+def test_gradio_contract_semantic_dunder_bindings_are_denied(
+    case: str | tuple[str, str, int], expected: str
+) -> None:
+    _assert_gradio_contract_finding(case, expected)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        *(
+            (
+                f'monkeypatch.setattr(ui_module, "{member}", sink)',
+                "monkeypatch:load",
+            )
+            for member in (
+                "__getattribute__",
+                "__getattr__",
+                "__setattr__",
+                "__delattr__",
+                "__class__",
+                "__dict__",
+                "__globals__",
+                "__getitem__",
+                "__call__",
+                "__init__",
+            )
+        ),
+        ("setter = monkeypatch.setattr", "monkeypatch:load"),
+        ("mp = monkeypatch\nmp.setitem(mapping, 'x', 1)", "monkeypatch:load"),
+        (
+            "mp = monkeypatch\nsetter = mp.setitem",
+            "monkeypatch:load",
+        ),
+        (
+            "method = monkeypatch.helper.setattr",
+            "monkeypatch:load",
+        ),
+        ("monkeypatch.setitem(mapping, 'x', 1)", "monkeypatch:load"),
+        ("monkeypatch.delattr(ui_module, 'create_app')", "monkeypatch:load"),
+        ("monkeypatch.setenv('EXTRA', '1')", "monkeypatch:load"),
+        (
+            (
+                "def make_unit_failure_bundle(\n",
+                "@pytest.fixture\ndef make_unit_failure_bundle(\n",
+                1,
+            ),
+            "monkeypatch:load",
+        ),
+        ("make_unit_failure_bundle = sink", "monkeypatch:load"),
+        (
+            (
+                "tmp_path: Path, code: EvidenceFailureCode, monkeypatch: pytest.MonkeyPatch",
+                "tmp_path: Path, code: EvidenceFailureCode, patcher: pytest.MonkeyPatch",
+                1,
+            ),
+            "monkeypatch:load",
+        ),
+        (
+            (
+                'monkeypatch.setattr(evidence_module, "RECEIPT_SHA256",',
+                'monkeypatch.setitem(evidence_module, "RECEIPT_SHA256",',
+                1,
+            ),
+            "monkeypatch:load",
+        ),
+        (
+            (
+                "def _fake_asset_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)",
+                "@pytest.fixture\ndef _fake_asset_roots("
+                "monkeypatch: pytest.MonkeyPatch, tmp_path: Path)",
+                1,
+            ),
+            "monkeypatch:load",
+        ),
+        ("_fake_asset_roots = sink", "monkeypatch:load"),
+        (
+            (
+                "def _fake_asset_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)",
+                "def _fake_asset_roots(patcher: pytest.MonkeyPatch, tmp_path: Path)",
+                1,
+            ),
+            "monkeypatch:load",
+        ),
+        (
+            (
+                'monkeypatch.setattr(ui_module, "BUILD_PATH_LIB", build)',
+                'monkeypatch.setitem(ui_module, "BUILD_PATH_LIB", build)',
+                1,
+            ),
+            "monkeypatch:load",
+        ),
+    ),
+)
+def test_gradio_contract_monkeypatch_loads_are_exact(
+    case: str | tuple[str, str, int], expected: str
+) -> None:
+    _assert_gradio_contract_finding(case, expected)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        ("sys.platform = 'evil'", "sys:context"),
+        ("del sys.platform", "sys:context"),
+        ("platform_alias = sys.platform", "sys:context"),
+        ("sys.platform == 'linux'", "sys:context"),
+        ("bool(sys.platform)", "sys:context"),
+        ("sys.platform != 'win32'", "sys:context"),
+    ),
+)
+def test_gradio_contract_sys_platform_contexts_are_exact(
+    case: str | tuple[str, str, int], expected: str
+) -> None:
+    _assert_gradio_contract_finding(case, expected)
 
 
 def test_gradio_contract_source_is_closed_world_reflection_free() -> None:
