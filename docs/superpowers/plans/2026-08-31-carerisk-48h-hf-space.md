@@ -1223,18 +1223,23 @@ git commit -m 'feat(space): present bounded evidence explorer'
 **Files:**
 - Create: `tests/test_hf_space_source_boundary.py`
 - Create: `space/tests/test_export_contract.py`
-- Modify: `space/tests/test_gradio_contract.py`
+- Verify unchanged by Git object: `space/tests/test_gradio_contract.py`
 
-The Task 6 change to `space/tests/test_gradio_contract.py` is limited to existing
-`PublicSurfaceGuard` helper construction sites: assign
-`build_package_asset_membership()` to a local variable, explicitly assert that
-`isinstance(membership, frozenset)` and `membership` are truthy, then pass that
-exact variable as the guard's second argument. No other test or product behavior
-may change under this authorization.
+The former Gradio test-source self-policing architecture and its test-only
+`PublicSurfaceGuard` cleanup authorization are superseded. Task 6 must not modify
+`space/tests/test_gradio_contract.py`. The target remains frozen as Git blob
+`7c75d61c53eccdc93f69e7e3bb1eb09346eb5f04`, raw size `64847`, raw SHA-256
+`101893daf6f20f9b507a00d0ac8da7fa383f83007520b4db61b710d1814df2a8`.
+The expected tuple is supplied only through the controller's ignored task brief
+and custody ledger. Tracked source and manifests contain no executable expected
+tuple or fallback. Identity reads use `git cat-file blob`; checkout/text-mode
+bytes are not authority. The detailed executable migration is governed by
+`docs/superpowers/plans/2026-09-01-carerisk-gradio-contract-git-object-corrective.md`.
 
 **Interfaces:**
 - Consumes: Python AST for `space/app.py` and `space/carerisk_space/*.py`.
-- Produces: a hard source boundary that later exporter and CI reuse.
+- Consumes: the controller-custodied tuple for the reviewed Gradio contract Git object.
+- Produces: a hard application-source boundary plus an external Gradio-contract identity gate that later exporter and CI reuse.
 
 - [ ] **Step 1: Write failing AST/import boundary tests**
 
@@ -1259,6 +1264,15 @@ def test_application_import_graph_is_allowlisted() -> None:
 def test_application_has_no_write_env_process_network_or_dynamic_code_capability() -> None:
     violations = scan_capabilities(APP_SOURCES)
     assert violations == []
+
+def test_gradio_contract_git_object_matches_controller_custody() -> None:
+    expected = _controller_gradio_contract_identity()
+    object_id = _git_bytes(
+        REPOSITORY_ROOT,
+        "rev-parse",
+        "HEAD:space/tests/test_gradio_contract.py",
+    ).decode("ascii").strip()
+    _assert_git_blob_identity(REPOSITORY_ROOT, object_id, expected)
 ```
 
 `scan_capabilities` must identify write/append/update `open`, `Path.write_text`, `Path.write_bytes`, mkdir, rename, replace, delete, environment reads, `eval`, `exec`, dynamic import, process spawn, shell execution, network client construction, file watchers, and arbitrary absolute/current/home path discovery. The only additional filesystem-capability exception is in `ui.py`: read-only `pathlib` root resolution, `rglob`/iteration, `stat`/`is_file`/`is_dir`/`is_symlink`, `relative_to`, byte-size reads, and hash reads against the two fixed imported Gradio package roots. Calls accepting a runtime path argument, current/home/user/site discovery, `os.path`, globbing outside those roots, or any write remain forbidden.
@@ -1273,7 +1287,20 @@ def test_application_has_no_write_env_process_network_or_dynamic_code_capability
 
 Expected: FAIL until the scanners and explicit source/export boundary are implemented.
 
-The Task 6 source contract also inspects `PublicSurfaceGuard` and requires exactly two mandatory constructor parameters named `downstream` and `package_asset_urls`, with no default. It requires the constructor to reject an empty membership, every test helper to call the pinned-root builder and assert a nonempty `frozenset`, and the entry point to pass that exact result. A one-argument call, optional default, literal empty set, or test that succeeds only because construction raised `TypeError` fails the boundary test.
+The Task 6 application-source contract also inspects `PublicSurfaceGuard` and requires exactly two mandatory constructor parameters named `downstream` and `package_asset_urls`, with no default. It requires the constructor to reject an empty membership and the entry point to pass the pinned-root builder's exact nonempty result. A one-argument product call, optional default, or literal empty set fails the boundary test. Behavior of test-only helper construction sites is exercised by the frozen Gradio suite and direct source review; the boundary file does not interpret those sites.
+
+The Gradio contract file itself is not interpreted by a candidate-controlled
+meta-scanner. `tests/test_hf_space_source_boundary.py` must not contain
+`_gradio_test_source_violations`, `_guard_helper_violations`, or successor
+allowlists that attempt to model that test file's Python semantics. Its generic
+identity helper validates controller custody, resolves the commit path object,
+requires Git type `blob`, and compares SHA-1, `git cat-file -s`, raw byte length,
+and SHA-256 over `git cat-file blob` output. Eight mutation categories are
+written into a task-owned temporary Git object database and must all fail the
+original tuple: same-length substitution, insertion, deletion, LF-to-CRLF,
+UTF-8 BOM prefix, final-LF removal, appended comment, and appended NUL. A direct
+reviewer separately inspects the exact raw object and its executable assertions;
+hash identity alone is not a safety finding.
 
 - [ ] **Step 3: Implement scanners and exact public path constants in the test contract**
 
@@ -1297,6 +1324,12 @@ def test_public_paths_are_exact_and_independently_repeated() -> None:
 
 Add explicit deny patterns from design Section 8.4, a 1 MiB limit, symlink/device/FIFO rejection, executable-binary signature rejection, and forbidden-content patterns for credentials/private keys. Tests must assert that `app/dashboard.py`, root `app.py`, `src/carerisk48h`, and the excluded PNG never appear in either path tuple.
 
+Remove the retired Gradio test-source scanners, their solely supporting
+constants/helpers, and their mutation tests while retaining the application
+scanner, entry-point structural audit, guard-constructor audit, exporter/public
+path checks, and all other product-boundary tests. No compatibility alias or
+deprecated wrapper for either retired scanner remains.
+
 - [ ] **Step 4: Run GREEN**
 
 ```powershell
@@ -1314,6 +1347,20 @@ git commit -m 'test(space): enforce public capability boundary'
 ```
 
 ### Task 7: Build reproducible dependency, base-image, SBOM, and license workflows
+
+**Task 7 release gate:** Do not start this task merely because the frozen hash
+matches. The controller must first record all of the following in the ignored
+custody ledgers: direct raw-object source review Critical `0`/Important `0`; the
+exact object tuple above; Architecture C implementation review Spec ✅ and
+Quality Approved with Critical `0`/Important `0`; fresh targeted, full
+boundary/export, frozen Gradio, Ruff, strict Mypy, scope, and clean-tree gates;
+the prior alias-evaluator and closed-world candidates remain explicitly
+rejected/superseded; original Task 6 is complete via the accepted Architecture C
+candidate; and one `Task 7 released` entry whose `CARERISK_TASK7_RELEASE_SHA`
+value is a lowercase 40-hex commit supplied by the controller ledger and equals
+the independently accepted Architecture C candidate. Task 7 preflight requires
+`HEAD` to equal that ledger SHA, the worktree to be clean, and the Gradio path
+object to equal the custodied blob.
 
 **Files:**
 - Create: `tools/space/requirements-runtime.in`
