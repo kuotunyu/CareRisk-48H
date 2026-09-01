@@ -215,14 +215,16 @@ Run:
 $env:PYTHONPATH = (Resolve-Path space).Path
 .venv-space\Scripts\python.exe -m pytest space/tests/test_gradio_contract.py -q
 .venv-space\Scripts\python.exe -m ruff check tests/test_hf_space_source_boundary.py space/tests/test_gradio_contract.py
-.venv-space\Scripts\python.exe -m ruff format --check tests/test_hf_space_source_boundary.py space/tests/test_gradio_contract.py
+.venv-space\Scripts\python.exe -m ruff format --check tests/test_hf_space_source_boundary.py
 .venv-space\Scripts\python.exe -m mypy --strict tests/test_hf_space_source_boundary.py
 git diff --check
 git diff --name-only
 git diff --exit-code -- space/app.py space/carerisk_space
 ```
 
-Expected: all tests/static checks pass with only documented platform skips; exact modified paths are the two declared files; product source is byte-identical.
+The omitted whole-Gradio format check is a documented pre-existing baseline exception, not a waiver for the changed block. The committed baseline Gradio blob must be exactly `d25e93bd2361bde11a261f5f1bd7be227f4bc56d`; piping that exact blob to Ruff 0.16.5 `format --check --stdin-filename space/tests/test_gradio_contract.py -` must return exit 1 and reproduce only the nine pre-existing formatter regions beginning at baseline lines 399, 643, 656, 706, 716, 720, 790, 1454, and 1477. Extract `test_outer_guard_constructor_is_exact_and_rejects_empty_membership` from the working Gradio file with Python `ast.get_source_segment`, pipe that complete function plus a trailing newline to the same Ruff format-check/stdin filename, and require exit 0. The Gradio git diff must remain exactly the four specified direct-call substitutions plus removal of `guard_type`, with no other hunk. If the baseline blob, Ruff version, diagnostic region set, isolated-function result, or exact diff differs, stop rather than formatting unrelated source.
+
+Expected: all tests and non-baselined static checks pass with only documented platform skips; the sole documented static exception is the exact unchanged nine-region Gradio format baseline above; exact modified paths are the two declared files; product source is byte-identical.
 
 - [ ] **Step 7: Commit and independent acceptance**
 
