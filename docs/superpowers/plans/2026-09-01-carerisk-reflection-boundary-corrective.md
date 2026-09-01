@@ -17,11 +17,11 @@
 - Do not read `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation assets, private ledgers/final locks, or Set C.
 - Do not run the receipt exporter, model code, training, evaluation, or persistent service.
 - Do not create, upload, deploy, or modify a GitHub or Hugging Face resource; do not push this branch.
-- Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; the implicit `__builtins__` mapping; every double-underscore attribute reference; every double-underscore function definition except `__init__` and `__call__`; every double-underscore name load except `__name__` and `__file__`; every double-underscore store/delete except at most one qualifying module-level literal-string `__all__` declaration; exact dynamic protocol-name string literals; `operator.attrgetter`/`operator.methodcaller`; `inspect.getattr_static`; `type` outside an exact approved validation comparison; and the reachable standard-library class factories named in design Section 9.1. The only permitted `type` loads are direct `type(<non-starred expression>) is [not] str|int|frozenset` comparisons with exactly one argument, no keywords, and one comparator, and no source form may bind or shadow the name `type`. From `types`, only `MappingProxyType` may be imported; `dataclasses.make_dataclass`, `collections.namedtuple`, functional `typing.NamedTuple`/`typing.TypedDict`, and wildcard imports from those four modules are denied.
+- Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; the implicit `__builtins__` mapping; every double-underscore attribute reference; every double-underscore function definition except method definitions `__init__` and `__call__`; every double-underscore name load except `__name__` and `__file__`; every semantic double-underscore binding except at most one qualifying module-level literal-string `__all__` assignment target; exact dynamic protocol-name string literals; `operator.attrgetter`/`operator.methodcaller`; `inspect.getattr_static`; `type` outside an exact approved validation comparison; and the reachable standard-library class factories named in design Section 9.1. Import original names and effective local aliases are both checked, so an allowed module cannot export a forbidden dunder under a benign alias. The only permitted `type` loads are direct `type(<non-starred expression>) is [not] str|int|frozenset` comparisons with exactly one argument, no keywords, and one comparator, and no source form may bind or shadow the name `type`. From `types`, only `MappingProxyType` may be imported; `dataclasses.make_dataclass`, `collections.namedtuple`, functional `typing.NamedTuple`/`typing.TypedDict`, and wildcard imports from those four modules are denied.
 - Enforcement rejects forbidden builtin `Name` loads and forbidden reflective/helper `Attribute` references at the source token. It does not resolve arbitrary downstream alias flow. Violations are deduplicated and returned in deterministic sorted order.
 - Syntax-defined `__future__`, `__name__`, `__file__`, `__all__`, `__init__`, and `__call__` uses remain permitted when they are not used to retrieve or mutate another attribute.
 - The entry point still requires direct named construction: one `FastAPI(...)`, one `gr.mount_gradio_app(...)`, one `build_package_asset_membership()`, one `PublicSurfaceGuard(...)`, and one `uvicorn.run(...)` beneath the exact main guard.
-- Existing unrelated test introspection in `space/tests/test_gradio_contract.py`, such as reading `original_router` or `AF_UNIX`, is not an application capability and must remain valid.
+- Existing unrelated test introspection in `space/tests/test_gradio_contract.py`, such as reading `original_router` or `AF_UNIX`, is not an application capability and must remain valid. Guard-helper classification uses a bounded fixed point for ordinary name aliases of `__builtins__`, literal-key `[...]`/`.get(...)` callables derived from that mapping, and further ordinary callable aliases; it does not interpret containers, defaults, returns, or control flow.
 - This corrective is a distinct plan authorized after the old Task 6 five-round breaker, not fix round 6. It does not release original-plan Task 7 by implementation alone: independent task review, controller verification, explicit old-ledger Task 6 completion, and a `Task 7 released` ledger entry are mandatory first.
 - Use exact path staging only. Never use `git add .`, `git add -A`, directory staging, or wildcard staging.
 
@@ -203,6 +203,62 @@ Add one test named `test_application_dunder_assignment_and_dynamic_class_constru
     "dynamic_type_binding",
 ),
 (
+    "type: object = factory",
+    "dynamic_type_binding",
+),
+(
+    "type += factory",
+    "dynamic_type_binding",
+),
+(
+    "captured = (type := factory)",
+    "dynamic_type_binding",
+),
+(
+    "for type in values:\n    pass",
+    "dynamic_type_binding",
+),
+(
+    "captured = [value for type in values]",
+    "dynamic_type_binding",
+),
+(
+    "with manager() as type:\n    pass",
+    "dynamic_type_binding",
+),
+(
+    "def positional_only(type, /):\n    pass",
+    "dynamic_type_binding",
+),
+(
+    "def variadic(*type):\n    pass",
+    "dynamic_type_binding",
+),
+(
+    "def keyword_only(*, type):\n    pass",
+    "dynamic_type_binding",
+),
+(
+    "def variadic_keyword(**type):\n    pass",
+    "dynamic_type_binding",
+),
+(
+    "capture = lambda type: type",
+    "dynamic_type_binding",
+),
+(
+    "async def type():\n    pass",
+    "dynamic_type_binding",
+),
+(
+    "match values:\n    case [*type]:\n        pass",
+    "dynamic_type_binding",
+),
+(
+    "match mapping:\n    case {**type}:\n        pass",
+    "dynamic_type_binding",
+),
+(
     "from types import new_class\nDynamic = new_class('Dynamic')",
     "dynamic_class_factory",
 ),
@@ -250,6 +306,54 @@ Add one test named `test_application_dunder_assignment_and_dynamic_class_constru
     "from typing import *",
     "dynamic_class_factory",
 ),
+(
+    "class __all__:\n    pass",
+    "__all__",
+),
+(
+    "class __init__:\n    pass",
+    "__init__",
+),
+(
+    "def __init__():\n    pass",
+    "__init__",
+),
+(
+    "import json as __all__",
+    "__all__",
+),
+(
+    "from json import loads as __all__",
+    "__all__",
+),
+(
+    "from carerisk_space.ui import __builtins__ as builtin_map",
+    "__builtins__",
+),
+(
+    "def validate(__all__):\n    pass",
+    "__all__",
+),
+(
+    "try:\n    raise RuntimeError\nexcept RuntimeError as __all__:\n    pass",
+    "__all__",
+),
+(
+    "match value:\n    case __all__:\n        pass",
+    "__all__",
+),
+(
+    "match values:\n    case [*__all__]:\n        pass",
+    "__all__",
+),
+(
+    "match mapping:\n    case {**__all__}:\n        pass",
+    "__all__",
+),
+(
+    "def declare():\n    global __all__",
+    "__all__",
+),
 ```
 
 Also mutate a module-level `__all__ = ["Allowed"]` declaration into each of: a class-body `__all__ = ["NotAllowed"]`, two top-level qualifying `__all__` declarations, and one top-level `__all__ = [runtime_name]`; require `__all__` for every mutation. The exception applies to at most one top-level `Assign` or `AnnAssign`, targets only `__all__`, and its value is a list or tuple containing only string literals. Add positive assertions for singular qualifying `Assign` and `AnnAssign` forms and for the exact approved `type(value) is not str`, `type(value) is not int`, and `type(value) is not frozenset` comparisons. Standalone `type(value)`, nested calls, and starred calls remain negative.
@@ -279,6 +383,13 @@ Extend entry-point mutation coverage with the following exact families. Each mut
     'mount = gr.__dict__["mount_gradio_app"]\nmount(parent, demo)',
     {"builtin_reflection"},
 ),
+(
+    'from carerisk_space.ui import __builtins__ as builtin_map\n'
+    'reflect = builtin_map["getattr"]\n'
+    'hidden_mount = reflect(gr, "mount_gradio_app")\n'
+    'hidden_mount(parent, demo)',
+    {"builtin_reflection"},
+),
 ```
 
 Add guard-helper mutations that require `_guard_helper_violations(...)` to return a nonempty result even when no direct guard call is statically resolved:
@@ -293,7 +404,24 @@ def _compose(parent):
     return guard(parent, membership)
 ```
 
-Repeat the guard mutation with `vars(ui_module)[...]`, `ui_module.__dict__[...]`, and a nonliteral member on the `ui_module` root. Add the exact bounded builtin-alias mutation `reflect = getattr; member = runtime_member; guard = reflect(ui_module, member)` and the implicit-mapping mutation `reflect = __builtins__["getattr"]; guard = reflect(ui_module, "PublicSurfaceGuard")`; both must produce a nonempty guard-helper violation even though no direct guard call resolves. Preserve the existing positive test for direct bounded builder/guard aliases. Add one explicit acceptance test whose functions contain only `getattr(other, "get")`, `getattr(inner, "original_router", None)`, and `getattr(socket, "AF_UNIX", None)` and assert `_guard_helper_violations(tree) == []`; a sensitive word on an unrelated receiver is not helper candidacy.
+Repeat the guard mutation with `vars(ui_module)[...]`, `ui_module.__dict__[...]`, and a nonliteral member on the `ui_module` root. Add the exact bounded builtin-alias mutation `reflect = getattr; member = runtime_member; guard = reflect(ui_module, member)` and the implicit-mapping mutation `reflect = __builtins__["getattr"]; guard = reflect(ui_module, "PublicSurfaceGuard")`; both must produce a nonempty guard-helper violation even though no direct guard call resolves.
+
+Add both fixed-point variants below and require nonempty guard-helper findings:
+
+```python
+def _compose(parent):
+    builtins_map = __builtins__
+    return builtins_map["getattr"](ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    builtins_map = __builtins__
+    mapping_alias = builtins_map
+    reflect = mapping_alias.get("getattr")
+    reflect_alias = reflect
+    return reflect_alias(ui_module, "PublicSurfaceGuard")
+```
+
+The fixed point is limited to ordinary `Name` assignments, literal forbidden-builtin keys, and `[...]`/`.get(...)`; it does not evaluate arbitrary mappings or expressions. Preserve the existing positive test for direct bounded builder/guard aliases. Add one explicit acceptance test whose functions contain only `getattr(other, "get")`, `getattr(inner, "original_router", None)`, and `getattr(socket, "AF_UNIX", None)` and assert `_guard_helper_violations(tree) == []`; a sensitive word on an unrelated receiver is not helper candidacy.
 
 - [ ] **Step 4: Add a positive syntax-identity contract**
 
@@ -381,11 +509,15 @@ _SENSITIVE_COMPOSITION_MEMBERS = frozenset(
 )
 ```
 
-Implement `_is_dunder(name: str) -> bool` as `len(name) > 4 and name.startswith("__") and name.endswith("__")`. Identify a permitted `__all__` target node only when the module contains exactly one top-level `Assign` or `AnnAssign` targeting only `__all__`, its value is a literal list or tuple containing only string constants, and there is no second top-level `__all__` declaration; otherwise permit no `__all__` target. Build an AST parent map and identify permitted `type` load nodes only when all of these facts hold: the node is the exact direct `ast.Name(id="type")` callee of an `ast.Call`; the call has exactly one non-`ast.Starred` positional argument and no keywords; the call is the left operand of an `ast.Compare` with exactly one operator and one comparator; the operator is `ast.Is` or `ast.IsNot`; and the comparator is a direct `ast.Name` in `{str, int, frozenset}`. The permitted compare cannot serve as an alias exception for any other `type` load. Every other `type` load is `dynamic_type`.
+Implement `_is_dunder(name: str) -> bool` as `len(name) > 4 and name.startswith("__") and name.endswith("__")`. Identify a permitted `__all__` target node only when the module contains exactly one top-level `Assign` or `AnnAssign` targeting only `__all__`, its value is a literal list or tuple containing only string constants, and there is no second top-level `__all__` declaration; otherwise permit no `__all__` target. Build an AST parent map. A `FunctionDef`/`AsyncFunctionDef` named `__init__` or `__call__` is permitted only when its direct parent is an `ast.ClassDef`; a module or nested function with either name is not a method exception. No class-name exception exists.
+
+Add one unified semantic dunder-binding check. In addition to `ast.Name` `Store`/`Del`, inspect every `ast.arg`; `FunctionDef`, `AsyncFunctionDef`, and `ClassDef` name; both the original leaf name and effective local name of each `ast.alias` (using its `Import` versus `ImportFrom` parent); `ExceptHandler.name`; `MatchAs.name`; `MatchStar.name`; `MatchMapping.rest`; and each string in `Global.names` and `Nonlocal.names`. Reject every dunder discovered there except the exact method and sole `__all__` target exceptions above. Thus a benign alias cannot hide an imported `__builtins__`, and an allowed original import cannot bind to `__all__`.
+
+Identify permitted `type` load nodes only when all of these facts hold: the node is the exact direct `ast.Name(id="type")` callee of an `ast.Call`; the call has exactly one non-`ast.Starred` positional argument and no keywords; the call is the left operand of an `ast.Compare` with exactly one operator and one comparator; the operator is `ast.Is` or `ast.IsNot`; and the comparator is a direct `ast.Name` in `{str, int, frozenset}`. The permitted compare cannot serve as an alias exception for any other `type` load. Every other `type` load is `dynamic_type`.
 
 Before granting any permitted `type` load, reject every source binding whose local name is exactly `type`: `ast.Name` in `Store` or `Del`; every positional, keyword-only, variadic, or lambda `ast.arg`; `FunctionDef`, `AsyncFunctionDef`, or `ClassDef` names; the effective local name of any `ast.alias`; `ExceptHandler.name`; and capture names in `MatchAs`, `MatchStar`, or `MatchMapping`. Emit `dynamic_type_binding`. This covers ordinary/annotated/augmented/walrus assignments, loop/comprehension/with targets, parameters, definitions, imports, exception targets, and structural-pattern captures without interpreting control flow.
 
-Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`, when it is a dunder outside `_ALLOWED_DUNDER_NAME_LOADS`, or when it is `type` outside the permitted node set; reject every dunder `ast.Name` in `Store` or `Del` context except the sole recorded `__all__` target; reject every dunder `ast.Attribute`; reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`; reject an `ast.FunctionDef` or `ast.AsyncFunctionDef` with a dunder name outside `_ALLOWED_DUNDER_DEFINITIONS`; and reject an exact string constant in `_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS`. Reject every `ast.Import` whose imported module is `types`, including aliased imports; for `ImportFrom(module="types")`, require every original imported name to equal `MappingProxyType`, regardless of local alias, so a mixed import also fails.
+Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`, when it is a dunder outside `_ALLOWED_DUNDER_NAME_LOADS`, or when it is `type` outside the permitted node set; apply the unified semantic binding check above; reject every dunder `ast.Attribute`; reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`; and reject an exact string constant in `_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS`. Reject every `ast.Import` whose imported module is `types`, including aliased imports; for `ImportFrom(module="types")`, require every original imported name to equal `MappingProxyType`, regardless of local alias, so a mixed import also fails. Every `Import`/`ImportFrom` is also subject to the dunder original/effective-name check before these module-specific rules.
 
 Reject any `ast.Attribute` whose member is in `_FORBIDDEN_STDLIB_CLASS_FACTORIES`, regardless of receiver; this deliberate fail-closed member-name rule means a module alias cannot hide the source token. For `ImportFrom` nodes rooted at `dataclasses`, `collections`, or `typing`, reject aliases whose original imported name is in that set. Reject wildcard `ImportFrom` aliases from `types`, `dataclasses`, `collections`, or `typing`. `dataclasses.dataclass` and the currently imported nonfactory typing/collections names remain allowed. Do not evaluate Python, fold arbitrary expressions, import a module, or follow the value after the forbidden reference.
 
@@ -393,7 +525,7 @@ Integrate it in three places:
 
 1. `scan_capabilities` accumulates existing and dynamic-reflection findings in a set of full `path.name:suffix` strings and returns one deterministic sorted list. Overlap with legacy `eval`, `exec`, or `__import__` checks produces one result, not duplicates.
 2. `_entrypoint_violations` adds `builtin_reflection` whenever the entry-point tree contains a dynamic-reflection violation. It continues the existing checks, but reflective mutations are not required to produce structural tags. Direct and ordinary non-reflective aliases remain subject to mount/router/monkeypatch/server counts.
-3. `_guard_helper_violations` performs a fail-closed candidate pre-pass before `if not all_guard_calls: continue`. `_sensitive_reflection_in_helper` may use `_bounded_aliases` only to resolve ordinary assignment aliases of `ui_module`, `gr`, `parent`, `uvicorn`, and the forbidden builtin names, including `reflect = getattr`; it does not follow defaults, returns, containers, control flow, or arbitrary expressions. It returns true only when a reflective builtin/attribute/helper acts on one of the resolved sensitive roots, when `__builtins__` access occurs in a function that also applies the result to a sensitive root, or when a named helper is applied to such a root. A literal member string without a sensitive receiver is insufficient. A nonliteral member on a sensitive receiver fails. The accepted unrelated receiver mutations are mandatory regression coverage.
+3. `_guard_helper_violations` performs a fail-closed candidate pre-pass before `if not all_guard_calls: continue`. `_sensitive_reflection_in_helper` uses bounded fixed-point sets. Sensitive-root and direct forbidden-builtin aliases still use `_bounded_aliases`. A second fixed point seeds the mapping name `__builtins__`, propagates only exact ordinary `Name = Name` assignments, marks any callable obtained from a tracked mapping through `mapping[...]` or `mapping.get(...)`, and propagates further exact ordinary callable aliases. A nonliteral mapping key fails closed when that callable is applied to a sensitive root. It does not follow defaults, returns, other containers, control flow, or arbitrary expressions. The helper returns true only when a reflective builtin/attribute/helper or tracked mapping-derived callable acts on one of the resolved sensitive roots. A literal member string without a sensitive receiver is insufficient. A nonliteral member on a sensitive receiver fails. The accepted unrelated receiver mutations are mandatory regression coverage.
 
 - [ ] **Step 7: Run GREEN and mutation coverage**
 
