@@ -300,6 +300,10 @@ Normal syntax-defined Python identities are not reflection capabilities: `__futu
 
 This is a policy boundary, not a request to build a Python interpreter. The scanner proves absence of the forbidden reflection surface and then verifies the existing exact direct composition. Any future legitimate need for reflection requires a new design review; it cannot be introduced by extending an alias allowlist inside a feature task.
 
+Enforcement is syntactic and reference-based rather than call-resolution based. A load of a forbidden builtin name is itself a violation, whether it appears as a direct call, assignment, default argument, lambda capture, named expression, container member, or another alias source. A load of a forbidden reflective attribute or named helper is likewise rejected before any alias analysis. This makes aliasing fail at its source token and avoids proving every later data-flow shape. Results are deduplicated and sorted so overlapping legacy capability checks cannot produce order- or count-dependent evidence.
+
+The entry-point audit reports the reflection violation as the authoritative failure and does not attempt to infer a second mount or hidden route through already-forbidden syntax. Its existing structural mount, route, middleware, monkeypatch, and server counts continue to govern direct calls and ordinary non-reflective aliases. The Gradio test-helper audit classifies a reflective function as a composition candidate only when the reflection is rooted in `ui_module`, `gr`, `parent`, or `uvicorn` (including their ordinary aliases), or targets the exact builder, guard, mount, route, middleware, or server member on such a root. A sensitive word on an unrelated receiver is insufficient. Existing test-only introspection such as `getattr(inner, "original_router", None)` and `getattr(socket, "AF_UNIX", None)` remains outside this policy.
+
 ## 10. Dependency and supply-chain contract
 
 - Runtime and development locks list every direct and transitive Python package with exact `==` versions and accepted distribution SHA-256 hashes.

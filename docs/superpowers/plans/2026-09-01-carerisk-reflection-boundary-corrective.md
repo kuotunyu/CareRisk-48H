@@ -11,15 +11,18 @@
 ## Global Constraints
 
 - The governing design is commit `190819a838634bd10412f2af72cdc252f6ecd31a`; the SDD controller records the exact implementation BASE immediately before dispatch. BASE must be a clean descendant of the governing design on branch `docs/carerisk-hf-space-design`.
+- Authority reconciliation: on 2026-09-01 the controller verified that the stale `AGENTS.md` desktop path does not exist, while the user-scoped `D:\AI-Portfolio\CC_github部隊\長照\4_CareRisk 48H` checkout has the exact canonical remote `https://github.com/kuotunyu/CareRisk-48H.git`. The user's repeated instruction to personally continue the unfinished CareRisk session authorizes local continuation on its existing `docs/carerisk-hf-space-design` branch. `AGENTS.md` still forbids another clone/worktree and all push/deploy/publication actions.
 - The sole product capability policy is design Section 9.1, “Dynamic reflection is denied by construction.”
 - Do not modify `space/app.py`, `space/carerisk_space/*.py`, the public path list, evidence bytes, deployment identities, dependency locks, Docker files, UI behavior, or any scientific artifact.
 - Do not read `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation assets, private ledgers/final locks, or Set C.
 - Do not run the receipt exporter, model code, training, evaluation, or persistent service.
 - Do not create, upload, deploy, or modify a GitHub or Hugging Face resource; do not push this branch.
 - Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; calls through `__getattribute__`, `__getattr__`, `__setattr__`, or `__delattr__`; `__dict__` access; `operator.attrgetter`/`operator.methodcaller`; and `inspect.getattr_static`.
+- Enforcement rejects forbidden builtin `Name` loads and forbidden reflective/helper `Attribute` references at the source token. It does not resolve arbitrary downstream alias flow. Violations are deduplicated and returned in deterministic sorted order.
 - Syntax-defined `__future__`, `__name__`, `__file__`, `__all__`, `__init__`, and `__call__` uses remain permitted when they are not used to retrieve or mutate another attribute.
 - The entry point still requires direct named construction: one `FastAPI(...)`, one `gr.mount_gradio_app(...)`, one `build_package_asset_membership()`, one `PublicSurfaceGuard(...)`, and one `uvicorn.run(...)` beneath the exact main guard.
 - Existing unrelated test introspection in `space/tests/test_gradio_contract.py`, such as reading `original_router` or `AF_UNIX`, is not an application capability and must remain valid.
+- This corrective is a distinct plan authorized after the old Task 6 five-round breaker, not fix round 6. It does not release original-plan Task 7 by implementation alone: independent task review, controller verification, explicit old-ledger Task 6 completion, and a `Task 7 released` ledger entry are mandatory first.
 - Use exact path staging only. Never use `git add .`, `git add -A`, directory staging, or wildcard staging.
 
 ---
@@ -29,10 +32,11 @@
 **Files:**
 - Modify: `tests/test_hf_space_source_boundary.py`
 - Verify unchanged: `space/tests/test_gradio_contract.py`
+- Report only: `.superpowers/sdd/2026-09-01-carerisk-reflection-boundary-corrective/task-1-report.md`
 
 **Interfaces:**
 - Consumes: the exact implementation BASE recorded by the SDD controller; `scan_capabilities(paths: Iterable[Path]) -> list[str]`, `_entrypoint_violations(tree: ast.Module) -> list[str]`, `_guard_helper_violations(tree: ast.Module) -> list[str]`, `_bounded_aliases(tree: ast.AST, roots: frozenset[str]) -> tuple[dict[str, str], set[str]]`.
-- Produces: `_dynamic_reflection_violations(tree: ast.AST, aliases: dict[str, str] | None = None) -> list[str]` and `_sensitive_reflection_in_helper(function: ast.FunctionDef, aliases: dict[str, str]) -> bool`; the three existing public boundary interfaces remain signature-compatible.
+- Produces: `_dynamic_reflection_violations(tree: ast.AST) -> list[str]` and `_sensitive_reflection_in_helper(function: ast.FunctionDef, aliases: dict[str, str]) -> bool`; the three existing public boundary interfaces remain signature-compatible. The report path above records RED/GREEN commands, exact outputs, scope, commit, and concerns and is excluded from Git.
 
 - [ ] **Step 1: Confirm the exact baseline and immutable scope**
 
@@ -40,77 +44,96 @@ Run:
 
 ```powershell
 git rev-parse HEAD
+git rev-parse --show-toplevel
+git remote get-url origin
 git branch --show-current
 git status --short --branch
 git merge-base --is-ancestor 190819a838634bd10412f2af72cdc252f6ecd31a HEAD
 git diff --exit-code b01a79315b7b5716159f7bdea802be1339ef0c9b -- space/app.py space/carerisk_space space/tests/test_gradio_contract.py
 ```
 
-Expected: HEAD equals the BASE supplied by the SDD controller, branch is `docs/carerisk-hf-space-design`, tracked worktree is clean, the governing design is an ancestor, and the immutable-scope diff from the final old Task 6 implementation exits zero.
+Expected: HEAD equals the BASE supplied by the SDD controller; root is exactly `D:/AI-Portfolio/CC_github部隊/長照/4_CareRisk 48H`; remote is exactly `https://github.com/kuotunyu/CareRisk-48H.git`; branch is `docs/carerisk-hf-space-design`; tracked worktree is clean; the governing design is an ancestor; and the immutable-scope diff from the final old Task 6 implementation exits zero.
 
 - [ ] **Step 2: Add product-source reflection mutations**
 
-Add a parametrized mutation test that writes one synthetic application module at a time and requires the listed bounded violation suffix. Its cases must include these exact executable shapes:
+Add three independent parametrized tests. The first proves every forbidden builtin is rejected at the `Name` load, including alias sources that require no call-signature knowledge:
 
 ```python
-@pytest.mark.parametrize(
-    ("source", "expected_suffix"),
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+    "forbidden_name",
     (
-        ('getattr(target, "member")', "getattr"),
-        ('reflect = getattr\nreflect(target, "member")', "getattr"),
-        ('setattr(target, "member", value)', "setattr"),
-        ('delattr(target, "member")', "delattr"),
-        ('hasattr(target, "member")', "hasattr"),
-        ('vars(target)["member"]', "vars"),
-        ('globals()["target"]', "globals"),
-        ('locals()["target"]', "locals"),
-        ('compile("1", "<x>", "eval")', "compile"),
-        ('target.__getattribute__("member")', "__getattribute__"),
-        ('target.__getattr__("member")', "__getattr__"),
-        ('target.__setattr__("member", value)', "__setattr__"),
-        ('target.__delattr__("member")', "__delattr__"),
-        ('target.__dict__["member"]', "__dict__"),
-        ('operator.attrgetter("member")(target)', "operator.attrgetter"),
-        ('operator.methodcaller("member")(target)', "operator.methodcaller"),
-        ('inspect.getattr_static(target, "member")', "inspect.getattr_static"),
+        "getattr", "setattr", "delattr", "hasattr", "vars", "globals",
+        "locals", "eval", "exec", "compile", "__import__",
     ),
 )
-def test_application_reflection_is_denied_by_construction(
+def test_application_forbidden_reflection_name_load_is_denied(
     tmp_path: Path,
-    source: str,
-    expected_suffix: str,
+    forbidden_name: str,
 ) -> None:
-    synthetic = tmp_path / "synthetic.py"
-    synthetic.write_text(source, encoding="utf-8")
-    assert f"synthetic.py:{expected_suffix}" in scan_capabilities((synthetic,))
+    for source in (
+        forbidden_name,
+        f"alias = {forbidden_name}",
+        f"def capture(value={forbidden_name}):\n    return value",
+        f"capture = lambda: {forbidden_name}",
+        f"captured = ({forbidden_name} := {forbidden_name})",
+        f"captured = [{forbidden_name}]",
+    ):
+        synthetic = tmp_path / "synthetic.py"
+        synthetic.write_text(source, encoding="utf-8")
+        assert f"synthetic.py:{forbidden_name}" in scan_capabilities((synthetic,))
 ```
 
-Keep the already covered `eval`, `exec`, and `__import__` cases; do not weaken or duplicate their assertions.
+The named-expression case intentionally reuses the builtin identifier as its store target; the `Load` on the right remains the violation. Keep the existing direct dynamic-code tests as independent legacy coverage. Add the same direct-expression plus ordinary-alias pair for every forbidden reflective attribute and named helper:
+
+```python
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+    ("expression", "expected_suffix"),
+    (
+        ("target.__getattribute__", "__getattribute__"),
+        ("target.__getattr__", "__getattr__"),
+        ("target.__setattr__", "__setattr__"),
+        ("target.__delattr__", "__delattr__"),
+        ("target.__dict__", "__dict__"),
+        ("operator.attrgetter", "operator.attrgetter"),
+        ("operator.methodcaller", "operator.methodcaller"),
+        ("inspect.getattr_static", "inspect.getattr_static"),
+    ),
+)
+def test_application_forbidden_reflective_attribute_load_is_denied(
+    tmp_path: Path,
+    expression: str,
+    expected_suffix: str,
+) -> None:
+    for source in (expression, f"alias = {expression}"):
+        synthetic = tmp_path / "synthetic.py"
+        synthetic.write_text(source, encoding="utf-8")
+        assert f"synthetic.py:{expected_suffix}" in scan_capabilities((synthetic,))
+```
 
 - [ ] **Step 3: Add entry-point and guard-helper bypass mutations**
 
-Extend entry-point mutation coverage with the following exact families. Each mutation is appended to a parsed copy of `space/app.py` and must include `builtin_reflection`; mount/route cases must also preserve their existing structural violation:
+Extend entry-point mutation coverage with the following exact families. Each mutation is appended to a parsed copy of `space/app.py` and must include `builtin_reflection`. It must not require `mount_count` or `parent_route`: reflection is already forbidden, so the scanner deliberately does not resolve the hidden data flow. Existing direct and ordinary-alias mutations continue to prove structural counts.
 
 ```python
 (
     'mount = gr.__getattribute__("mount_gradio_app")\nmount(parent, demo)',
-    {"builtin_reflection", "mount_count"},
+    {"builtin_reflection"},
 ),
 (
     'route = parent.__getattribute__("get")\n@route("/hidden")\ndef hidden():\n    pass',
-    {"builtin_reflection", "parent_route"},
+    {"builtin_reflection"},
 ),
 (
     'member = runtime_member\nmount = gr.__getattribute__(member)\nmount(parent, demo)',
-    {"builtin_reflection", "mount_count"},
+    {"builtin_reflection"},
 ),
 (
     'mount = vars(gr)["mount_gradio_app"]\nmount(parent, demo)',
-    {"builtin_reflection", "mount_count"},
+    {"builtin_reflection"},
 ),
 (
     'mount = gr.__dict__["mount_gradio_app"]\nmount(parent, demo)',
-    {"builtin_reflection", "mount_count"},
+    {"builtin_reflection"},
 ),
 ```
 
@@ -126,7 +149,7 @@ def _compose(parent):
     return guard(parent, membership)
 ```
 
-Repeat the guard mutation with `vars(ui_module)[...]`, `ui_module.__dict__[...]`, and a nonliteral member name. Preserve the existing positive test for direct bounded builder/guard aliases.
+Repeat the guard mutation with `vars(ui_module)[...]`, `ui_module.__dict__[...]`, and a nonliteral member on the `ui_module` root. Preserve the existing positive test for direct bounded builder/guard aliases. Add one explicit acceptance test whose functions contain only `getattr(other, "get")`, `getattr(inner, "original_router", None)`, and `getattr(socket, "AF_UNIX", None)` and assert `_guard_helper_violations(tree) == []`; a sensitive word on an unrelated receiver is not helper candidacy.
 
 - [ ] **Step 4: Add a positive syntax-identity contract**
 
@@ -152,7 +175,13 @@ The test must assert `scan_capabilities((synthetic,)) == []`. Do not introduce a
 Run only the newly added tests:
 
 ```powershell
-.venv-space\Scripts\python.exe -m pytest tests/test_hf_space_source_boundary.py -q -k "reflection or syntax_identity"
+.venv-space\Scripts\python.exe -m pytest -q `
+  tests/test_hf_space_source_boundary.py::test_application_forbidden_reflection_name_load_is_denied `
+  tests/test_hf_space_source_boundary.py::test_application_forbidden_reflective_attribute_load_is_denied `
+  tests/test_hf_space_source_boundary.py::test_entrypoint_scanner_rejects_reflection_without_resolving_forbidden_flow `
+  tests/test_hf_space_source_boundary.py::test_guard_helper_audit_rejects_sensitive_reflection_candidates `
+  tests/test_hf_space_source_boundary.py::test_guard_helper_audit_allows_unrelated_test_introspection `
+  tests/test_hf_space_source_boundary.py::test_application_syntax_identities_are_not_reflection
 ```
 
 Expected: the new negative mutations fail because the current scanner accepts at least the dunder-reflection forms; the positive syntax-identity test may already pass. Record test count and failure names in the task report before implementation.
@@ -162,7 +191,7 @@ Expected: the new negative mutations fail because the current scanner accepts at
 Add immutable exact-name sets near the existing capability constants:
 
 ```python
-_FORBIDDEN_REFLECTION_CALLS = frozenset(
+_FORBIDDEN_REFLECTION_NAMES = frozenset(
     {
         "getattr",
         "setattr",
@@ -171,7 +200,10 @@ _FORBIDDEN_REFLECTION_CALLS = frozenset(
         "vars",
         "globals",
         "locals",
+        "eval",
+        "exec",
         "compile",
+        "__import__",
     }
 )
 _FORBIDDEN_REFLECTIVE_ATTRIBUTES = frozenset(
@@ -196,20 +228,26 @@ _SENSITIVE_COMPOSITION_MEMBERS = frozenset(
 )
 ```
 
-Implement `_dynamic_reflection_violations(...)` as a pure AST walk. It may resolve ordinary name/attribute aliases through the existing bounded resolver, but it must not evaluate Python, fold arbitrary expressions, import a module, or execute source. It returns stable exact suffixes for forbidden builtin calls, forbidden reflective attributes, `__dict__`, and the three named helper calls. Aliasing a forbidden builtin or named helper remains forbidden.
+Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`; reject every `ast.Attribute` whose attribute is in `_FORBIDDEN_REFLECTIVE_ATTRIBUTES`; and reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`. Do not evaluate Python, fold arbitrary expressions, import a module, or follow the value after the forbidden reference. Direct calls, assignments, defaults, lambdas, named expressions, containers, and later alias calls all fail at the original forbidden load.
 
 Integrate it in three places:
 
-1. `scan_capabilities` appends `f"{path.name}:{suffix}"` for every dynamic-reflection violation before applying the existing read/write/network checks.
-2. `_entrypoint_violations` adds `builtin_reflection` whenever the entry-point tree contains a dynamic-reflection violation. It then continues the existing mount/router/monkeypatch checks so the structural violation is also reported.
-3. `_guard_helper_violations` performs a fail-closed pre-pass for each function. It marks `function_name:dynamic_reflection` when reflection targets `ui_module`, `gr`, `parent`, `uvicorn`, their ordinary aliases, or a literal `_SENSITIVE_COMPOSITION_MEMBERS` value. A nonliteral member on one of those roots also fails. This pre-pass happens before the early `if not all_guard_calls: continue`, so a hidden guard constructor cannot escape audit. Unrelated test-only `getattr(inner, "original_router", None)` and `getattr(socket, "AF_UNIX", None)` remain accepted.
+1. `scan_capabilities` accumulates existing and dynamic-reflection findings in a set of full `path.name:suffix` strings and returns one deterministic sorted list. Overlap with legacy `eval`, `exec`, or `__import__` checks produces one result, not duplicates.
+2. `_entrypoint_violations` adds `builtin_reflection` whenever the entry-point tree contains a dynamic-reflection violation. It continues the existing checks, but reflective mutations are not required to produce structural tags. Direct and ordinary non-reflective aliases remain subject to mount/router/monkeypatch/server counts.
+3. `_guard_helper_violations` performs a fail-closed candidate pre-pass before `if not all_guard_calls: continue`. `_sensitive_reflection_in_helper` may use `_bounded_aliases` only to resolve ordinary aliases of `ui_module`, `gr`, `parent`, and `uvicorn`. It returns true only when a reflective builtin/attribute/helper acts on one of those resolved roots, or a named helper is applied to such a root. A literal member string without a sensitive receiver is insufficient. A nonliteral member on a sensitive receiver fails. The accepted unrelated receiver mutations are mandatory regression coverage.
 
 - [ ] **Step 7: Run GREEN and mutation coverage**
 
 Run:
 
 ```powershell
-.venv-space\Scripts\python.exe -m pytest tests/test_hf_space_source_boundary.py -q -k "reflection or syntax_identity"
+.venv-space\Scripts\python.exe -m pytest -q `
+  tests/test_hf_space_source_boundary.py::test_application_forbidden_reflection_name_load_is_denied `
+  tests/test_hf_space_source_boundary.py::test_application_forbidden_reflective_attribute_load_is_denied `
+  tests/test_hf_space_source_boundary.py::test_entrypoint_scanner_rejects_reflection_without_resolving_forbidden_flow `
+  tests/test_hf_space_source_boundary.py::test_guard_helper_audit_rejects_sensitive_reflection_candidates `
+  tests/test_hf_space_source_boundary.py::test_guard_helper_audit_allows_unrelated_test_introspection `
+  tests/test_hf_space_source_boundary.py::test_application_syntax_identities_are_not_reflection
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_source_boundary.py space/tests/test_export_contract.py -q
 .venv-space\Scripts\python.exe -m pytest space/tests/test_gradio_contract.py -q
 ```
@@ -241,3 +279,17 @@ git commit -m "test(space): deny dynamic reflection boundary"
 ```
 
 Expected: one implementation commit with exactly `tests/test_hf_space_source_boundary.py`, correct `kuotunyu <61350295+kuotunyu@users.noreply.github.com>` author/committer identity, no co-author trailer, clean tracked worktree, and no push.
+
+- [ ] **Step 10: Independent acceptance and old-breaker release (controller only)**
+
+The SDD controller generates a review package from the exact recorded implementation BASE to the implementation HEAD and dispatches an independent reviewer. Acceptance requires Spec ✅, Quality Approved, Critical `0`, Important `0`; Minor findings are recorded under the standard SDD policy. The controller then reruns the six exact node IDs, the complete Task 6 boundary suite, Gradio contract, Ruff, strict Mypy, immutable-scope diff, commit identity, and clean-worktree checks.
+
+Only after both gates pass, resolve `corrective_head` from `git rev-parse HEAD`, then append these state transitions to the original plan's ignored ledger `.superpowers/sdd/2026-08-31-carerisk-hf-space/progress.md` using that full SHA in both named positions and the actual evidence counts:
+
+```text
+Task 6: architecture corrective accepted — reflection-free policy implemented under distinct plan docs/superpowers/plans/2026-09-01-carerisk-reflection-boundary-corrective.md; independent review clean; controller verification clean.
+Task 6: complete (commits 3ef0963..corrective_head, five-round breaker resolved by separately approved architecture corrective; review clean).
+Task 7: released — Tasks 7–13 may resume from corrective_head; remote Hugging Face/GitHub operations remain out of scope.
+```
+
+`corrective_head` above names the resolved controller variable; the literal word is never written to the ledger. Append the matching `Task 1: complete` line to this corrective plan's ledger. If review or controller verification fails, append a `Task 1: BLOCKED` line naming the exact reviewer or command finding only to this corrective ledger and do not release Task 7.
