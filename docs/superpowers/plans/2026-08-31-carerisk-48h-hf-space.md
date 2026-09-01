@@ -1480,7 +1480,7 @@ def test_sbom_and_license_inventory_cover_every_lock_package_once() -> None:
         "registry_source_url", "cdn_artifact_url", "playwright_tag_commit",
         "repository_relative_path", "commit_pinned_raw_url", "raw_byte_length",
         "raw_sha256", "remote_url", "base_branch", "base_revision", "webkit_revision", "webkit_version",
-        "webkit_tree_algorithm", "webkit_tree_sha256", "official_webkit_licensing_references",
+        "webkit_tree_file_count", "webkit_tree_total_bytes", "webkit_tree_algorithm", "webkit_tree_sha256", "image_tree_source_relative_path_absent", "official_webkit_licensing_references",
         "licenseDeclared", "licenseConcluded", "review_disposition",
         "complete_digest_bound_notice",
     ],
@@ -1559,12 +1559,13 @@ The direct runtime input contains only `gradio==6.26.0`; a candidate range such 
 $toolVenv = '.venv-space-lock'
 python -m venv $toolVenv
 & "$toolVenv\Scripts\python.exe" -m pip install --require-hashes -r tools/space/lock-tooling.txt
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py acquire-webkit-source-reference --url https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh --metadata-output tools/space/webkit-source-reference.json
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py lock --runtime-input tools/space/requirements-runtime.in --development-input tools/space/requirements-dev.in --runtime-output space/requirements.lock --development-output space/requirements-dev.lock
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json
 ```
 
-Expected: the current correction performs no image re-resolution and does not overwrite/reselect `base-image.json`; `verify-images` accepts only the frozen measured tuple plus its exact added provenance/version fields. The controlled lock/inventory phase acquires only already selected package/browser references and, only during its controlled HTTPS source-reference acquisition, the one exact commit-pinned GitHub raw URL; it verifies every digest/hash, source raw length/hash, and parsed assignment. The later no-egress verify phase reads only locked metadata/artifacts. Every generated file contains actual values and hashes. Review package source URLs, both base-image inventories, embedded-browser revisions/versions, tree algorithm/identity and source-relative-file absence, official Playwright tag URL/registry/CDN, exact external source-reference provenance, license texts/references, notices, notice completeness, all eleven distribution surfaces, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components whose bytes could be exported/deployed stop the task. Any `NOASSERTION` outside the exact metadata-only WebKit reviewer record stops the task. Any tuple/provenance/surface-registry drift or reviewer bytes in any closed surface also stops the task.
+Expected: the current correction performs no image re-resolution and does not overwrite/reselect `base-image.json`; `verify-images` accepts only the frozen measured tuple plus its exact added provenance/version fields. `acquire-webkit-source-reference` is the sole network-enabled interface: it accepts only the literal URL, validates raw length/hash and three assignments, and retains bounded metadata instead of raw source bytes. Every subsequent `verify-images`, deterministic double `inventory`, `verify`, pytest, and later candidate verification invocation has explicit offline/no-egress mode and fails under a network bomb if any network API is reached; no later inventory run may refetch. Review package source URLs, both base-image inventories, embedded-browser revisions/versions, typed tree count/size/algorithm/identity and derived source-relative-file absence, official Playwright tag URL/registry/CDN, exact external source-reference provenance, license texts/references, notices, notice completeness, all eleven distribution surfaces, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components whose bytes could be exported/deployed stop the task. Any `NOASSERTION` outside the exact metadata-only WebKit reviewer record stops the task. Any tuple/provenance/surface-registry drift or reviewer bytes in any closed surface also stops the task.
 
 - [ ] **Step 5: Run reproducibility and installation GREEN**
 
@@ -3146,8 +3147,11 @@ $expectedWebKit = [ordered]@{
     base_revision = '343e13bf22dca9d0ec227801419aab0f9001a32f'
     webkit_revision = '2336'
     webkit_version = '26.5'
+    webkit_tree_file_count = 38
+    webkit_tree_total_bytes = 306401261
     webkit_tree_algorithm = 'sha256-canonical-tree-v1'
     webkit_tree_sha256 = 'c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c'
+    image_tree_source_relative_path_absent = $true
     official_webkit_licensing_references = @(
         'https://webkit.org/licensing-webkit/',
         'https://github.com/WebKit/WebKit/blob/343e13bf22dca9d0ec227801419aab0f9001a32f/Source/WebCore/LICENSE-APPLE',

@@ -79,8 +79,11 @@ class WebKitReviewerPolicy:
     base_revision: str
     webkit_revision: str
     webkit_version: str
+    webkit_tree_file_count: int
+    webkit_tree_total_bytes: int
     webkit_tree_algorithm: str
     webkit_tree_sha256: str
+    image_tree_source_relative_path_absent: bool
     official_webkit_licensing_references: tuple[str, ...]
     license_declared: str
     license_concluded: str
@@ -101,6 +104,7 @@ class DistributionSurface:
     command_tokens: tuple[str, ...]
 
 def exact_webkit_reviewer_policy() -> WebKitReviewerPolicy: ...
+def acquire_webkit_source_reference(url: str, *, allow_network: bool) -> Mapping[str, object]: ...
 def validate_license_policy(document: Mapping[str, object]) -> Mapping[tuple[str, str], Mapping[str, object]]: ...
 def validate_distribution_exclusion(surfaces: Sequence[DistributionSurface]) -> None: ...
 def verify_all(repo_root: Path) -> None: ...
@@ -150,8 +154,11 @@ def exact_webkit_policy_dict() -> dict[str, object]:
         "base_revision": "343e13bf22dca9d0ec227801419aab0f9001a32f",
         "webkit_revision": "2336",
         "webkit_version": "26.5",
+        "webkit_tree_file_count": 38,
+        "webkit_tree_total_bytes": 306401261,
         "webkit_tree_algorithm": "sha256-canonical-tree-v1",
         "webkit_tree_sha256": "c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c",
+        "image_tree_source_relative_path_absent": True,
         "official_webkit_licensing_references": [
             "https://webkit.org/licensing-webkit/",
             "https://github.com/WebKit/WebKit/blob/343e13bf22dca9d0ec227801419aab0f9001a32f/Source/WebCore/LICENSE-APPLE",
@@ -166,7 +173,7 @@ def exact_webkit_policy_dict() -> dict[str, object]:
 
 - [ ] **Step 2: Add and run the single-field mutation matrix**
 
-Create `test_exact_webkit_reviewer_exception_rejects_every_single_field_drift`, parameterized over every fixture key after `package`/`version`, explicitly including `playwright_tag_commit`, `repository_relative_path`, `commit_pinned_raw_url`, `raw_byte_length`, `raw_sha256`, `remote_url`, `base_branch`, `base_revision`, `playwright_tag_url`, and `webkit_tree_algorithm`, plus missing key, extra key, alternate list order, alternate case, integer revision, truthy string flag, guessed license expression, `approved` disposition, and `complete_digest_bound_notice=True`. Add `test_webkit_source_relative_file_is_absent_from_immutable_image_tree` so absence, rather than a fictitious image member, is fixed evidence.
+Create `test_exact_webkit_reviewer_exception_rejects_every_single_field_drift`, parameterized over every fixture key after `package`/`version`, explicitly including `playwright_tag_commit`, `repository_relative_path`, `commit_pinned_raw_url`, `raw_byte_length`, `raw_sha256`, `remote_url`, `base_branch`, `base_revision`, `webkit_tree_file_count`, `webkit_tree_total_bytes`, `image_tree_source_relative_path_absent`, `playwright_tag_url`, and `webkit_tree_algorithm`, plus missing key, extra key, alternate list order, alternate case, integer revision, truthy string flag, guessed license expression, `approved` disposition, and `complete_digest_bound_notice=True`. Add `test_webkit_source_relative_file_is_absent_from_immutable_image_tree`; it derives the typed absence field from the canonical inventory's ordered paths while independently checking exact count, total bytes, algorithm, and digest, rather than accepting a self-asserted boolean.
 
 Run:
 
@@ -204,7 +211,7 @@ Keep ordinary records on `review_disposition == "approved"` with nonempty, non-`
 
 - [ ] **Step 2: Extend the frozen measured base record without re-resolution**
 
-Under `images.reviewer.embedded_browsers.webkit`, add exact `version="26.5"`, `tree_algorithm="sha256-canonical-tree-v1"`, Playwright tag URL and tagged source references, CDN URL, and an external `source_reference` object containing every exact tag-commit/relative-path/raw-URL/raw-byte/parsed-assignment field from the fixture. Preserve the existing tag/index/manifest/content-tree values byte-for-byte. The current correction must call only the read-only `verify-images --input tools/space/base-image.json`; it must not call `resolve-images`, query for a replacement, overwrite the record from registry output, or select another tag/platform. A legitimate future re-resolution is outside this plan and requires separate central design approval, a newly fixed tuple, fresh measurement/license review, updated single-field and surface mutations, and a new custody baseline. Validate that the source relative file is absent from the canonical 38-file image tree; separately acquire and validate the source file only during the controlled HTTPS source-reference phase. Do not claim that either result proves complete license notice coverage.
+Under `images.reviewer.embedded_browsers.webkit`, add exact `version="26.5"`, `tree_algorithm="sha256-canonical-tree-v1"`, typed `tree_file_count=38`, typed `tree_total_bytes=306401261`, and a typed `image_tree_source_relative_path_absent` value derived from the canonical inventory, plus Playwright tag URL/tagged source references/CDN URL and an external `source_reference` object containing every exact tag-commit/relative-path/raw-URL/raw-byte/parsed-assignment field from the fixture. Preserve the existing tag/index/manifest/content-tree values byte-for-byte. The strict parser recomputes count/bytes/path absence from the canonical inventory before full tuple equality; it rejects a missing, non-integer, wrong count/size, wrong algorithm/digest, or self-asserted absence field. The current correction must call only the read-only `verify-images --input tools/space/base-image.json`; it must not call `resolve-images`, query for a replacement, overwrite the record from registry output, or select another tag/platform. A legitimate future re-resolution is outside this plan and requires separate central design approval, a newly fixed tuple, fresh measurement/license review, updated single-field and surface mutations, and a new custody baseline. Separately acquire and validate the source file only during the controlled HTTPS source-reference phase. Do not claim that either result proves complete license notice coverage.
 
 - [ ] **Step 3: Emit policy, license inventory, and SPDX**
 
@@ -213,13 +220,14 @@ For the WebKit inventory record, emit exact `licenseDeclared`, `licenseConcluded
 - [ ] **Step 4: Run GREEN and deterministic regeneration**
 
 ```powershell
-.venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json
-.venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json
-.venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify --repo-root .
+.venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py acquire-webkit-source-reference --url https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh --metadata-output tools/space/webkit-source-reference.json
+.venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json --source-reference tools/space/webkit-source-reference.json --offline
+.venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference tools/space/webkit-source-reference.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline
+.venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify --repo-root . --offline
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
 ```
 
-Hash `space/SBOM.spdx.json` and `space/THIRD_PARTY_LICENSES.json`, rerun `inventory`, and require identical hashes. Expected: GREEN; every mutation fails closed; ordinary records are approved-only; exact WebKit metadata is `NOASSERTION`/review-only/not-distributed.
+The acquisition command is the sole network-enabled interface and accepts only the literal URL; it validates raw length/hash and the exact `REMOTE_URL`, `BASE_BRANCH`, and `BASE_REVISION`, then writes bounded parsed metadata/evidence only, never raw source bytes. Every `--offline` command installs a network bomb before execution and fails if any networking API is reached. Hash `space/SBOM.spdx.json` and `space/THIRD_PARTY_LICENSES.json`, rerun the same offline `inventory`, and require identical hashes. Expected: GREEN; every mutation fails closed; ordinary records are approved-only; exact WebKit metadata is `NOASSERTION`/review-only/not-distributed.
 
 - [ ] **Step 5: Commit the complete Task 7 source and outputs**
 
@@ -369,7 +377,7 @@ WEBKIT_REVIEWER_POLICY_TUPLE_FIELDS = (
     "browsers_json_url", "registry_source_url", "cdn_artifact_url",
     "playwright_tag_commit", "repository_relative_path", "commit_pinned_raw_url",
     "raw_byte_length", "raw_sha256", "remote_url", "base_branch", "base_revision", "webkit_revision",
-    "webkit_version", "webkit_tree_algorithm", "webkit_tree_sha256",
+    "webkit_version", "webkit_tree_file_count", "webkit_tree_total_bytes", "webkit_tree_algorithm", "webkit_tree_sha256", "image_tree_source_relative_path_absent",
     "official_webkit_licensing_references", "license_declared",
     "license_concluded", "review_disposition", "complete_digest_bound_notice",
 )
