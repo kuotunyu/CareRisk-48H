@@ -2479,18 +2479,84 @@ def _custody_step(job: dict[str, Any]) -> dict[str, Any]:
     return steps[0]
 
 
+def _validated_regular_executable(candidate: Path) -> Path:
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise AssertionError(f"custody shell path is unavailable: {candidate}") from exc
+    assert resolved.is_file()
+    assert os.access(resolved, os.X_OK)
+    return resolved
+
+
+def _windows_shell_path_is_rejected(value: str) -> bool:
+    candidate = PureWindowsPath(value)
+    folded_parts = {part.casefold() for part in candidate.parts}
+    return (
+        candidate.name.casefold() != "bash.exe"
+        or "system32" in folded_parts
+        or "windowsapps" in folded_parts
+    )
+
+
+def _git_for_windows_bash_candidate(git_executable: Path) -> Path:
+    git_path = PureWindowsPath(str(git_executable))
+    if git_path.name.casefold() != "git.exe":
+        raise AssertionError("Windows custody runner requires git.exe")
+    if git_path.parent.name.casefold() == "cmd":
+        candidate = git_path.parent.parent / "bin" / "bash.exe"
+    elif git_path.parent.name.casefold() == "bin":
+        candidate = git_path.parent / "bash.exe"
+    else:
+        raise AssertionError("unsupported Git for Windows executable layout")
+    return Path(str(candidate))
+
+
+def _resolve_custody_bash() -> Path:
+    if os.name != "nt":
+        located = shutil.which("bash")
+        assert located is not None
+        return _validated_regular_executable(Path(located))
+
+    located_git = shutil.which("git")
+    assert located_git is not None
+    git_executable = _validated_regular_executable(Path(located_git))
+    candidate = _git_for_windows_bash_candidate(git_executable)
+    bash = _validated_regular_executable(candidate)
+    assert not _windows_shell_path_is_rejected(str(bash))
+    return bash
+
+
+def _validated_custody_shell() -> tuple[Path, dict[str, str]]:
+    bash = _resolve_custody_bash()
+    environment = {
+        name: value for name, value in os.environ.items() if name not in CUSTODY_NAMES
+    }
+    sentinel_name = f"CARERISK_CUSTODY_SENTINEL_{uuid.uuid4().hex.upper()}"
+    sentinel_value = uuid.uuid4().hex
+    sentinel_environment = {**environment, sentinel_name: sentinel_value}
+    sentinel_script = f'printf "%s" "${{{sentinel_name}-}}"'
+    sentinel = subprocess.run(
+        [str(bash), "-c", sentinel_script],
+        env=sentinel_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert sentinel.returncode == 0
+    assert sentinel.stdout == sentinel_value
+    assert sentinel.stderr == ""
+    return bash, environment
+
+
 def _run_extracted_custody_validator(
     validator: str,
     values: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
-    bash = shutil.which("bash")
-    assert bash is not None
-    environment = {
-        name: value for name, value in os.environ.items() if name not in CUSTODY_NAMES
-    }
+    bash, environment = _validated_custody_shell()
     environment.update(values)
     return subprocess.run(
-        [bash, "-c", validator],
+        [str(bash), "-c", validator],
         env=environment,
         capture_output=True,
         text=True,
@@ -2539,6 +2605,18 @@ def test_space_ci_transports_external_custody_without_literal_values() -> None:
         assert value not in workflow_text
 
 
+def test_custody_shell_runner_rejects_windows_launchers_and_proves_sentinel() -> None:
+    assert _windows_shell_path_is_rejected(r"C:\Windows\System32\bash.exe")
+    assert _windows_shell_path_is_rejected(
+        r"C:\Users\runner\AppData\Local\Microsoft\WindowsApps\bash.exe"
+    )
+    assert _windows_shell_path_is_rejected(r"C:\Windows\System32\wsl.exe")
+    bash, clean_environment = _validated_custody_shell()
+    assert bash.is_file()
+    assert os.access(bash, os.X_OK)
+    assert all(name not in clean_environment for name in CUSTODY_NAMES)
+
+
 def test_space_ci_executes_the_extracted_custody_validator_fail_closed() -> None:
     workflow = yaml.safe_load(SPACE_CI.read_text(encoding="utf-8"))
     source_validator = _normalized_custody_script(
@@ -2573,14 +2651,25 @@ def test_space_ci_executes_the_extracted_custody_validator_fail_closed() -> None
     assert _run_extracted_custody_validator(source_validator, valid).returncode == 0
 ```
 
-Add the existing-standard-library imports `os`, `shutil`, and `subprocess`, plus
-`Any` from `typing`, for this executable contract. The test executes the
+Add the existing-standard-library imports `os`, `shutil`, `subprocess`, and
+`uuid`; add `PureWindowsPath` beside the existing `Path` import and `Any` from
+`typing`. The test executes the
 normalized `run` value extracted
 from the parsed workflow, not a replacement validator assembled by the test.
 Consequently, echoing regex text, putting validation behind `if`, marking the
 step or job `continue-on-error`, or changing `shell: bash` cannot satisfy the
 contract. The shape-only positive values above are deliberately not the
 controller's real tuple.
+
+Runner resolution is fail closed. POSIX accepts only the resolved regular,
+executable result of `shutil.which("bash")`. Windows never resolves `bash`
+directly: it resolves `git.exe` from `shutil.which("git")`, accepts only the
+documented Git for Windows `cmd\git.exe` or `bin\git.exe` layouts, derives that
+installation's `bin\bash.exe`, resolves it strictly, and rejects System32,
+WindowsApps, `wsl.exe`, non-files, and non-executables. No machine-specific path
+is tracked. Every validator subprocess first repeats the unique-name sentinel;
+the sentinel value exists only in that `subprocess.run(env=...)` mapping and must
+return exact stdout with exit `0` before any custody case is trusted.
 
 - [ ] **Step 2: Run RED**
 
