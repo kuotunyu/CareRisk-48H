@@ -2086,11 +2086,12 @@ def _expected_rejection_guard_calls(
     return calls
 
 
-_ReflectionAliasState = tuple[set[str], set[str], set[str], set[str]]
+_ReflectionAliasState = tuple[set[str], set[str], set[str], set[str], set[str]]
 _SENSITIVE_ALIAS = "sensitive"
 _BUILTIN_MODULE_ALIAS = "builtin_module"
 _BUILTIN_MAPPING_ALIAS = "builtin_mapping"
 _REFLECTION_CALLABLE_ALIAS = "reflection_callable"
+_VARS_CALLABLE_ALIAS = "vars_callable"
 
 
 def _owned_nodes(statements: Iterable[ast.stmt]) -> list[ast.AST]:
@@ -2120,7 +2121,7 @@ def _state_has_name(node: ast.expr, names: set[str]) -> bool:
 
 
 def _mapping_source(node: ast.expr, state: _ReflectionAliasState) -> bool:
-    _, builtin_modules, builtin_mappings, _ = state
+    _, builtin_modules, builtin_mappings, _, vars_callables = state
     if _state_has_name(node, builtin_mappings):
         return True
     if (
@@ -2129,13 +2130,16 @@ def _mapping_source(node: ast.expr, state: _ReflectionAliasState) -> bool:
         and _state_has_name(node.value, builtin_modules)
     ):
         return True
-    return (
+    if not (
         isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "vars"
         and len(node.args) == 1
         and not node.keywords
         and _state_has_name(node.args[0], builtin_modules)
+    ):
+        return False
+    return _state_has_name(node.func, vars_callables) or _reflection_callable_source(
+        node.func,
+        state,
     )
 
 
@@ -2143,20 +2147,28 @@ def _reflection_callable_source(
     node: ast.expr,
     state: _ReflectionAliasState,
 ) -> bool:
-    _, builtin_modules, builtin_mappings, reflection_callables = state
+    _, builtin_modules, _, reflection_callables, _ = state
     if isinstance(node, ast.Name):
         return node.id in reflection_callables
     if isinstance(node, ast.Attribute):
         if _call_name(node) in reflection_callables:
             return True
+        if node.attr == "__call__":
+            return _reflection_callable_source(node.value, state)
         return node.attr != "__dict__" and _state_has_name(node.value, builtin_modules)
     if isinstance(node, ast.Subscript):
-        return _state_has_name(node.value, builtin_mappings)
+        return _mapping_source(node.value, state)
     if isinstance(node, ast.Call):
-        return (
+        if (
             isinstance(node.func, ast.Attribute)
             and node.func.attr == "get"
-            and _state_has_name(node.func.value, builtin_mappings)
+            and _mapping_source(node.func.value, state)
+        ):
+            return True
+        return (
+            bool(node.args)
+            and _state_has_name(node.args[0], builtin_modules)
+            and _reflection_callable_source(node.func, state)
         )
     return False
 
@@ -2174,12 +2186,14 @@ def _bounded_reflection_state(
         reflection_callable_aliases = set(
             (_FORBIDDEN_REFLECTION_NAMES - {"__builtins__"}) | _FORBIDDEN_REFLECTION_HELPERS
         )
+        vars_callable_aliases = {"vars"}
     else:
         (
             sensitive_aliases,
             builtin_module_aliases,
             builtin_mapping_aliases,
             reflection_callable_aliases,
+            vars_callable_aliases,
         ) = (set(items) for items in inherited)
     if include_parent:
         sensitive_aliases.add("parent")
@@ -2188,6 +2202,7 @@ def _bounded_reflection_state(
         builtin_module_aliases,
         builtin_mapping_aliases,
         reflection_callable_aliases,
+        vars_callable_aliases,
     )
     owned = _owned_nodes(statements)
     for node in owned:
@@ -2206,6 +2221,8 @@ def _bounded_reflection_state(
                     and imported.name != "__builtins__"
                 ):
                     reflection_callable_aliases.add(effective_name)
+                    if imported.name == "vars":
+                        vars_callable_aliases.add(effective_name)
 
     assignments = [
         node
@@ -2224,6 +2241,7 @@ def _bounded_reflection_state(
                 (builtin_module_aliases, _state_has_name(value, builtin_module_aliases)),
                 (builtin_mapping_aliases, _mapping_source(value, state)),
                 (reflection_callable_aliases, _reflection_callable_source(value, state)),
+                (vars_callable_aliases, _state_has_name(value, vars_callable_aliases)),
             )
             for aliases, applies in transitions:
                 if applies and not targets <= aliases:
@@ -2242,6 +2260,7 @@ def _reflection_state_aliases(state: _ReflectionAliasState) -> dict[str, str]:
             _BUILTIN_MODULE_ALIAS,
             _BUILTIN_MAPPING_ALIAS,
             _REFLECTION_CALLABLE_ALIAS,
+            _VARS_CALLABLE_ALIAS,
         ),
         state,
         strict=True,
@@ -2264,6 +2283,7 @@ def _sensitive_reflection_in_nodes(
         _aliases_in_category(aliases, _BUILTIN_MODULE_ALIAS),
         _aliases_in_category(aliases, _BUILTIN_MAPPING_ALIAS),
         _aliases_in_category(aliases, _REFLECTION_CALLABLE_ALIAS),
+        _aliases_in_category(aliases, _VARS_CALLABLE_ALIAS),
     )
     sensitive_aliases = state[0]
 
@@ -2605,6 +2625,146 @@ def _compose(parent):
 def _compose(parent):
     from builtins import getattr as reflect
     return reflect(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return b.__dict__["getattr"](ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return b.__dict__[runtime_member](ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return b.__dict__.get("getattr")(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return b.__dict__.get(runtime_member)(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return vars(b)["getattr"](ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return vars(b)[runtime_member](ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return vars(b).get("getattr")(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return vars(b).get(runtime_member)(ui_module, "PublicSurfaceGuard")
+""",
+        """
+import builtins as b
+guard = b.__dict__["getattr"](ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+import builtins as b
+guard = b.__dict__[runtime_member](ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+import builtins as b
+guard = b.__dict__.get("getattr")(ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+import builtins as b
+guard = b.__dict__.get(runtime_member)(ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+import builtins as b
+guard = vars(b)["getattr"](ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+import builtins as b
+guard = vars(b)[runtime_member](ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+import builtins as b
+guard = vars(b).get("getattr")(ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+import builtins as b
+guard = vars(b).get(runtime_member)(ui_module, "PublicSurfaceGuard")
+
+def _compose(parent):
+    return guard(parent, membership)
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    v = vars
+    mapping = v(b)
+    return mapping[runtime_member](ui_module, "PublicSurfaceGuard")
+""",
+        """
+import builtins as b
+v = vars
+mapping = v(b)
+reflect = mapping[runtime_member]
+
+def _compose(parent):
+    return reflect(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    reflect = getattr
+    return reflect.__call__(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    reflect = getattr
+    call = reflect.__call__
+    call_alias = call
+    return call_alias(ui_module, "PublicSurfaceGuard")
+""",
+        """
+reflect = getattr
+call = reflect.__call__
+
+def _compose(parent):
+    return call(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    import builtins as b
+    return b.getattr.__call__(ui_module, "PublicSurfaceGuard")
+""",
+        """
+def _compose(parent):
+    return inspect.getattr_static.__call__(ui_module, "PublicSurfaceGuard")
 """,
     )
     for source in sources:
