@@ -2405,6 +2405,7 @@ git commit -m 'test(space): gate local accessibility and cold start'
 - Consumes: complete app source, tests, locks, supply-chain outputs, exporter, and Docker contract.
 - Consumes locally: the controller-injected three-value custody transport.
 - Consumes in Actions only after separate remote authorization: GitHub Actions Environment `carerisk-contract-custody` with three external variables named exactly `CARERISK_GRADIO_CONTRACT_BLOB_SHA1`, `CARERISK_GRADIO_CONTRACT_RAW_SIZE`, and `CARERISK_GRADIO_CONTRACT_RAW_SHA256`.
+- Consumes in the future Task 11 reviewer container only: a fail-closed checkout-ownership contract selected independently of candidate repository content—either the reviewer runs with the host checkout's exact numeric UID/GID, or it receives the controller-resolved exact mounted checkout path as its sole `safe.directory` value.
 - Produces: a reviewed app-source commit whose SHA is the immutable `space_app_source_git_sha`.
 
 Creating the Actions Environment or setting/changing any of its variables is
@@ -2412,6 +2413,21 @@ remote metadata mutation and is not authorized by Task 11. The tracked workflow
 and its local contract tests may be committed while the remote channel is
 absent; any remote run must then fail closed until separate written
 authorization provisions the exact external values.
+
+The checkout-ownership requirement is future Task 11 work and does not add or
+change any current Task 6 acceptance gate. Before Task 11 implementation, its
+workflow-contract tests must parse the reviewer invocation and prove exactly
+one supported mode: either `--user` receives the host checkout owner's exact
+numeric UID and GID, or a controller-owned pre-step resolves the read-only
+mounted checkout and supplies that one exact path as `safe.directory`. The
+second mode must compare the supplied value byte-for-byte with an independently
+resolved mount path before Git or pytest. Missing, empty, relative, unresolved,
+mismatched, multiple, or wildcard values fail before tests. `safe.directory=*`,
+repository-local or candidate-controlled Git config, a candidate-provided path,
+and a broad parent directory are forbidden. Contract mutations must remove the
+ownership control, change either UID/GID, substitute a sibling/parent path, add
+`safe.directory=*`, and source config from the checkout; every mutation must
+fail closed.
 
 - [ ] **Step 1: Write failing workflow-contract tests**
 
@@ -2686,6 +2702,20 @@ Expected: FAIL because the workflow does not exist.
 - [ ] **Step 3: Add the least-privilege workflow with immutable action SHAs**
 
 Resolve official action tag commits read-only and write the resulting real 40-character SHAs directly into the workflow. The `source_gates` job always runs and binds `REVIEWER_IMAGE` to the same exact reviewer tag plus linux/amd64 digest recorded in `base-image.json`. A controlled acquisition step fills an ephemeral wheelhouse from `space/requirements-dev.lock` and rejects every non-matching hash. A separate invocation of that reviewer image uses `--network none`, mounts the repository read-only plus the wheelhouse, installs the development union lock alone with `--no-index --require-hashes --no-deps`, verifies the runtime-package/version subset relation, and runs source/Space/static/supply-chain gates. The job exports a literal `manifest_present` output from an exact Linux check (`if [ -f space/deployment-manifest.json ]; then echo 'present=true' >> "$GITHUB_OUTPUT"; else echo 'present=false' >> "$GITHUB_OUTPUT"; fi`). It never calls manifest generation, export, candidate build, or candidate verification.
+
+That future reviewer invocation also implements one—and only one—of the two
+reviewed checkout-ownership modes above. Matching host UID/GID is derived by the
+controller from the checkout owner and passed as the exact numeric Docker user;
+it is not a candidate-authored constant. If platform constraints require
+`safe.directory` instead, the controller resolves the exact mounted checkout
+outside repository content, passes only that exact path into the container, and
+the reviewer applies only `git -c safe.directory=<exact-resolved-mount> ...` (or
+an equivalently isolated controller-created protected config) after equality
+validation. It never writes global/system config, consumes `.gitconfig` from the
+checkout, accepts multiple directories, or uses `safe.directory=*`. Absence or
+validation failure stops before dependency installation, Git inspection, or
+pytest. The workflow-contract suite proves the selected transfer and all
+negative mutations; remote metadata remains separately blocked.
 
 Both jobs declare `environment: carerisk-contract-custody`. Their tracked `env`
 maps contain exactly these custody references and no tuple values:

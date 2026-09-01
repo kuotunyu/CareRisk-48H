@@ -22,6 +22,7 @@
 - Do not restore `_gradio_test_source_violations`, `_guard_helper_violations`, an AST meta-scanner, or any successor test-source interpreter.
 - All Git object bytes remain binary output from `git cat-file blob`; checkout bytes and text-mode reads remain non-authoritative.
 - Every Git subprocess launched by `tests/test_hf_space_source_boundary.py` receives `timeout=10.0`, uses no shell, captures stdout/stderr, and fails with exact message `bounded Git plumbing failed` without including command arguments, paths, stdout, stderr, environment values, or custody.
+- `_git_ascii_line` is mandatory for every typed Git metadata output: object type, raw size, the object ID returned by `hash-object`, object format, the positive `HEAD:space/tests/test_gradio_contract.py` path-object ID, and bare/non-bare topology tokens. Absolute Git-directory and top-level path outputs instead use `_git_path_line` so non-ASCII filesystem paths remain supported. Decode failure, empty output, multiline output, or non-ASCII typed metadata always maps to the same constant no-context failure.
 - Commit identity is exactly `kuotunyu <61350295+kuotunyu@users.noreply.github.com>` with no co-author.
 - Never stage broadly. The future implementation commit stages exactly `tests/test_hf_space_source_boundary.py`.
 
@@ -257,15 +258,32 @@ def test_git_plumbing_invocation_is_sanitized_bound_and_bounded(
     )
 ```
 
-The remaining parameterized node proves timeout/command/Unicode failures cannot escape or leak captured content:
+The remaining parameterized node preserves exactly three collected rows. The
+timeout and command rows fail at the bounded runner. The single `unicode` row
+first completes real repository discovery/topology, then iterates every
+post-discovery typed-metadata stage plus the bare-identity topology token. It
+injects invalid ASCII bytes, empty output, multiline output, and valid UTF-8
+that is nevertheless non-ASCII. Keeping this matrix inside one pytest row is
+load-bearing: the complete new hardening set must still collect exactly five
+cases rather than silently inflating the acceptance count.
 
 ```python
 @pytest.mark.parametrize("failure", ("timeout", "called_process", "unicode"))
 def test_git_plumbing_failures_are_constant_and_nonsecret(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     failure: str,
 ) -> None:
     synthetic_secret = b"synthetic-private-output"
+    real_run = subprocess.run
+
+    def assert_constant_failure(action: Callable[[], object]) -> None:
+        with pytest.raises(AssertionError) as captured:
+            action()
+        assert str(captured.value) == "bounded Git plumbing failed"
+        assert "synthetic-private-output" not in str(captured.value)
+        assert captured.value.__cause__ is None
+        assert captured.value.__context__ is None
 
     def failing_run(
         command: tuple[str, ...],
@@ -286,20 +304,118 @@ def test_git_plumbing_failures_are_constant_and_nonsecret(
                 output=synthetic_secret,
                 stderr=synthetic_secret,
             )
-        return subprocess.CompletedProcess(
-            command,
-            0,
-            stdout=b"\xff",
-            stderr=synthetic_secret,
-        )
+        raise AssertionError("unreachable failure row")
 
-    monkeypatch.setattr(subprocess, "run", failing_run)
-    with pytest.raises(AssertionError) as captured:
-        _git_bytes(REPOSITORY_ROOT, "rev-parse", "HEAD^{commit}")
-    assert str(captured.value) == "bounded Git plumbing failed"
-    assert "synthetic-private-output" not in str(captured.value)
-    assert captured.value.__cause__ is None
-    assert captured.value.__context__ is None
+    if failure != "unicode":
+        monkeypatch.setattr(subprocess, "run", failing_run)
+        assert_constant_failure(
+            lambda: _git_bytes(REPOSITORY_ROOT, "rev-parse", "HEAD^{commit}")
+        )
+        return
+
+    temporary_repository = _init_temporary_bare_repository(tmp_path)
+    synthetic_raw = b"synthetic object for typed metadata"
+    synthetic_object_id = hashlib.sha1(
+        b"blob " + str(len(synthetic_raw)).encode("ascii") + b"\0" + synthetic_raw
+    ).hexdigest()
+    _git_bytes(
+        temporary_repository,
+        "hash-object",
+        "-w",
+        "--stdin",
+        input_bytes=synthetic_raw,
+    )
+    synthetic_expected = (
+        synthetic_object_id,
+        len(synthetic_raw),
+        hashlib.sha256(synthetic_raw).hexdigest(),
+    )
+
+    typed_stages: tuple[
+        tuple[str, tuple[str, ...], Callable[[], object]], ...
+    ] = (
+        (
+            "positive_path_object_id",
+            ("rev-parse", "HEAD:space/tests/test_gradio_contract.py"),
+            lambda: _git_ascii_line(
+                _git_bytes(
+                    REPOSITORY_ROOT,
+                    "rev-parse",
+                    "HEAD:space/tests/test_gradio_contract.py",
+                )
+            ),
+        ),
+        (
+            "object_type",
+            ("cat-file", "-t", synthetic_object_id),
+            lambda: _assert_git_blob_identity(
+                temporary_repository,
+                synthetic_object_id,
+                synthetic_expected,
+            ),
+        ),
+        (
+            "raw_size",
+            ("cat-file", "-s", synthetic_object_id),
+            lambda: _assert_git_blob_identity(
+                temporary_repository,
+                synthetic_object_id,
+                synthetic_expected,
+            ),
+        ),
+        (
+            "written_object_id",
+            ("hash-object", "-w", "--stdin"),
+            lambda: _write_temporary_blob(temporary_repository, b"second object"),
+        ),
+        (
+            "object_format",
+            ("rev-parse", "--show-object-format"),
+            lambda: _git_ascii_line(
+                _git_bytes(
+                    temporary_repository,
+                    "rev-parse",
+                    "--show-object-format",
+                )
+            ),
+        ),
+        (
+            "bare_identity",
+            ("rev-parse", "--is-bare-repository"),
+            lambda: _git_bytes(
+                temporary_repository,
+                "rev-parse",
+                "--show-object-format",
+            ),
+        ),
+    )
+    invalid_typed_outputs = (
+        b"\xff",
+        b"",
+        b"first\nsecond\n",
+        "non-ascii-\N{LATIN SMALL LETTER E WITH ACUTE}".encode("utf-8"),
+    )
+
+    for _stage, suffix, action in typed_stages:
+        for poisoned_output in invalid_typed_outputs:
+            def poisoning_run(
+                command: tuple[str, ...],
+                **kwargs: Any,
+            ) -> subprocess.CompletedProcess[bytes]:
+                assert kwargs["timeout"] == 10.0
+                completed = real_run(command, **kwargs)
+                if tuple(command[-len(suffix):]) == suffix:
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout=poisoned_output,
+                        stderr=synthetic_secret,
+                    )
+                return completed
+
+            with monkeypatch.context() as context:
+                context.setattr(subprocess, "run", poisoning_run)
+                assert_constant_failure(action)
 ```
 
 Run only the three new nodes:
@@ -312,11 +428,11 @@ Run only the three new nodes:
   -q
 ```
 
-Expected strict RED: exactly 5 collected and 5 failed; no collection error or skip. The routing case must show alternate `GIT_DIR`/`GIT_WORK_TREE` influence, the invocation case must fail for missing `env`/absolute executable/timeout/binding, and the three failure rows must not produce the required constant `AssertionError`. Record this output in the ignored task report.
+Expected strict RED: exactly 5 collected and 5 failed; no collection error or skip. The routing case must show alternate `GIT_DIR`/`GIT_WORK_TREE` influence, the invocation case must fail for missing `env`/absolute executable/timeout/binding, and the three failure rows must not produce the required constant `AssertionError`. In the `unicode` row, the recorded command sequence must prove successful discovery/topology precedes each poisoned post-discovery metadata response; no raw `UnicodeDecodeError` may escape. Record this output in the ignored task report.
 
 - [ ] **Step 3: Implement the deterministic runner and repository identity boundary**
 
-Add `from dataclasses import dataclass`, `import shutil`, and `from typing import Any, NoReturn`. `Any` is used only by the subprocess-recording RED doubles; production helpers retain concrete types. Preserve all existing imports still used elsewhere.
+Add `from dataclasses import dataclass`, `import shutil`, and `from typing import Any, Callable, NoReturn`. `Any` and `Callable` are used only by the subprocess-recording RED doubles; production helpers retain concrete types. Preserve all existing imports still used elsewhere.
 
 Add the fixed constants and failure helper exactly:
 
@@ -415,9 +531,13 @@ def _run_git_process(
     return completed.stdout
 ```
 
-Decode token metadata as strict ASCII and filesystem paths with `os.fsdecode` so
-the repository's non-ASCII Windows path remains valid. Both helpers accept
-exactly one nonempty line and translate decoding errors to the constant failure:
+Decode every typed Git metadata token as strict ASCII and filesystem paths with
+`os.fsdecode` so the repository's non-ASCII Windows path remains valid. Both
+helpers accept exactly one nonempty line and translate decoding errors to the
+constant failure. `_git_ascii_line` is not optional: object type, raw size,
+written object ID, object format, positive path-object ID, and bare identity all
+pass through it before parsing or comparison. `_git_path_line` is mandatory for
+the absolute Git-directory and non-bare top-level discovery outputs:
 
 ```python
 def _single_git_line(value: str) -> str:
@@ -581,7 +701,63 @@ def _init_temporary_bare_repository(tmp_path: Path) -> Path:
 
 `git init` receives the same sanitized environment, absolute executable, captured binary output, `check=True`, and 10-second timeout. After creation, the repository must be bare, its resolved Git directory must equal the requested repository, and its object format must be exact `sha1` before any `hash-object -w --stdin` call.
 
-Keep `_write_temporary_blob`, `_git_blob_bytes`, mutation generation, custody parsing, and `_assert_git_blob_identity` semantically unchanged except that metadata decoding may call `_git_ascii_line` so Unicode failures receive the constant error.
+Replace every inherited typed-metadata decode rather than leaving a permissive
+"may call" seam. The positive path-binding test, temporary writer, and blob
+validator use these exact forms; `_git_blob_bytes` alone remains undecoded raw
+binary output:
+
+```python
+object_id = _git_ascii_line(
+    _git_bytes(
+        REPOSITORY_ROOT,
+        "rev-parse",
+        "HEAD:space/tests/test_gradio_contract.py",
+    )
+)
+
+def _write_temporary_blob(repository: Path, raw: bytes) -> str:
+    object_id = _git_ascii_line(
+        _git_bytes(
+            repository,
+            "hash-object",
+            "-w",
+            "--stdin",
+            input_bytes=raw,
+        )
+    )
+    if re.fullmatch(r"[0-9a-f]{40}", object_id) is None:
+        _raise_git_failure()
+    return object_id
+
+
+def _assert_git_blob_identity(
+    repository: Path,
+    object_id: str,
+    expected: tuple[str, int, str],
+) -> None:
+    expected_blob, expected_size, expected_sha256 = expected
+    if re.fullmatch(r"[0-9a-f]{40}", object_id) is None:
+        _raise_git_failure()
+    object_type = _git_ascii_line(
+        _git_bytes(repository, "cat-file", "-t", object_id)
+    )
+    size_text = _git_ascii_line(
+        _git_bytes(repository, "cat-file", "-s", object_id)
+    )
+    if re.fullmatch(r"0|[1-9][0-9]*", size_text) is None:
+        _raise_git_failure()
+    raw = _git_blob_bytes(repository, object_id)
+    actual_size = int(size_text)
+    actual = (object_id, actual_size, hashlib.sha256(raw).hexdigest())
+    assert object_type == "blob"
+    assert len(raw) == actual_size
+    assert actual == (expected_blob, expected_size, expected_sha256)
+```
+
+Keep mutation generation and custody parsing otherwise unchanged. No `.decode`,
+`.strip`, text-mode read, or alternate decoder remains at a typed Git metadata
+call site. Malformed typed metadata always enters `_raise_git_failure()` and
+therefore has the exact constant message with neither cause nor context.
 
 - [ ] **Step 5: Run five-case GREEN and all prior 13 Architecture C cases**
 
@@ -675,7 +851,7 @@ The fresh reviewer receives the exact reviewed docs BASE-to-candidate diff and b
 2. no inherited key whose uppercase form begins `GIT_` or `CARERISK_` reaches a Git process, apart from the six explicitly set reviewed Git/locale controls;
 3. repository discovery validates absolute Git directory plus bare/non-bare identity, then every object command has explicit resolved Git-directory binding;
 4. bare SHA-1 temp initialization uses the same runner and validates topology/object format before `hash-object`;
-5. timeout, command failure, and Unicode metadata failure expose only `bounded Git plumbing failed`, never stdout, stderr, command, path, or custody;
+5. timeout and command failure plus invalid-ASCII, empty, multiline, and non-ASCII typed metadata at every mandatory decode site expose only `bounded Git plumbing failed`, never stdout, stderr, command, path, custody, cause, context, or a raw `UnicodeDecodeError`;
 6. alternate `GIT_DIR` and `GIT_WORK_TREE` cannot redirect the requested repository;
 7. all prior 13 Architecture C cases and every application/export/frozen-product boundary remain intact;
 8. target/product/tuple/remote/private scope is unchanged.
