@@ -96,6 +96,47 @@ _NETWORK_OR_WATCHER_NAMES = {
     "watch",
     "watchfiles",
 }
+_FORBIDDEN_REFLECTION_NAMES = frozenset(
+    {
+        "getattr",
+        "setattr",
+        "delattr",
+        "hasattr",
+        "vars",
+        "globals",
+        "locals",
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+        "__builtins__",
+    }
+)
+_ALLOWED_DUNDER_NAME_LOADS = frozenset({"__name__", "__file__"})
+_ALLOWED_DUNDER_DEFINITIONS = frozenset({"__init__", "__call__"})
+_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS = frozenset(
+    {"__getattribute__", "__getattr__", "__setattr__", "__delattr__"}
+)
+_FORBIDDEN_REFLECTION_HELPERS = frozenset(
+    {"operator.attrgetter", "operator.methodcaller", "inspect.getattr_static"}
+)
+_FORBIDDEN_STDLIB_CLASS_FACTORIES = frozenset(
+    {"make_dataclass", "namedtuple", "NamedTuple", "TypedDict"}
+)
+_SENSITIVE_COMPOSITION_MEMBERS = frozenset(
+    {
+        "mount_gradio_app",
+        "run",
+        "add_middleware",
+        "add_api_route",
+        "include_router",
+        "get",
+        "post",
+        "route",
+        "build_package_asset_membership",
+        "PublicSurfaceGuard",
+    }
+)
 _PROCESS_CALLS = {
     "asyncio.create_subprocess_exec",
     "asyncio.create_subprocess_shell",
@@ -159,9 +200,7 @@ def _module_literal_assignment(tree: ast.Module, name: str) -> object | None:
             and isinstance(node.target, ast.Name)
             and node.target.id == name
             or isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == name for target in node.targets
-            )
+            and any(isinstance(target, ast.Name) and target.id == name for target in node.targets)
         )
     ]
     if len(assignments) != 1:
@@ -250,10 +289,13 @@ def _approved_evidence_read_calls(tree: ast.Module) -> set[ast.Call]:
         return set()
     assert isinstance(path_assignments[0].targets[0], ast.Name)
     path_name = path_assignments[0].targets[0].id
-    if sum(
-        isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == path_name
-        for node in ast.walk(reader)
-    ) != 1:
+    if (
+        sum(
+            isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == path_name
+            for node in ast.walk(reader)
+        )
+        != 1
+    ):
         return set()
     required_regular_file_calls = {
         f"{path_name}.lstat",
@@ -339,12 +381,181 @@ def _approved_evidence_read_calls(tree: ast.Module) -> set[ast.Call]:
     return {reads[0]}
 
 
+def _is_dunder(name: str) -> bool:
+    return len(name) > 4 and name.startswith("__") and name.endswith("__")
+
+
+def _permitted_all_target(tree: ast.AST) -> ast.Name | None:
+    if not isinstance(tree, ast.Module):
+        return None
+    declarations: list[ast.Assign | ast.AnnAssign] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if any(
+            isinstance(name, ast.Name) and name.id == "__all__"
+            for target in targets
+            for name in ast.walk(target)
+        ):
+            declarations.append(node)
+    if len(declarations) != 1:
+        return None
+    declaration = declarations[0]
+    if isinstance(declaration, ast.Assign):
+        if (
+            len(declaration.targets) != 1
+            or not isinstance(declaration.targets[0], ast.Name)
+            or declaration.targets[0].id != "__all__"
+        ):
+            return None
+        target = declaration.targets[0]
+    else:
+        if not isinstance(declaration.target, ast.Name) or declaration.target.id != "__all__":
+            return None
+        target = declaration.target
+    value = declaration.value
+    if not isinstance(value, (ast.List, ast.Tuple)) or not all(
+        isinstance(item, ast.Constant) and isinstance(item.value, str) for item in value.elts
+    ):
+        return None
+    return target
+
+
+def _has_type_binding(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "type"
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+        ):
+            return True
+        if isinstance(node, ast.arg) and node.arg == "type":
+            return True
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and node.name == "type"
+        ):
+            return True
+        if isinstance(node, ast.alias):
+            effective_name = node.asname or node.name.split(".", 1)[0]
+            if effective_name == "type":
+                return True
+        if isinstance(node, ast.ExceptHandler) and node.name == "type":
+            return True
+        if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name == "type":
+            return True
+        if isinstance(node, ast.MatchMapping) and node.rest == "type":
+            return True
+    return False
+
+
+def _permitted_type_loads(
+    tree: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> set[ast.Name]:
+    permitted: set[ast.Name] = set()
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Name) and node.id == "type" and isinstance(node.ctx, ast.Load)
+        ):
+            continue
+        call = parents.get(node)
+        if not (
+            isinstance(call, ast.Call)
+            and call.func is node
+            and len(call.args) == 1
+            and not isinstance(call.args[0], ast.Starred)
+            and not call.keywords
+        ):
+            continue
+        compare = parents.get(call)
+        if not (
+            isinstance(compare, ast.Compare)
+            and compare.left is call
+            and len(compare.ops) == 1
+            and len(compare.comparators) == 1
+            and isinstance(compare.ops[0], (ast.Is, ast.IsNot))
+            and isinstance(compare.comparators[0], ast.Name)
+            and compare.comparators[0].id in {"str", "int", "frozenset"}
+        ):
+            continue
+        permitted.add(node)
+    return permitted
+
+
+def _dynamic_reflection_violations(tree: ast.AST) -> list[str]:
+    violations: set[str] = set()
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    permitted_all_target = _permitted_all_target(tree)
+    has_type_binding = _has_type_binding(tree)
+    permitted_type_loads = set() if has_type_binding else _permitted_type_loads(tree, parents)
+    if has_type_binding:
+        violations.add("dynamic_type_binding")
+
+    class_factory_modules = {"types", "dataclasses", "collections", "typing"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            try:
+                context = node.ctx
+            except AttributeError:
+                context = ast.Load()
+            if isinstance(context, ast.Load):
+                if node.id in _FORBIDDEN_REFLECTION_NAMES or (
+                    _is_dunder(node.id) and node.id not in _ALLOWED_DUNDER_NAME_LOADS
+                ):
+                    violations.add(node.id)
+                elif node.id == "type" and node not in permitted_type_loads:
+                    violations.add("dynamic_type")
+            elif (
+                isinstance(context, (ast.Store, ast.Del))
+                and _is_dunder(node.id)
+                and node is not permitted_all_target
+            ):
+                violations.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            if _is_dunder(node.attr):
+                violations.add(node.attr)
+            call_name = _call_name(node)
+            if call_name in _FORBIDDEN_REFLECTION_HELPERS:
+                assert call_name is not None
+                violations.add(call_name)
+            if node.attr in _FORBIDDEN_STDLIB_CLASS_FACTORIES:
+                violations.add("dynamic_class_factory")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if _is_dunder(node.name) and node.name not in _ALLOWED_DUNDER_DEFINITIONS:
+                violations.add(node.name)
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in _FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS
+        ):
+            violations.add(node.value)
+        elif isinstance(node, ast.Import):
+            if any(alias.name == "types" for alias in node.names):
+                violations.add("dynamic_class_factory")
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            root = node.module.split(".", 1)[0]
+            if root == "types" and any(alias.name != "MappingProxyType" for alias in node.names):
+                violations.add("dynamic_class_factory")
+            if root in {"dataclasses", "collections", "typing"} and any(
+                alias.name in _FORBIDDEN_STDLIB_CLASS_FACTORIES for alias in node.names
+            ):
+                violations.add("dynamic_class_factory")
+            if root in class_factory_modules and any(alias.name == "*" for alias in node.names):
+                violations.add("dynamic_class_factory")
+    return sorted(violations)
+
+
 def scan_capabilities(paths: Iterable[Path]) -> list[str]:
     """Find capability-bearing source constructs that have no public-Space role."""
 
-    violations: list[str] = []
+    violations: set[str] = set()
     for path in paths:
         tree = _tree(path)
+        violations.update(
+            f"{path.name}:{suffix}" for suffix in _dynamic_reflection_violations(tree)
+        )
         approved_evidence_reads = (
             _approved_evidence_read_calls(tree)
             if path == SPACE_ROOT / "carerisk_space" / "evidence.py"
@@ -352,7 +563,7 @@ def scan_capabilities(paths: Iterable[Path]) -> list[str]:
         )
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "environ":
-                violations.append(f"{path.name}:environment")
+                violations.add(f"{path.name}:environment")
             if not isinstance(node, ast.Call):
                 continue
             name = _call_name(node.func)
@@ -366,28 +577,28 @@ def scan_capabilities(paths: Iterable[Path]) -> list[str]:
                     or not isinstance(mode.value, str)
                     or any(marker in mode.value for marker in "wax+")
                 ):
-                    violations.append(f"{path.name}:open")
+                    violations.add(f"{path.name}:open")
             if attr in _WRITE_METHODS:
-                violations.append(f"{path.name}:{attr}")
+                violations.add(f"{path.name}:{attr}")
             if attr in _READ_METHODS:
                 if node in approved_evidence_reads:
                     continue
-                violations.append(f"{path.name}:{attr}")
+                violations.add(f"{path.name}:{attr}")
             if name in _DYNAMIC_OR_PROCESS_CALLS or name == "importlib.import_module":
-                violations.append(f"{path.name}:{attr or name}")
+                violations.add(f"{path.name}:{attr or name}")
             if name in _PROCESS_CALLS:
-                violations.append(f"{path.name}:{attr}")
+                violations.add(f"{path.name}:{attr}")
             if attr in _DISCOVERY_METHODS:
-                violations.append(f"{path.name}:{attr}")
+                violations.add(f"{path.name}:{attr}")
             if name == "Path" and node.args and isinstance(node.args[0], ast.Constant):
                 value = node.args[0].value
                 if isinstance(value, str) and (value.startswith("/") or value.startswith("~")):
-                    violations.append(f"{path.name}:absolute_path")
+                    violations.add(f"{path.name}:absolute_path")
             if name and name.startswith("os.path."):
-                violations.append(f"{path.name}:os_path")
+                violations.add(f"{path.name}:os_path")
             if attr in _NETWORK_OR_WATCHER_NAMES or name in _NETWORK_OR_WATCHER_NAMES:
-                violations.append(f"{path.name}:{attr or name}")
-    return violations
+                violations.add(f"{path.name}:{attr or name}")
+    return sorted(violations)
 
 
 def _imports(path: Path) -> set[tuple[str, tuple[str, ...]]]:
@@ -501,8 +712,7 @@ def _bounded_aliases(
     assignments = [
         node
         for node in ast.walk(tree)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        and node.value is not None
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None
     ]
     for _ in range(len(assignments) + 1):
         changed = False
@@ -541,6 +751,8 @@ def _entrypoint_violations(tree: ast.Module) -> list[str]:
     """Require the only server call to be reached solely through the main guard."""
 
     violations: set[str] = set()
+    if _dynamic_reflection_violations(tree):
+        violations.add("builtin_reflection")
     aliases, sensitive_assignments = _simple_aliases(tree)
     main_guards = [node for node in tree.body if _is_main_guard(node)]
     main_functions = [
@@ -588,10 +800,10 @@ def _entrypoint_violations(tree: ast.Module) -> list[str]:
         violations.add("builtin_reflection")
     for node in ast.walk(tree):
         for target in _assignment_targets(node):
-            if (
-                isinstance(target, ast.Attribute)
-                and _resolved_name(target, aliases) in {"gr.mount_gradio_app", "uvicorn.run"}
-            ):
+            if isinstance(target, ast.Attribute) and _resolved_name(target, aliases) in {
+                "gr.mount_gradio_app",
+                "uvicorn.run",
+            }:
                 violations.add("framework_monkeypatch")
         if not isinstance(node, ast.Call):
             continue
@@ -791,6 +1003,252 @@ def test_application_has_no_write_env_process_network_or_dynamic_code_capability
     assert scan_capabilities(APP_SOURCES) == []
 
 
+@pytest.mark.parametrize(
+    "forbidden_name",
+    (
+        "getattr",
+        "setattr",
+        "delattr",
+        "hasattr",
+        "vars",
+        "globals",
+        "locals",
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+    ),
+)
+def test_application_forbidden_reflection_name_load_is_denied(
+    tmp_path: Path,
+    forbidden_name: str,
+) -> None:
+    for source in (
+        forbidden_name,
+        f"alias = {forbidden_name}",
+        f"def capture(value={forbidden_name}):\n    return value",
+        f"capture = lambda: {forbidden_name}",
+        f"captured = ({forbidden_name} := {forbidden_name})",
+        f"captured = [{forbidden_name}]",
+    ):
+        synthetic = tmp_path / "synthetic.py"
+        synthetic.write_text(source, encoding="utf-8")
+        assert f"synthetic.py:{forbidden_name}" in scan_capabilities((synthetic,))
+
+
+@pytest.mark.parametrize(
+    "forbidden_name",
+    (
+        "getattr",
+        "setattr",
+        "delattr",
+        "hasattr",
+        "vars",
+        "globals",
+        "locals",
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+    ),
+)
+def test_application_implicit_builtins_mapping_is_denied(
+    tmp_path: Path,
+    forbidden_name: str,
+) -> None:
+    for source in (
+        f'captured = __builtins__["{forbidden_name}"]',
+        f'captured = __builtins__.get("{forbidden_name}")',
+    ):
+        synthetic = tmp_path / "synthetic.py"
+        synthetic.write_text(source, encoding="utf-8")
+        assert "synthetic.py:__builtins__" in scan_capabilities((synthetic,))
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected_suffix"),
+    (
+        ("target.__getattribute__", "__getattribute__"),
+        ("target.__getattr__", "__getattr__"),
+        ("target.__setattr__", "__setattr__"),
+        ("target.__delattr__", "__delattr__"),
+        ("target.__dict__", "__dict__"),
+        ("target.__globals__", "__globals__"),
+        ("target.__class__", "__class__"),
+        ("operator.attrgetter", "operator.attrgetter"),
+        ("operator.methodcaller", "operator.methodcaller"),
+        ("inspect.getattr_static", "inspect.getattr_static"),
+    ),
+)
+def test_application_forbidden_reflective_attribute_load_is_denied(
+    tmp_path: Path,
+    expression: str,
+    expected_suffix: str,
+) -> None:
+    for source in (expression, f"alias = {expression}"):
+        synthetic = tmp_path / "synthetic.py"
+        synthetic.write_text(source, encoding="utf-8")
+        assert f"synthetic.py:{expected_suffix}" in scan_capabilities((synthetic,))
+
+
+@pytest.mark.parametrize(
+    "hook_name",
+    ("__getattribute__", "__getattr__", "__setattr__", "__delattr__", "__iter__"),
+)
+def test_application_dynamic_protocol_definitions_are_denied(
+    tmp_path: Path,
+    hook_name: str,
+) -> None:
+    synthetic = tmp_path / "synthetic.py"
+    synthetic.write_text(
+        f"class Dynamic:\n    def {hook_name}(self, *args):\n        return None\n",
+        encoding="utf-8",
+    )
+    assert f"synthetic.py:{hook_name}" in scan_capabilities((synthetic,))
+
+
+def test_application_dunder_assignment_and_dynamic_class_construction_are_denied(
+    tmp_path: Path,
+) -> None:
+    mutations = (
+        (
+            "class Dynamic:\n    __getattr__ = lambda self, name: None",
+            "__getattr__",
+        ),
+        (
+            "class Dynamic:\n    __getattr__: object = handler",
+            "__getattr__",
+        ),
+        (
+            "class Dynamic:\n    __getattr__ += handler",
+            "__getattr__",
+        ),
+        ("del __getattr__", "__getattr__"),
+        (
+            "Dynamic = type('Dynamic', (), {'__getattr__': handler})",
+            "dynamic_type",
+        ),
+        (
+            "class_factory = type\nDynamic = class_factory('Dynamic', (), {})",
+            "dynamic_type",
+        ),
+        (
+            "factory = type(ExistingClass)\nDynamic = factory('Dynamic', (), {})",
+            "dynamic_type",
+        ),
+        (
+            "Dynamic = type(ExistingClass)('Dynamic', (), {})",
+            "dynamic_type",
+        ),
+        ("Dynamic = type(*args)", "dynamic_type"),
+        ("type = factory\ntype(value) is str", "dynamic_type_binding"),
+        (
+            "def validate(type):\n    return type(value) is str",
+            "dynamic_type_binding",
+        ),
+        ("def type(value):\n    return value", "dynamic_type_binding"),
+        ("class type:\n    pass", "dynamic_type_binding"),
+        (
+            "import dataclasses as type\ntype.make_dataclass('Dynamic', [])",
+            "dynamic_type_binding",
+        ),
+        (
+            "from dataclasses import make_dataclass as type\ntype('Dynamic', []) is str",
+            "dynamic_type_binding",
+        ),
+        (
+            "try:\n    raise RuntimeError\nexcept RuntimeError as type:\n    pass",
+            "dynamic_type_binding",
+        ),
+        ("match value:\n    case type:\n        pass", "dynamic_type_binding"),
+        (
+            "from types import new_class\nDynamic = new_class('Dynamic')",
+            "dynamic_class_factory",
+        ),
+        ("import types", "dynamic_class_factory"),
+        ("import types as t", "dynamic_class_factory"),
+        ("from types import new_class as factory", "dynamic_class_factory"),
+        (
+            "from types import MappingProxyType, new_class",
+            "dynamic_class_factory",
+        ),
+        (
+            "import dataclasses\nDynamic = dataclasses.make_dataclass('Dynamic', [])",
+            "dynamic_class_factory",
+        ),
+        (
+            "from dataclasses import make_dataclass as factory\nDynamic = factory('Dynamic', [])",
+            "dynamic_class_factory",
+        ),
+        (
+            "import collections as c\nDynamic = c.namedtuple('Dynamic', 'value')",
+            "dynamic_class_factory",
+        ),
+        (
+            "from collections import namedtuple as factory\nDynamic = factory('Dynamic', 'value')",
+            "dynamic_class_factory",
+        ),
+        (
+            "import typing\nDynamic = typing.NamedTuple('Dynamic', [('value', int)])",
+            "dynamic_class_factory",
+        ),
+        (
+            "from typing import TypedDict as factory\nDynamic = factory('Dynamic', {'value': int})",
+            "dynamic_class_factory",
+        ),
+        ("from typing import *", "dynamic_class_factory"),
+    )
+    synthetic = tmp_path / "synthetic.py"
+    for source, expected_suffix in mutations:
+        synthetic.write_text(source, encoding="utf-8")
+        assert f"synthetic.py:{expected_suffix}" in scan_capabilities((synthetic,))
+
+    for source in (
+        'class Dynamic:\n    __all__ = ["NotAllowed"]',
+        '__all__ = ["Allowed"]\n__all__: tuple[str, ...] = ("AlsoAllowed",)',
+        "__all__ = [runtime_name]",
+    ):
+        synthetic.write_text(source, encoding="utf-8")
+        assert "synthetic.py:__all__" in scan_capabilities((synthetic,))
+
+    for source in (
+        '__all__ = ["Allowed"]',
+        '__all__: tuple[str, ...] = ("Allowed",)',
+        "type(value) is not str",
+        "type(value) is not int",
+        "type(value) is not frozenset",
+    ):
+        synthetic.write_text(source, encoding="utf-8")
+        assert scan_capabilities((synthetic,)) == []
+
+    for source in (
+        "type(value)",
+        "type(type(value)) is str",
+        "type(*values) is str",
+    ):
+        synthetic.write_text(source, encoding="utf-8")
+        assert "synthetic.py:dynamic_type" in scan_capabilities((synthetic,))
+
+
+def test_application_syntax_identities_are_not_reflection(tmp_path: Path) -> None:
+    synthetic = tmp_path / "synthetic.py"
+    synthetic.write_text(
+        """from __future__ import annotations
+
+__all__ = ["CallableGuard"]
+
+class CallableGuard:
+    def __init__(self) -> None:
+        self.source = __file__
+
+    def __call__(self) -> str:
+        return __name__
+""",
+        encoding="utf-8",
+    )
+    assert scan_capabilities((synthetic,)) == []
+
+
 def test_capability_scanner_rejects_each_publicly_forbidden_capability(tmp_path: Path) -> None:
     synthetic_source = tmp_path / "synthetic.py"
     synthetic_source.write_text(
@@ -880,9 +1338,7 @@ def arbitrary_reader(bundle_root):
 """
         ).body
     )
-    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == [
-        "evidence.py:read_bytes"
-    ]
+    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == ["evidence.py:read_bytes"]
 
 
 def test_evidence_reader_rejects_an_arbitrary_path_inside_the_approved_function(
@@ -902,9 +1358,7 @@ def test_evidence_reader_rejects_an_arbitrary_path_inside_the_approved_function(
         args=[ast.Constant(value="private")],
         keywords=[],
     )
-    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == [
-        "evidence.py:read_bytes"
-    ]
+    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == ["evidence.py:read_bytes"]
 
 
 def test_evidence_reader_rejects_expansion_beyond_exact_public_source_names(
@@ -923,9 +1377,7 @@ def test_evidence_reader_rejects_expansion_beyond_exact_public_source_names(
     )
     assert isinstance(literal_paths.value, ast.Set)
     literal_paths.value.elts.append(ast.Constant(value="README.md"))
-    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == [
-        "evidence.py:read_bytes"
-    ]
+    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == ["evidence.py:read_bytes"]
 
 
 def test_evidence_reader_rejects_a_disabled_regular_file_guard(
@@ -942,9 +1394,7 @@ def test_evidence_reader_rejects_a_disabled_regular_file_guard(
     regular_guard.test = ast.BoolOp(
         op=ast.And(), values=[ast.Constant(value=False), regular_guard.test]
     )
-    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == [
-        "evidence.py:read_bytes"
-    ]
+    assert _scan_mutated_evidence(monkeypatch, tmp_path, mutated) == ["evidence.py:read_bytes"]
 
 
 def test_ui_framework_import_scanner_rejects_extra_members_and_aliases() -> None:
@@ -1120,7 +1570,7 @@ def test_entrypoint_scanner_rejects_second_uvicorn_and_parent_route() -> None:
     assert _entrypoint_violations(mutated) == ["parent_route", "uvicorn_main_guard"]
 
 
-@pytest.mark.parametrize("method", ("add_middleware", "get"))  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize("method", ("add_middleware", "get"))
 def test_entrypoint_scanner_rejects_parent_alias_lineage(method: str) -> None:
     mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
     mutated.body.extend(
@@ -1135,13 +1585,9 @@ def test_entrypoint_scanner_rejects_parent_alias_lineage(method: str) -> None:
 def test_entrypoint_scanner_rejects_mount_and_uvicorn_alias_calls() -> None:
     mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
     mutated.body.extend(
-        ast.parse(
-            "mount = gr.mount_gradio_app\nmount(parent, demo)\nserver_main = main"
-        ).body
+        ast.parse("mount = gr.mount_gradio_app\nmount(parent, demo)\nserver_main = main").body
     )
-    _function(mutated, "main").body.extend(
-        ast.parse("runner = uvicorn.run\nrunner(app)").body
-    )
+    _function(mutated, "main").body.extend(ast.parse("runner = uvicorn.run\nrunner(app)").body)
     violations = _entrypoint_violations(mutated)
     assert "framework_alias" in violations
     assert "mount_count" in violations
@@ -1154,7 +1600,7 @@ def test_entrypoint_scanner_rejects_module_scope_main_alias_assignment() -> None
     assert "uvicorn_main_guard" in _entrypoint_violations(mutated)
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     "statement",
     (
         "canary = gr.mount_gradio_app = replacement",
@@ -1169,7 +1615,7 @@ def test_entrypoint_scanner_rejects_every_framework_assignment_form(statement: s
     assert "framework_monkeypatch" in _entrypoint_violations(mutated)
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     ("source", "expected"),
     (
         (
@@ -1204,6 +1650,24 @@ def test_entrypoint_scanner_rejects_builtin_reflection_alias_chains(
     mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
     mutated.body.extend(ast.parse(source).body)
     assert expected <= set(_entrypoint_violations(mutated))
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        'mount = gr.__getattribute__("mount_gradio_app")\nmount(parent, demo)',
+        'route = parent.__getattribute__("get")\n@route("/hidden")\ndef hidden():\n    pass',
+        "member = runtime_member\nmount = gr.__getattribute__(member)\nmount(parent, demo)",
+        'mount = vars(gr)["mount_gradio_app"]\nmount(parent, demo)',
+        'mount = gr.__dict__["mount_gradio_app"]\nmount(parent, demo)',
+    ),
+)
+def test_entrypoint_scanner_rejects_reflection_without_resolving_forbidden_flow(
+    source: str,
+) -> None:
+    mutated = ast.parse(ast.unparse(_tree(APP_ENTRY)))
+    mutated.body.extend(ast.parse(source).body)
+    assert {"builtin_reflection"} <= set(_entrypoint_violations(mutated))
 
 
 def test_ui_uses_only_the_pinned_framework_surface_and_asset_builder_is_fail_closed() -> None:
@@ -1265,7 +1729,7 @@ def test_asset_builder_scanner_rejects_every_required_fail_closed_step() -> None
         assert expected in _asset_builder_violations(mutated)
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     "condition",
     (
         "root.is_symlink()",
@@ -1388,7 +1852,7 @@ def test_asset_builder_fake_root_symlink_branch_fails_without_platform_skip(
         ui_module.build_package_asset_membership()
 
 
-@pytest.mark.parametrize("directory", (False, True))  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize("directory", (False, True))
 def test_asset_builder_fake_file_and_directory_symlink_branches_fail(
     monkeypatch: pytest.MonkeyPatch,
     directory: bool,
@@ -1538,11 +2002,89 @@ def _expected_rejection_guard_calls(
     return calls
 
 
+def _sensitive_reflection_in_helper(
+    function: ast.FunctionDef,
+    aliases: dict[str, str],
+) -> bool:
+    sensitive_roots = frozenset({"ui_module", "gr", "parent", "uvicorn"})
+
+    def is_sensitive_receiver(node: ast.expr) -> bool:
+        resolved = _resolved_name(node, aliases)
+        return resolved is not None and any(
+            resolved == root or resolved.startswith(f"{root}.") for root in sensitive_roots
+        )
+
+    builtin_mapping_aliases: set[str] = set()
+    for node in ast.walk(function):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+            continue
+        if not any(
+            isinstance(item, ast.Name) and item.id == "__builtins__"
+            for item in ast.walk(node.value)
+        ):
+            continue
+        builtin_mapping_aliases.update(
+            target.id for target in _assignment_targets(node) if isinstance(target, ast.Name)
+        )
+
+    for node in ast.walk(function):
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr
+            in (_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS | {"__dict__", "__globals__", "__class__"})
+            and is_sensitive_receiver(node.value)
+        ):
+            return True
+        if not isinstance(node, ast.Call):
+            continue
+        call_name = _resolved_name(node.func, aliases)
+        if (
+            call_name in _FORBIDDEN_REFLECTION_NAMES
+            and node.args
+            and is_sensitive_receiver(node.args[0])
+        ):
+            return True
+        if (
+            call_name in _FORBIDDEN_REFLECTION_HELPERS
+            and node.args
+            and is_sensitive_receiver(node.args[0])
+        ):
+            return True
+        if (
+            isinstance(node.func, ast.Call)
+            and _resolved_name(node.func.func, aliases) in _FORBIDDEN_REFLECTION_HELPERS
+            and node.args
+            and is_sensitive_receiver(node.args[0])
+        ):
+            return True
+        if (
+            node.args
+            and is_sensitive_receiver(node.args[0])
+            and (
+                isinstance(node.func, ast.Name)
+                and node.func.id in builtin_mapping_aliases
+                or any(
+                    isinstance(item, ast.Name) and item.id == "__builtins__"
+                    for item in ast.walk(node.func)
+                )
+            )
+        ):
+            return True
+    return False
+
+
 def _guard_helper_violations(tree: ast.Module) -> list[str]:
     violations: list[str] = []
     functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
     for function in functions:
-        aliases, _ = _bounded_aliases(function, frozenset({"getattr", "ui_module"}))
+        aliases, _ = _bounded_aliases(
+            function,
+            frozenset({"ui_module", "gr", "parent", "uvicorn"})
+            | _FORBIDDEN_REFLECTION_NAMES
+            | _FORBIDDEN_REFLECTION_HELPERS,
+        )
+        if _sensitive_reflection_in_helper(function, aliases):
+            violations.append(f"{function.name}:sensitive_reflection")
         all_guard_calls = _resolved_calls(function, aliases, "ui_module.PublicSurfaceGuard")
         if not all_guard_calls:
             continue
@@ -1617,8 +2159,7 @@ def _guard_helper_violations(tree: ast.Module) -> list[str]:
         checkpoints = [*type_assertions, *truthy_assertions]
         if checkpoints and not (
             assignment.lineno < min(node.lineno for node in checkpoints)
-            and max(node.lineno for node in checkpoints)
-            < min(call.lineno for call in guard_calls)
+            and max(node.lineno for node in checkpoints) < min(call.lineno for call in guard_calls)
         ):
             violations.append(f"{function.name}:builder_assertion_order")
     return violations
@@ -1691,7 +2232,85 @@ def _compose(parent):
     assert _guard_helper_violations(tree) == []
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+def test_guard_helper_audit_rejects_sensitive_reflection_candidates() -> None:
+    sources = (
+        """
+def _compose(parent):
+    builder = ui_module.__getattribute__("build_package_asset_membership")
+    guard = ui_module.__getattribute__("PublicSurfaceGuard")
+    membership = builder()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return guard(parent, membership)
+""",
+        """
+def _compose(parent):
+    builder = vars(ui_module)["build_package_asset_membership"]
+    guard = vars(ui_module)["PublicSurfaceGuard"]
+    membership = builder()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return guard(parent, membership)
+""",
+        """
+def _compose(parent):
+    builder = ui_module.__dict__["build_package_asset_membership"]
+    guard = ui_module.__dict__["PublicSurfaceGuard"]
+    membership = builder()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return guard(parent, membership)
+""",
+        """
+def _compose(parent):
+    member = runtime_member
+    guard = ui_module.__getattribute__(member)
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return guard(parent, membership)
+""",
+        """
+def _compose(parent):
+    reflect = getattr
+    member = runtime_member
+    guard = reflect(ui_module, member)
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return guard(parent, membership)
+""",
+        """
+def _compose(parent):
+    reflect = __builtins__["getattr"]
+    guard = reflect(ui_module, "PublicSurfaceGuard")
+    membership = ui_module.build_package_asset_membership()
+    assert isinstance(membership, frozenset)
+    assert membership
+    return guard(parent, membership)
+""",
+    )
+    for source in sources:
+        assert _guard_helper_violations(ast.parse(source))
+
+
+def test_guard_helper_audit_allows_unrelated_test_introspection() -> None:
+    tree = ast.parse(
+        """
+def _other_member(other):
+    return getattr(other, "get")
+
+def _original_router(inner):
+    return getattr(inner, "original_router", None)
+
+def _unix_family(socket):
+    return getattr(socket, "AF_UNIX", None)
+"""
+    )
+    assert _guard_helper_violations(tree) == []
+
+
+@pytest.mark.parametrize(
     "body",
     (
         "return guard_alias(parent, membership)",
