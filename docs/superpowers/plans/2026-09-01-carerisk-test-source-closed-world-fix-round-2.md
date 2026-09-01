@@ -23,26 +23,26 @@
 
 Controller supplies an exact clean BASE on `docs/carerisk-hf-space-design`, exact remote `https://github.com/kuotunyu/CareRisk-48H.git`. Verify `28e8ce88...` is an ancestor, its single-file scope/Gradio/product freeze remains intact, and worktree is clean.
 
-- [ ] **Step 2: Add exact 50-case RED matrix**
+- [ ] **Step 2: Add exact 52-case RED matrix**
 
 Add four stable parameterized nodes, each appending mutations to the complete current Gradio source and requiring the stated new category tag in both source and helper findings:
 
-1. `test_gradio_contract_protected_reexports_are_denied` — 8 rows, tag `protected_attr:<name>`;
+1. `test_gradio_contract_protected_reexports_are_denied` — 10 rows, tag `protected_attr:<name>`;
 2. `test_gradio_contract_loader_object_context_is_exact` — 10 rows, tag `loader:context`;
 3. `test_gradio_contract_setattr_calls_are_canonical` — 26 rows, tag `monkeypatch:canonical`;
 4. `test_gradio_contract_reflection_parents_are_exact` — 6 rows, tag `exact_parent:<member>`.
 
-Protected re-export rows include `ui_module.gr`, `entrypoint.gr`, captured `entrypoint.uvicorn`, `ui_module.Path`, `evidence_module.Path`, and equivalent `inspect`/`importlib`/`sys` re-exports. Preserve only the exact `entrypoint.uvicorn` node in the canonical `run` monkeypatch call.
+Protected re-export rows include seven base cases—`ui_module.gr`, `entrypoint.gr`, captured `entrypoint.uvicorn`, `ui_module.Path`, `evidence_module.Path`, `ui_module.inspect`, and `evidence_module.importlib`—plus three near misses for the current direct socket constructor: capture `constructor = socket.socket`, an alternate receiver `other.socket(...)`, and a second `socket.socket(...)` call. Preserve only the exact `entrypoint.uvicorn` node in the canonical `run` monkeypatch call and the exact single direct `socket.socket(unix_family, socket.SOCK_STREAM)` call described in Step 3.
 
 Loader rows include `loader_alias = spec.loader`, `get_code`, `get_data`, `create_module`, extra `exec_module`, altered/moved assertion, reordered statements, captured `spec`, and another `spec.loader` use. Setattr rows mutate the third argument of each one of the 26 committed calls while preserving target/member, including `render_scenario -> os.system` and both helper-internal calls. Exact-parent rows include signature-result capture, `.return_annotation`, altered Parameter.empty parent, `super` nested under `if False`, `try`, and a non-first statement.
 
-Run exactly these four nodes against rejected candidate behavior before implementation: expected 50 collected and 50 failed because the new category tags are absent. After implementation the same exact nodes must collect 50 and pass 50. Unrelated findings do not satisfy the tests.
+Run exactly these four nodes against rejected candidate behavior before implementation: expected 52 collected and 52 failed because the new category tags are absent. After implementation the same exact nodes must collect 52 and pass 52. Unrelated findings do not satisfy the tests.
 
 - [ ] **Step 3: Deny protected re-export attributes**
 
 Create a receiver-independent protected attribute set: `inspect`, `importlib`, `socket`, `sys`, `pytest`, `ui_module`, `gr`, `uvicorn`, `Path`, `SPACE_ROOT`, and `AppEntryMarker`. Reject every Attribute with one of these names before exceptions.
 
-Construct exactly one allowed node: `entrypoint.uvicorn` as argument 0 of the exact canonical `monkeypatch.setattr(entrypoint.uvicorn, "run", fake_run)` call in the exact entrypoint owner. The whole call must also be one of the 26 canonical calls. No other receiver or parent context is allowed.
+Construct exactly two allowed protected-attribute nodes. The first is `entrypoint.uvicorn` as argument 0 of the exact canonical `monkeypatch.setattr(entrypoint.uvicorn, "run", fake_run)` call in the exact entrypoint owner; the whole call must also be one of the 26 canonical calls. The second is the `socket.socket` Call.func node in the sole direct call `socket.socket(unix_family, socket.SOCK_STREAM)` owned by `test_package_asset_special_file_fails_closed`; require exactly one occurrence, exactly those two positional arguments, and zero keywords. Capturing that member, changing its receiver or call shape, or adding another occurrence is denied. No other receiver or parent context is allowed.
 
 - [ ] **Step 4: Freeze the spec/loader chain**
 
@@ -73,7 +73,7 @@ Allowed inspect/guard/super nodes must be descendants of these complete parents 
 
 - [ ] **Step 6: Run GREEN and full gates**
 
-Run the four new nodes (50/50), the previous four fix-round-1 nodes (81/81), the existing closed-world/source/helper nodes, full boundary/export, and the frozen Gradio suite. Then run Ruff check/format and strict Mypy on the boundary file plus scope/frozen/diff/identity gates.
+Run the four new nodes (52/52), the previous four fix-round-1 nodes (81/81), the existing closed-world/source/helper nodes, full boundary/export, and the frozen Gradio suite. Then run Ruff check/format and strict Mypy on the boundary file plus scope/frozen/diff/identity gates.
 
 ```powershell
 .venv-space\Scripts\python.exe -m pytest -q `
