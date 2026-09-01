@@ -7,9 +7,12 @@ import hashlib
 import importlib
 import os
 import re
+import shutil
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, NoReturn
 
 import pytest
 
@@ -2072,6 +2075,30 @@ _GRADIO_CONTRACT_BLOB_ENV = "CARERISK_GRADIO_CONTRACT_BLOB_SHA1"
 _GRADIO_CONTRACT_SIZE_ENV = "CARERISK_GRADIO_CONTRACT_RAW_SIZE"
 _GRADIO_CONTRACT_SHA256_ENV = "CARERISK_GRADIO_CONTRACT_RAW_SHA256"
 
+_GIT_RUNTIME_ENV_ALLOWLIST = frozenset(
+    {
+        "COMSPEC",
+        "PATH",
+        "PATHEXT",
+        "SYSTEMDRIVE",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "WINDIR",
+    }
+)
+_GIT_FIXED_ENVIRONMENT = {
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_OPTIONAL_LOCKS": "0",
+    "LC_ALL": "C",
+    "LANG": "C",
+}
+_GIT_TIMEOUT_SECONDS = 10.0
+_GIT_FAILURE_MESSAGE = "bounded Git plumbing failed"
+
 _GRADIO_GIT_OBJECT_MUTATIONS = (
     "same_length_substitution",
     "insert_byte",
@@ -2097,27 +2124,183 @@ def _controller_gradio_contract_identity() -> tuple[str, int, str]:
     return blob, int(size_text), sha256
 
 
+def _raise_git_failure() -> NoReturn:
+    raise AssertionError(_GIT_FAILURE_MESSAGE) from None
+
+
+def _sanitized_git_environment() -> dict[str, str]:
+    environment: dict[str, str] = {}
+    for name, value in os.environ.items():
+        upper_name = name.upper()
+        if upper_name.startswith("GIT_") or upper_name.startswith("CARERISK_"):
+            continue
+        if name != upper_name or upper_name not in _GIT_RUNTIME_ENV_ALLOWLIST:
+            continue
+        environment[upper_name] = value
+    environment.update(_GIT_FIXED_ENVIRONMENT)
+    return environment
+
+
+def _resolved_git_executable() -> Path:
+    located = shutil.which("git")
+    if located is None:
+        _raise_git_failure()
+    executable: Path | None
+    try:
+        executable = Path(located).resolve(strict=True)
+    except (OSError, RuntimeError):
+        executable = None
+    if executable is None:
+        _raise_git_failure()
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        _raise_git_failure()
+    return executable
+
+
+def _run_git_process(
+    executable: Path,
+    cwd: Path,
+    environment: dict[str, str],
+    arguments: tuple[str, ...],
+    *,
+    input_bytes: bytes | None = None,
+) -> bytes:
+    completed: subprocess.CompletedProcess[bytes] | None
+    try:
+        completed = subprocess.run(
+            (str(executable), *arguments),
+            cwd=cwd,
+            env=environment,
+            input=input_bytes,
+            capture_output=True,
+            check=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+        subprocess.CalledProcessError,
+    ):
+        completed = None
+    if completed is None:
+        _raise_git_failure()
+    return completed.stdout
+
+
+def _single_git_line(value: str) -> str:
+    lines = value.splitlines()
+    if len(lines) != 1 or not lines[0]:
+        _raise_git_failure()
+    return lines[0]
+
+
+def _git_ascii_line(raw: bytes) -> str:
+    value: str | None
+    try:
+        value = raw.decode("ascii")
+    except UnicodeError:
+        value = None
+    if value is None:
+        _raise_git_failure()
+    return _single_git_line(value)
+
+
+def _git_path_line(raw: bytes) -> str:
+    value: str | None
+    try:
+        value = os.fsdecode(raw)
+    except UnicodeError:
+        value = None
+    if value is None:
+        _raise_git_failure()
+    return _single_git_line(value)
+
+
+@dataclass(frozen=True)
+class _ResolvedGitRepository:
+    requested_path: Path
+    git_dir: Path
+    is_bare: bool
+
+
+def _resolved_directory(path: Path) -> Path:
+    resolved: Path | None
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        resolved = None
+    if resolved is None:
+        _raise_git_failure()
+    if not resolved.is_dir():
+        _raise_git_failure()
+    return resolved
+
+
+def _resolve_git_repository(
+    repository: Path,
+    executable: Path,
+    environment: dict[str, str],
+) -> _ResolvedGitRepository:
+    requested = _resolved_directory(repository)
+    git_dir_text = _git_path_line(
+        _run_git_process(
+            executable,
+            requested,
+            environment,
+            ("rev-parse", "--absolute-git-dir"),
+        )
+    )
+    bare_text = _git_ascii_line(
+        _run_git_process(
+            executable,
+            requested,
+            environment,
+            ("rev-parse", "--is-bare-repository"),
+        )
+    )
+    git_dir = _resolved_directory(Path(git_dir_text))
+    if bare_text == "true":
+        if git_dir != requested:
+            _raise_git_failure()
+        return _ResolvedGitRepository(requested, git_dir, True)
+    if bare_text != "false":
+        _raise_git_failure()
+    top_level_text = _git_path_line(
+        _run_git_process(
+            executable,
+            requested,
+            environment,
+            ("rev-parse", "--show-toplevel"),
+        )
+    )
+    top_level = _resolved_directory(Path(top_level_text))
+    if top_level != requested:
+        _raise_git_failure()
+    return _ResolvedGitRepository(requested, git_dir, False)
+
+
 def _git_bytes(
     repository: Path,
     *arguments: str,
     input_bytes: bytes | None = None,
 ) -> bytes:
-    if not repository.is_dir():
-        raise AssertionError("Git repository path is not a directory")
     if not arguments or any(
         "\x00" in argument or "\r" in argument or "\n" in argument for argument in arguments
     ):
-        raise AssertionError("Git arguments are empty or malformed")
-    completed = subprocess.run(
-        ("git", *arguments),
-        cwd=repository,
-        input=input_bytes,
-        capture_output=True,
-        check=False,
+        _raise_git_failure()
+    executable = _resolved_git_executable()
+    environment = _sanitized_git_environment()
+    resolved = _resolve_git_repository(repository, executable, environment)
+    bound_arguments: tuple[str, ...] = (f"--git-dir={resolved.git_dir}",)
+    if not resolved.is_bare:
+        bound_arguments += (f"--work-tree={resolved.requested_path}",)
+    return _run_git_process(
+        executable,
+        resolved.requested_path,
+        environment,
+        (*bound_arguments, *arguments),
+        input_bytes=input_bytes,
     )
-    if completed.returncode != 0:
-        raise AssertionError(f"git {' '.join(arguments)} failed with exit {completed.returncode}")
-    return completed.stdout
 
 
 def _git_blob_bytes(repository: Path, object_id: str) -> bytes:
@@ -2131,9 +2314,11 @@ def _assert_git_blob_identity(
 ) -> None:
     expected_blob, expected_size, expected_sha256 = expected
     if re.fullmatch(r"[0-9a-f]{40}", object_id) is None:
-        raise AssertionError("candidate Git object ID is malformed")
-    object_type = _git_bytes(repository, "cat-file", "-t", object_id).decode("ascii").strip()
-    size_text = _git_bytes(repository, "cat-file", "-s", object_id).decode("ascii").strip()
+        _raise_git_failure()
+    object_type = _git_ascii_line(_git_bytes(repository, "cat-file", "-t", object_id))
+    size_text = _git_ascii_line(_git_bytes(repository, "cat-file", "-s", object_id))
+    if re.fullmatch(r"0|[1-9][0-9]*", size_text) is None:
+        _raise_git_failure()
     raw = _git_blob_bytes(repository, object_id)
     actual_size = int(size_text)
     actual = (object_id, actual_size, hashlib.sha256(raw).hexdigest())
@@ -2143,30 +2328,34 @@ def _assert_git_blob_identity(
 
 
 def _init_temporary_bare_repository(tmp_path: Path) -> Path:
-    repository = tmp_path / "gradio-contract-objects.git"
-    _git_bytes(
-        tmp_path,
-        "init",
-        "--bare",
-        "--object-format=sha1",
-        str(repository),
+    parent = _resolved_directory(tmp_path)
+    repository = (parent / "gradio-contract-objects.git").resolve(strict=False)
+    if repository.parent != parent or repository.exists():
+        _raise_git_failure()
+    executable = _resolved_git_executable()
+    environment = _sanitized_git_environment()
+    _run_git_process(
+        executable,
+        parent,
+        environment,
+        (
+            "init",
+            "--bare",
+            "--object-format=sha1",
+            str(repository),
+        ),
     )
-    assert repository.is_dir()
-    object_format = (
-        _git_bytes(
-            repository,
-            "rev-parse",
-            "--show-object-format",
-        )
-        .decode("ascii")
-        .strip()
-    )
-    assert object_format == "sha1"
+    resolved = _resolve_git_repository(repository, executable, environment)
+    if not resolved.is_bare or resolved.git_dir != repository:
+        _raise_git_failure()
+    object_format = _git_ascii_line(_git_bytes(repository, "rev-parse", "--show-object-format"))
+    if object_format != "sha1":
+        _raise_git_failure()
     return repository
 
 
 def _write_temporary_blob(repository: Path, raw: bytes) -> str:
-    object_id = (
+    object_id = _git_ascii_line(
         _git_bytes(
             repository,
             "hash-object",
@@ -2174,11 +2363,9 @@ def _write_temporary_blob(repository: Path, raw: bytes) -> str:
             "--stdin",
             input_bytes=raw,
         )
-        .decode("ascii")
-        .strip()
     )
     if re.fullmatch(r"[0-9a-f]{40}", object_id) is None:
-        raise AssertionError("git hash-object returned a malformed object ID")
+        _raise_git_failure()
     return object_id
 
 
@@ -2232,14 +2419,12 @@ def test_gradio_contract_git_object_rejects_mutated_git_objects(
 
 def test_gradio_contract_git_object_matches_controller_custody() -> None:
     expected = _controller_gradio_contract_identity()
-    object_id = (
+    object_id = _git_ascii_line(
         _git_bytes(
             REPOSITORY_ROOT,
             "rev-parse",
             "HEAD:space/tests/test_gradio_contract.py",
         )
-        .decode("ascii")
-        .strip()
     )
     _assert_git_blob_identity(REPOSITORY_ROOT, object_id, expected)
 
@@ -2261,6 +2446,249 @@ def test_gradio_contract_controller_custody_is_strict(
     monkeypatch.setenv(name, value)
     with pytest.raises(AssertionError):
         _controller_gradio_contract_identity()
+
+
+def test_git_plumbing_ignores_ambient_repository_routing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    alternate_git_dir = _init_temporary_bare_repository(tmp_path)
+    alternate_work_tree = tmp_path / "redirected-work-tree"
+    alternate_work_tree.mkdir()
+    monkeypatch.setenv("GIT_DIR", str(alternate_git_dir))
+    monkeypatch.setenv("GIT_WORK_TREE", str(alternate_work_tree))
+
+    actual = _git_path_line(
+        _git_bytes(
+            REPOSITORY_ROOT,
+            "rev-parse",
+            "--absolute-git-dir",
+        )
+    )
+
+    assert Path(actual).resolve(strict=True) == (REPOSITORY_ROOT / ".git").resolve(strict=True)
+
+
+def test_git_plumbing_invocation_is_sanitized_bound_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    recorded: list[tuple[tuple[str, ...], dict[str, Any]]] = []
+    real_run = subprocess.run
+
+    def recording_run(
+        command: tuple[str, ...],
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[bytes]:
+        recorded.append((command, dict(kwargs)))
+        return real_run(command, **kwargs)
+
+    monkeypatch.setenv("GIT_DIR", "synthetic-alternate-git-dir")
+    monkeypatch.setenv("GIT_WORK_TREE", "synthetic-alternate-work-tree")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "synthetic-global-config")
+    monkeypatch.setenv("gIt_ASKPASS", "synthetic-askpass")
+    monkeypatch.setenv("Git_Config_Count", "1")
+    monkeypatch.setenv("CARERISK_GRADIO_CONTRACT_BLOB_SHA1", "synthetic-custody")
+    monkeypatch.setenv("carerisk_gradio_contract_raw_size", "synthetic-size")
+    monkeypatch.setattr(subprocess, "run", recording_run)
+
+    result = _git_bytes(REPOSITORY_ROOT, "rev-parse", "HEAD^{commit}")
+    assert re.fullmatch(rb"[0-9a-f]{40}\n?", result) is not None
+    temporary_repository = _init_temporary_bare_repository(tmp_path)
+    assert (
+        _git_ascii_line(_git_bytes(temporary_repository, "rev-parse", "--show-object-format"))
+        == "sha1"
+    )
+    assert recorded
+
+    for command, kwargs in recorded:
+        assert Path(command[0]).is_absolute()
+        assert kwargs["timeout"] == _GIT_TIMEOUT_SECONDS == 10.0
+        assert kwargs["check"] is True
+        assert kwargs["capture_output"] is True
+        assert kwargs.get("shell") is not True
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert not any(name.upper().startswith("CARERISK_") for name in environment)
+        assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+        assert environment["GIT_CONFIG_GLOBAL"] == os.devnull
+        assert environment["GIT_TERMINAL_PROMPT"] == "0"
+        assert environment["GIT_OPTIONAL_LOCKS"] == "0"
+        assert environment["LC_ALL"] == environment["LANG"] == "C"
+        assert set(environment) <= _GIT_RUNTIME_ENV_ALLOWLIST | set(_GIT_FIXED_ENVIRONMENT)
+
+    expected_git_dir = (REPOSITORY_ROOT / ".git").resolve(strict=True)
+    assert any(
+        command[1:3]
+        == (
+            f"--git-dir={expected_git_dir}",
+            f"--work-tree={REPOSITORY_ROOT.resolve(strict=True)}",
+        )
+        for command, _ in recorded
+    )
+    resolved_temporary = temporary_repository.resolve(strict=True)
+    assert any(
+        command[1] == f"--git-dir={resolved_temporary}"
+        and not any(argument.startswith("--work-tree=") for argument in command)
+        for command, _ in recorded
+        if len(command) > 1
+    )
+
+
+@pytest.mark.parametrize("failure", ("timeout", "called_process", "unicode"))
+def test_git_plumbing_failures_are_constant_and_nonsecret(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    synthetic_secret = b"synthetic-private-output"
+    real_run = subprocess.run
+
+    def assert_constant_failure(action: Callable[[], object]) -> None:
+        with pytest.raises(AssertionError) as captured:
+            action()
+        assert str(captured.value) == "bounded Git plumbing failed"
+        assert "synthetic-private-output" not in str(captured.value)
+        assert captured.value.__cause__ is None
+        assert captured.value.__context__ is None
+
+    def failing_run(
+        command: tuple[str, ...],
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert kwargs["timeout"] == 10.0
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(
+                command,
+                10.0,
+                output=synthetic_secret,
+                stderr=synthetic_secret,
+            )
+        if failure == "called_process":
+            raise subprocess.CalledProcessError(
+                2,
+                command,
+                output=synthetic_secret,
+                stderr=synthetic_secret,
+            )
+        raise AssertionError("unreachable failure row")
+
+    if failure != "unicode":
+        monkeypatch.setattr(subprocess, "run", failing_run)
+        assert_constant_failure(lambda: _git_bytes(REPOSITORY_ROOT, "rev-parse", "HEAD^{commit}"))
+        return
+
+    temporary_repository = _init_temporary_bare_repository(tmp_path)
+    synthetic_raw = b"synthetic object for typed metadata"
+    synthetic_object_id = hashlib.sha1(
+        b"blob " + str(len(synthetic_raw)).encode("ascii") + b"\0" + synthetic_raw
+    ).hexdigest()
+    _git_bytes(
+        temporary_repository,
+        "hash-object",
+        "-w",
+        "--stdin",
+        input_bytes=synthetic_raw,
+    )
+    synthetic_expected = (
+        synthetic_object_id,
+        len(synthetic_raw),
+        hashlib.sha256(synthetic_raw).hexdigest(),
+    )
+
+    typed_stages: tuple[tuple[str, tuple[str, ...], Callable[[], object]], ...] = (
+        (
+            "positive_path_object_id",
+            ("rev-parse", "HEAD:space/tests/test_gradio_contract.py"),
+            lambda: _git_ascii_line(
+                _git_bytes(
+                    REPOSITORY_ROOT,
+                    "rev-parse",
+                    "HEAD:space/tests/test_gradio_contract.py",
+                )
+            ),
+        ),
+        (
+            "object_type",
+            ("cat-file", "-t", synthetic_object_id),
+            lambda: _assert_git_blob_identity(
+                temporary_repository,
+                synthetic_object_id,
+                synthetic_expected,
+            ),
+        ),
+        (
+            "raw_size",
+            ("cat-file", "-s", synthetic_object_id),
+            lambda: _assert_git_blob_identity(
+                temporary_repository,
+                synthetic_object_id,
+                synthetic_expected,
+            ),
+        ),
+        (
+            "written_object_id",
+            ("hash-object", "-w", "--stdin"),
+            lambda: _write_temporary_blob(temporary_repository, b"second object"),
+        ),
+        (
+            "object_format",
+            ("rev-parse", "--show-object-format"),
+            lambda: _git_ascii_line(
+                _git_bytes(
+                    temporary_repository,
+                    "rev-parse",
+                    "--show-object-format",
+                )
+            ),
+        ),
+        (
+            "bare_identity",
+            ("rev-parse", "--is-bare-repository"),
+            lambda: _git_bytes(
+                temporary_repository,
+                "rev-parse",
+                "--show-object-format",
+            ),
+        ),
+    )
+    invalid_typed_outputs = (
+        b"\xff",
+        b"",
+        b"first\nsecond\n",
+        "non-ascii-\N{LATIN SMALL LETTER E WITH ACUTE}".encode("utf-8"),
+    )
+
+    def poisoning_run_for(
+        expected_suffix: tuple[str, ...],
+        output: bytes,
+    ) -> Callable[..., subprocess.CompletedProcess[bytes]]:
+        def poisoning_run(
+            command: tuple[str, ...],
+            **kwargs: Any,
+        ) -> subprocess.CompletedProcess[bytes]:
+            assert kwargs["timeout"] == 10.0
+            completed = real_run(command, **kwargs)
+            if tuple(command[-len(expected_suffix) :]) == expected_suffix:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=output,
+                    stderr=synthetic_secret,
+                )
+            return completed
+
+        return poisoning_run
+
+    for _stage, suffix, action in typed_stages:
+        for poisoned_output in invalid_typed_outputs:
+            with monkeypatch.context() as context:
+                context.setattr(
+                    subprocess,
+                    "run",
+                    poisoning_run_for(suffix, poisoned_output),
+                )
+                assert_constant_failure(action)
 
 
 def test_guard_constructor_scanner_rejects_variadic_or_keyword_only_parameters() -> None:
