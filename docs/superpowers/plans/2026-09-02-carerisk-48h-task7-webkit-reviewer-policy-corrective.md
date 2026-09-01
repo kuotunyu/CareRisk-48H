@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Preserve the current Task 7 partials until the implementation session begins and its controller validates the custody table below. This docs-only correction does not authorize changing them.
-- All bytes in a public export, candidate, final runtime, deployment artifact, saved archive, pushed image, uploaded artifact, published image, or other distributed output require an approved redistribution-compatible record. Unknown, missing, incompatible, or non-redistributable licensing is a hard stop.
+- All bytes in a public export, candidate, runtime stage, final runtime, deployment artifact, saved archive, pushed image, uploaded artifact, published image, emitted build output, or other distributed output require an approved redistribution-compatible record. Unknown, missing, incompatible, or non-redistributable licensing is a hard stop.
 - The sole exception is metadata inventory for reviewer tag `mcr.microsoft.com/playwright/python:v1.62.0-noble`, index `sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d`, linux/amd64 manifest `sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59`, Playwright `1.62.0`/tag `v1.62.0`, WebKit revision `2336`, version `26.5`, canonical-tree SHA-256 `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`, and upstream base commit `343e13bf22dca9d0ec227801419aab0f9001a32f`.
 - Its SPDX package values are exactly `licenseDeclared="NOASSERTION"` and `licenseConcluded="NOASSERTION"`; its policy value is exactly `review_disposition="reviewer_test_only_not_redistributed"`; and its notice status is exactly `complete_digest_bound_notice=false`.
 - Do not claim bitwise source-to-binary attestation, a complete digest-bound notice set, redistribution approval, or any guessed SPDX expression.
@@ -64,6 +64,7 @@ class WebKitReviewerPolicy:
     reviewer_linux_amd64_digest: str
     playwright_version: str
     playwright_tag: str
+    playwright_tag_url: str
     browsers_json_url: str
     registry_source_url: str
     cdn_artifact_url: str
@@ -71,6 +72,7 @@ class WebKitReviewerPolicy:
     upstream_base_commit: str
     webkit_revision: str
     webkit_version: str
+    webkit_tree_algorithm: str
     webkit_tree_sha256: str
     official_webkit_licensing_references: tuple[str, ...]
     license_declared: str
@@ -83,6 +85,8 @@ class DistributionSurface:
     name: Literal[
         "public_export", "candidate", "runtime_stage", "final_image",
         "deployment_artifact", "saved_archive", "pushed_image",
+        "uploaded_artifact", "published_image", "build_output",
+        "other_distributed_output",
     ]
     paths: tuple[str, ...]
     layer_digests: tuple[str, ...]
@@ -94,6 +98,8 @@ def validate_license_policy(document: Mapping[str, object]) -> Mapping[tuple[str
 def validate_distribution_exclusion(surfaces: Sequence[DistributionSurface]) -> None: ...
 def verify_all(repo_root: Path) -> None: ...
 ```
+
+`DISTRIBUTION_SURFACE_NAMES` is the exact ordered eleven-member tuple `("public_export", "candidate", "runtime_stage", "final_image", "deployment_artifact", "saved_archive", "pushed_image", "uploaded_artifact", "published_image", "build_output", "other_distributed_output")`. The validator rejects an omitted, duplicate, unknown, empty, or unclassified member before it inspects content. `other_distributed_output` is a mandatory fail-closed catchall for any real distribution mechanism that does not match the ten specifically named mechanisms.
 
 The exception validator compares a fully constructed immutable value to `exact_webkit_reviewer_policy()`. It does not accept subsets, default missing fields, a version range, an alternate platform, a truthy/falsy coercion, or an allowlist of `NOASSERTION` names.
 
@@ -123,6 +129,7 @@ def exact_webkit_policy_dict() -> dict[str, object]:
         "reviewer_linux_amd64_digest": "sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59",
         "playwright_version": "1.62.0",
         "playwright_tag": "v1.62.0",
+        "playwright_tag_url": "https://github.com/microsoft/playwright/tree/v1.62.0",
         "browsers_json_url": "https://github.com/microsoft/playwright/blob/v1.62.0/packages/playwright-core/browsers.json",
         "registry_source_url": "https://github.com/microsoft/playwright/blob/v1.62.0/packages/playwright-core/src/server/registry/index.ts",
         "cdn_artifact_url": "https://cdn.playwright.dev/dbazure/download/playwright/builds/webkit/2336/webkit-ubuntu-24.04.zip",
@@ -130,6 +137,7 @@ def exact_webkit_policy_dict() -> dict[str, object]:
         "upstream_base_commit": "343e13bf22dca9d0ec227801419aab0f9001a32f",
         "webkit_revision": "2336",
         "webkit_version": "26.5",
+        "webkit_tree_algorithm": "sha256-canonical-tree-v1",
         "webkit_tree_sha256": "c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c",
         "official_webkit_licensing_references": [
             "https://webkit.org/licensing-webkit/",
@@ -145,7 +153,7 @@ def exact_webkit_policy_dict() -> dict[str, object]:
 
 - [ ] **Step 2: Add and run the single-field mutation matrix**
 
-Create `test_exact_webkit_reviewer_exception_rejects_every_single_field_drift`, parameterized over every fixture key after `package`/`version`, plus missing key, extra key, alternate list order, alternate case, integer revision, truthy string flag, guessed license expression, `approved` disposition, and `complete_digest_bound_notice=True`.
+Create `test_exact_webkit_reviewer_exception_rejects_every_single_field_drift`, parameterized over every fixture key after `package`/`version`, explicitly including `playwright_tag_url` and `webkit_tree_algorithm`, plus missing key, extra key, alternate list order, alternate case, integer revision, truthy string flag, guessed license expression, `approved` disposition, and `complete_digest_bound_notice=True`.
 
 Run:
 
@@ -157,7 +165,7 @@ Expected: FAIL because `policy_records` rejects all `NOASSERTION` records and th
 
 - [ ] **Step 3: Add ordinary-component and distribution-surface mutations**
 
-Add `test_noassertion_fails_for_public_or_any_other_component` for runtime base, reviewer base, Chromium, Firefox, ffmpeg, Gradio, an OS package, and a non-Gradio Python package. Add `test_reviewer_or_browser_bytes_fail_every_distribution_surface`, parameterized over all seven `DistributionSurface.name` values and signatures for reviewer manifest digest, `/ms-playwright`, WebKit tree digest, Chromium tree digest, Firefox tree digest, and `ffmpeg-1011`.
+Add `test_noassertion_fails_for_public_or_any_other_component` for runtime base, reviewer base, Chromium, Firefox, ffmpeg, Gradio, an OS package, and a non-Gradio Python package. Add `test_reviewer_or_browser_bytes_fail_every_distribution_surface`, parameterized over all eleven `DISTRIBUTION_SURFACE_NAMES` values and signatures for reviewer manifest digest, `/ms-playwright`, WebKit tree digest, Chromium tree digest, Firefox tree digest, and `ffmpeg-1011`. Add `test_distribution_surface_registry_is_closed_and_complete`, parameterized over omitted, duplicate, unknown, empty, and unclassified surface fixtures.
 
 Run the same pytest command. Expected: the new tests remain RED without changing any generator/output.
 
@@ -181,9 +189,9 @@ Run the same pytest command. Expected: the new tests remain RED without changing
 
 Keep ordinary records on `review_disposition == "approved"` with nonempty, non-`NONE`, non-`NOASSERTION` declared and concluded fields. Match the WebKit key only after exact dict-key validation and immutable full-value equality. Reject every other `NOASSERTION` before output generation.
 
-- [ ] **Step 2: Extend the measured base record without re-resolution**
+- [ ] **Step 2: Extend the frozen measured base record without re-resolution**
 
-Under `images.reviewer.embedded_browsers.webkit`, add exact `version="26.5"`, tagged Playwright references, CDN URL, `upstream_config.path`, `upstream_config.base_commit`, and the ordered official WebKit reference list from the fixture. Preserve the existing tag/index/manifest/content tree bytes. Validate that `UPSTREAM_CONFIG` is already inside the canonical 38-file tree; do not claim that the tree proves complete license notice coverage.
+Under `images.reviewer.embedded_browsers.webkit`, add exact `version="26.5"`, `tree_algorithm="sha256-canonical-tree-v1"`, Playwright tag URL and tagged source references, CDN URL, `upstream_config.path`, `upstream_config.base_commit`, and the ordered official WebKit reference list from the fixture. Preserve the existing tag/index/manifest/content-tree values byte-for-byte. The current correction must call only the read-only `verify-images --input tools/space/base-image.json`; it must not call `resolve-images`, query for a replacement, overwrite the record from registry output, or select another tag/platform. A legitimate future re-resolution is outside this plan and requires separate central design approval, a newly fixed tuple, fresh measurement/license review, updated single-field and surface mutations, and a new custody baseline. Validate that `UPSTREAM_CONFIG` is already inside the canonical 38-file tree; do not claim that the tree proves complete license notice coverage.
 
 - [ ] **Step 3: Emit policy, license inventory, and SPDX**
 
@@ -192,6 +200,7 @@ For the WebKit inventory record, emit exact `licenseDeclared`, `licenseConcluded
 - [ ] **Step 4: Run GREEN and deterministic regeneration**
 
 ```powershell
+.venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json
 .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json
 .venv-space-lock\Scripts\python.exe scripts\build_hf_space_supply_chain.py verify --repo-root .
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
@@ -338,11 +347,41 @@ git commit -m 'ci(space): keep reviewer artifacts local only'
 **Interfaces:**
 
 - Consumes: clean export, deployment manifest, final runtime image, ephemeral reviewer image, and exact policy record.
-- Produces: final receipt fields for tuple equality and zero reviewer-byte distribution counts.
+- Produces: final receipt fields for complete tuple equality, the exact closed surface registry, and one zero reviewer-byte count per surface.
+
+```python
+WEBKIT_REVIEWER_POLICY_TUPLE_FIELDS = (
+    "reviewer_image_tag", "reviewer_index_digest", "reviewer_linux_amd64_digest",
+    "playwright_version", "playwright_tag", "playwright_tag_url",
+    "browsers_json_url", "registry_source_url", "cdn_artifact_url",
+    "upstream_config_path", "upstream_base_commit", "webkit_revision",
+    "webkit_version", "webkit_tree_algorithm", "webkit_tree_sha256",
+    "official_webkit_licensing_references", "license_declared",
+    "license_concluded", "review_disposition", "complete_digest_bound_notice",
+)
+
+REVIEWER_BYTE_COUNT_FIELDS = {
+    "public_export": "public_export_reviewer_byte_count",
+    "candidate": "candidate_reviewer_byte_count",
+    "runtime_stage": "runtime_stage_reviewer_byte_count",
+    "final_image": "final_image_reviewer_byte_count",
+    "deployment_artifact": "deployment_artifact_reviewer_byte_count",
+    "saved_archive": "saved_archive_reviewer_byte_count",
+    "pushed_image": "pushed_image_reviewer_byte_count",
+    "uploaded_artifact": "uploaded_artifact_reviewer_byte_count",
+    "published_image": "published_image_reviewer_byte_count",
+    "build_output": "build_output_reviewer_byte_count",
+    "other_distributed_output": "other_distributed_output_reviewer_byte_count",
+}
+```
+
+The receipt serializes `webkit_reviewer_policy_tuple` as the ordered values for every field above, including the ordered three-member official licensing-reference array, and serializes `distribution_surface_names` as exactly `DISTRIBUTION_SURFACE_NAMES`. It emits no abbreviated tuple, inferred defaults, or alternate surface aliases.
 
 - [ ] **Step 1: Write receipt RED tests**
 
-Add `test_final_receipt_binds_exact_webkit_reviewer_policy` and parameterized `test_final_verifier_rejects_reviewer_bytes_on_each_distribution_surface`. Require booleans `webkit_reviewer_exception_tuple_exact`, `webkit_spdx_declared_noassertion_exact`, `webkit_spdx_concluded_noassertion_exact`, `webkit_reviewer_test_only_not_redistributed_exact`, `webkit_complete_digest_bound_notice_false`, `public_export_approved_bytes_only`, `candidate_reviewer_bytes_absent`, `runtime_reviewer_bytes_absent`, `deployment_reviewer_bytes_absent`, and `reviewer_distribution_commands_absent`. Require zero counts for public export, candidate, runtime, deployment, and distribution commands.
+Add `test_final_receipt_binds_complete_webkit_reviewer_policy_tuple`, parameterized `test_final_verifier_rejects_reviewer_bytes_on_each_distribution_surface`, `test_final_receipt_requires_zero_count_for_each_distribution_surface`, and `test_final_verifier_rejects_nonclosed_distribution_surface_registry`. The tuple test compares all `WEBKIT_REVIEWER_POLICY_TUPLE_FIELDS` against `exact_webkit_policy_dict()`, including tag URL, tagged `browsers.json`, registry, CDN, `UPSTREAM_CONFIG`, base commit, tree algorithm, tree digest, and the ordered official licensing references. Parameterize tuple mutations over every field and surface mutations over all eleven names plus omitted, duplicate, unknown, empty, and unclassified registries.
+
+Require booleans `webkit_reviewer_exception_tuple_exact`, `webkit_spdx_declared_noassertion_exact`, `webkit_spdx_concluded_noassertion_exact`, `webkit_reviewer_test_only_not_redistributed_exact`, `webkit_complete_digest_bound_notice_false`, `public_export_approved_bytes_only`, `candidate_reviewer_bytes_absent`, `runtime_stage_reviewer_bytes_absent`, `final_image_reviewer_bytes_absent`, `deployment_artifact_reviewer_bytes_absent`, `saved_archive_reviewer_bytes_absent`, `pushed_image_reviewer_bytes_absent`, `uploaded_artifact_reviewer_bytes_absent`, `published_image_reviewer_bytes_absent`, `build_output_reviewer_bytes_absent`, `other_distributed_output_reviewer_bytes_absent`, `distribution_surface_registry_exact`, and `reviewer_distribution_commands_absent`. Require every value in `REVIEWER_BYTE_COUNT_FIELDS` to be present as an integer and equal zero; a missing, non-integer, duplicate/aliased, or nonzero count fails.
 
 - [ ] **Step 2: Run RED**
 
@@ -354,7 +393,7 @@ Expected: FAIL because the verifier receipt lacks these fields.
 
 - [ ] **Step 3: Implement authoritative inspections**
 
-Before any test execution, scan the exact candidate tree and deployment mapping. After build, inspect stage graph, final history, final filesystem inventory, and planned Docker commands. Permit WebKit strings only at the two canonical metadata records; reject every reviewer/browser byte/path/layer elsewhere. Record the exact pipe-delimited tuple required by the main plan. Do not save/export/push/upload the reviewer/test image.
+Before any test execution, scan the public export, exact candidate tree, deployment mapping, and any upload/publication/build-output plan. After build, inspect the runtime stage graph, final history/filesystem inventory, saved-archive and pushed-image plans, and every other distributed-output classification. Permit WebKit strings only at the two canonical metadata records; reject every reviewer/browser byte/path/layer elsewhere. Record the complete ordered tuple and exact surface registry required by the main plan. An absent inspection or output class is still represented by its named surface with zero observed reviewer bytes and authoritative evidence that no such path exists; it is never omitted. Do not save/export/push/upload/publish or otherwise distribute the reviewer/test image.
 
 - [ ] **Step 4: Run final local GREEN**
 
@@ -363,7 +402,7 @@ Before any test execution, scan the exact candidate tree and deployment mapping.
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_live_review.py tests/test_hf_space_supply_chain.py tests/test_hf_space_exporter.py space/tests/test_container_contract.py -q
 ```
 
-Expected: receipt status `passed`; exact tuple fields true; all reviewer-byte counts zero; reviewer resource cleaned through exact ownership; no tracked file changes.
+Expected: receipt status `passed`; every complete tuple field matches; the exact eleven-member registry is present; all eleven reviewer-byte counts are integer zero; reviewer resource is cleaned through exact ownership; no tracked file changes.
 
 - [ ] **Step 5: Finish without another implementation commit**
 
