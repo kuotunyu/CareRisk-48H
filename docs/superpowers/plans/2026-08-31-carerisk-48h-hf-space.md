@@ -1418,6 +1418,8 @@ each task/session rather than relying on inherited shell state.
 - Consumes: reviewed direct requirement inputs, official package indexes, official OCI registry metadata, and reviewed SPDX license policy.
 - Produces: deterministic locks and public supply-chain files plus `verify_all(repo_root: Path) -> None`.
 
+**Task 7 controlled-session precondition:** Before any Task 7 test, `verify-images`, `inventory`, or `verify` command, establish the single GUID-owned `$sourceRef` session in Step 4 and retain that PowerShell session until its final ownership-safe cleanup. The acquisition command is first and is the only network-enabled Task 7 provenance command; every later command shown below uses `$sourceRef --offline --network-bomb`, including RED pytest. A source-reference file is never a tracked Task 7 output.
+
 - [ ] **Step 1: Write failing lock/base/inventory tests**
 
 ```python
@@ -1480,7 +1482,7 @@ def test_sbom_and_license_inventory_cover_every_lock_package_once() -> None:
         "registry_source_url", "cdn_artifact_url", "playwright_tag_commit",
         "repository_relative_path", "commit_pinned_raw_url", "raw_byte_length",
         "raw_sha256", "remote_url", "base_branch", "base_revision", "webkit_revision", "webkit_version",
-        "webkit_tree_file_count", "webkit_tree_total_bytes", "webkit_tree_algorithm", "webkit_tree_sha256", "image_tree_source_relative_path_absent", "official_webkit_licensing_references",
+        "webkit_tree_file_count", "webkit_tree_total_bytes", "webkit_tree_algorithm", "webkit_tree_sha256", "image_tree_source_relative_path_absence_proof", "official_webkit_licensing_references",
         "licenseDeclared", "licenseConcluded", "review_disposition",
         "complete_digest_bound_notice",
     ],
@@ -1517,7 +1519,7 @@ def test_distribution_surface_registry_is_closed_and_complete(mutation: str) -> 
 - [ ] **Step 2: Run RED**
 
 ```powershell
-.venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
 ```
 
 Expected: FAIL because inputs, generator, locks, base record, SBOM, and license inventory do not exist.
@@ -1528,26 +1530,36 @@ Expected: FAIL because inputs, generator, locks, base record, SBOM, and license 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "acquire-webkit-source-reference":
+        return acquire_webkit_source_reference(
+            url=args.url, metadata_output=Path(args.metadata_output), run_guid=args.run_guid
+        )
     if args.command == "verify-images":
-        verify_image_record(Path(args.input))
+        install_network_bomb_if_requested(args)
+        verify_image_record(Path(args.input), source_reference=Path(args.source_reference))
         return 0
     if args.command == "lock":
         return build_locks(args)
     if args.command == "inventory":
         return build_inventory_and_sbom(args)
     if args.command == "verify":
-        verify_all(args.repo_root)
+        install_network_bomb_if_requested(args)
+        verify_all(args.repo_root, source_reference=Path(args.source_reference))
         return 0
+    if args.command == "offline-test":
+        return run_network_bombed_child(args.source_reference, args.child_command)
     raise AssertionError("unreachable")
 ```
 
-`verify-images` is read-only. It validates the existing measured `base-image.json` against the frozen runtime/reviewer tag, OCI index digest, linux/amd64 manifest digest, Python target, system-package inventory digest, source registry, browser/support revision/version/tree identity, and exact WebKit provenance contract. The current Task 7 correction may extend that measured record only with the exact WebKit version/provenance fields; it must not run `resolve-images`, query for a replacement, overwrite the record from a registry response, or select another tag/platform. A legitimate future image re-resolution is outside this plan and requires a separately approved design/policy tuple, fresh measurement and license review, updated mutations, and a new custody baseline.
+`acquire-webkit-source-reference` accepts exactly the fixed `--url`, validated `--metadata-output` owned by the current GUID OS-temp child, and `--run-guid`; it is the sole network-enabled command and makes one HTTPS GET only to that literal URL. It verifies exact raw length/hash and `REMOTE_URL`/`BASE_BRANCH`/`BASE_REVISION`, then writes bounded parsed metadata/evidence rather than raw source bytes. `verify-images` is read-only and, like `inventory`, `verify`, and `offline-test`, requires exact `--source-reference`, `--offline`, and `--network-bomb` arguments; those later commands install a network bomb and must fail before any network API call. It validates the existing measured `base-image.json` against the frozen runtime/reviewer tag, OCI index digest, linux/amd64 manifest digest, Python target, system-package inventory digest, source registry, browser/support revision/version/tree identity, and exact WebKit provenance contract. The current Task 7 correction may extend that measured record only with the exact WebKit version/provenance fields; it must not run `resolve-images`, query for a replacement, overwrite the record from a registry response, or select another tag/platform. A legitimate future image re-resolution is outside this plan and requires a separately approved design/policy tuple, fresh measurement and license review, updated mutations, and a new custody baseline.
 
 `lock` runs only the hash-locked resolver tooling from `lock-tooling.txt`. It emits `requirements.lock` as the complete runtime closure for the runtime Linux/Python target and `requirements-dev.lock` as the complete runtime-plus-development union closure for the reviewer Linux/Python target. The normalized package/version pairs from the runtime lock must be an unchanged subset of the development lock. Each lock is installed alone with `--require-hashes --no-deps`; a controlled acquisition step first fills a temporary wheelhouse with only accepted hashes, then a separate no-egress `--no-index` step verifies installation from that wheelhouse. Do not describe the controlled acquisition step as offline.
 
-`inventory` extracts metadata and notices from exact accepted wheels and both exact image manifests/inventories, includes the reviewer image's embedded browser revisions/versions/system packages, joins every component to `license-policy.json`, and serializes sorted canonical JSON with a final newline. Ordinary records must be approved with concluded redistribution-compatible expressions. One separate validator recognizes only the exact WebKit reviewer tuple and emits the metadata-only exception; it may not share a permissive `NOASSERTION` branch with ordinary components. `SBOM.spdx.json` and `THIRD_PARTY_LICENSES.json` cover both base-image inventories and browser identities, but the final runtime and every distributed byte set still contain only approved runtime bytes.
+`inventory` requires the acquired `$sourceRef` and explicit offline/network-bomb flags. It extracts metadata and notices from exact accepted wheels and both exact image manifests/inventories, includes the reviewer image's embedded browser revisions/versions/system packages, joins every component to `license-policy.json`, and serializes sorted canonical JSON with a final newline. Ordinary records must be approved with concluded redistribution-compatible expressions. One separate validator recognizes only the exact WebKit reviewer tuple and emits the metadata-only exception; it may not share a permissive `NOASSERTION` branch with ordinary components. `SBOM.spdx.json` and `THIRD_PARTY_LICENSES.json` cover both base-image inventories and browser identities, but the final runtime and every distributed byte set still contain only approved runtime bytes.
 
-The exact WebKit record is version `26.5`, revision `2336`, tree algorithm `sha256-canonical-tree-v1`, tree SHA-256 `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`, and is bound to reviewer tag/index/manifest `mcr.microsoft.com/playwright/python:v1.62.0-noble` / `sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d` / `sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59`. It records Playwright `1.62.0`, tag `v1.62.0`, official tag URL `https://github.com/microsoft/playwright/tree/v1.62.0`, the official tagged `browsers.json` and registry source, and the resolved official CDN artifact. Its separate source-reference fields are `playwright_tag_commit=e3950d9c140d007bd52853b45813c6274b24e36f`, `repository_relative_path=browser_patches/webkit/UPSTREAM_CONFIG.sh`, `commit_pinned_raw_url=https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh`, `raw_byte_length=126`, `raw_sha256=3554c5b666ed87032fb22e78956f8a2fffe1faede63ae8dcae60a26961f6419c`, parsed `remote_url=https://github.com/WebKit/WebKit.git`, `base_branch=main`, and `base_revision=343e13bf22dca9d0ec227801419aab0f9001a32f`; the 38-file image tree separately asserts `browser_patches/webkit/UPSTREAM_CONFIG.sh` is absent. It records the exact official WebKit licensing-reference set from design Section 10.1. Its SPDX declared and concluded values are exactly `NOASSERTION`, its `review_disposition` is exactly `reviewer_test_only_not_redistributed`, and `complete_digest_bound_notice` is exactly false. This source reference proves only that Playwright `v1.62.0` source configuration declares the WebKit base revision; it does not claim the source file is in the binary image, bitwise source/binary attestation, complete notice, redistribution approval, or a guessed expression.
+The exact WebKit record is version `26.5`, revision `2336`, tree algorithm `sha256-canonical-tree-v1`, tree SHA-256 `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`, and is bound to reviewer tag/index/manifest `mcr.microsoft.com/playwright/python:v1.62.0-noble` / `sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d` / `sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59`. It records Playwright `1.62.0`, tag `v1.62.0`, official tag URL `https://github.com/microsoft/playwright/tree/v1.62.0`, the official tagged `browsers.json` and registry source, and the resolved official CDN artifact. Its separate source-reference fields are `playwright_tag_commit=e3950d9c140d007bd52853b45813c6274b24e36f`, `repository_relative_path=browser_patches/webkit/UPSTREAM_CONFIG.sh`, `commit_pinned_raw_url=https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh`, `raw_byte_length=126`, `raw_sha256=3554c5b666ed87032fb22e78956f8a2fffe1faede63ae8dcae60a26961f6419c`, parsed `remote_url=https://github.com/WebKit/WebKit.git`, `base_branch=main`, and `base_revision=343e13bf22dca9d0ec227801419aab0f9001a32f`; the immutable 38-file tree must derive `image_tree_source_relative_path_absence_proof` with the same relative path, canonical algorithm/count/bytes/digest, and `present=false` from its ordered inventory rather than trusting an input flag. It records the exact official WebKit licensing-reference set from design Section 10.1. Its SPDX declared and concluded values are exactly `NOASSERTION`, its `review_disposition` is exactly `reviewer_test_only_not_redistributed`, and `complete_digest_bound_notice` is exactly false. This source reference proves only that Playwright `v1.62.0` source configuration declares the WebKit base revision; it does not claim the source file is in the binary image, bitwise source/binary attestation, complete notice, redistribution approval, or a guessed expression.
+
+The strict `WebKitReviewerPolicy` types `webkit_tree_file_count: int` exactly `38` and `webkit_tree_total_bytes: int` exactly `306401261`. It types `image_tree_source_relative_path_absence_proof: Mapping[str, object]` as the inventory-derived object `{repository_relative_path, canonical_tree_algorithm, canonical_tree_file_count, canonical_tree_total_bytes, canonical_tree_sha256, present}` with exact values `browser_patches/webkit/UPSTREAM_CONFIG.sh`, `sha256-canonical-tree-v1`, `38`, `306401261`, `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`, and `false`. Strict validation recomputes this complete object from the canonical ordered image-tree inventory before fixture/key equality; a supplied boolean or map is not proof.
 
 `verify_all` also consumes the exact closed eleven-member distribution-surface description and rejects reviewer/WebKit/browser bytes in every member. It first rejects an omitted, duplicate, unknown, empty, or unclassified surface. Until Task 8/9/11/13 provide their concrete manifests and image inspections, Task 7 tests use synthetic fixtures for all eleven; the downstream tasks replace those fixtures with authoritative exporter/workflow/image evidence without weakening this pure fail-closed validator. Chromium, Firefox, ffmpeg, operating-system/base-image records, and Python packages remain approved-only.
 
@@ -1559,33 +1571,41 @@ The direct runtime input contains only `gradio==6.26.0`; a candidate range such 
 $toolVenv = '.venv-space-lock'
 python -m venv $toolVenv
 & "$toolVenv\Scripts\python.exe" -m pip install --require-hashes -r tools/space/lock-tooling.txt
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py acquire-webkit-source-reference --url https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh --metadata-output tools/space/webkit-source-reference.json
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json
+$task7Guid = [guid]::NewGuid().ToString('N')
+$task7OsTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$task7TempRoot = Join-Path $task7OsTempRoot "carerisk-task7-$task7Guid"
+$sourceRef = Join-Path $task7TempRoot 'webkit-source-reference.json'
+if (([IO.Path]::GetFileName($task7TempRoot) -cne "carerisk-task7-$task7Guid") -or -not ([IO.Path]::GetFullPath($task7TempRoot).StartsWith($task7OsTempRoot, [StringComparison]::Ordinal)) -or [IO.Path]::GetFullPath($task7TempRoot).Equals($task7OsTempRoot, [StringComparison]::Ordinal)) { throw 'Task 7 temp root is not an owned OS-temp child' }
+New-Item -ItemType Directory -LiteralPath $task7TempRoot -ErrorAction Stop | Out-Null
+$task7Succeeded = $false
+try {
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py acquire-webkit-source-reference --url https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh --metadata-output $sourceRef --run-guid $task7Guid
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json --source-reference $sourceRef --offline --network-bomb
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py lock --runtime-input tools/space/requirements-runtime.in --development-input tools/space/requirements-dev.in --runtime-output space/requirements.lock --development-output space/requirements-dev.lock
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference $sourceRef --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline --network-bomb
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify --repo-root . --source-reference $sourceRef --offline --network-bomb
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
+$trackedOutputs = @('space/requirements.lock', 'space/requirements-dev.lock', 'space/SBOM.spdx.json', 'space/THIRD_PARTY_LICENSES.json')
+$first = @($trackedOutputs | ForEach-Object { $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_; '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant() })
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference $sourceRef --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline --network-bomb
+$second = @($trackedOutputs | ForEach-Object { $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_; '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant() })
+if ([string]::Join("`n", $first) -cne [string]::Join("`n", $second)) { throw 'Supply-chain outputs are not reproducible' }
+$task7Succeeded = $true
+} finally {
+    if ($task7Succeeded) {
+        $resolvedTask7Root = (Resolve-Path -LiteralPath $task7TempRoot -ErrorAction Stop).Path
+        $resolvedSourceRef = (Resolve-Path -LiteralPath $sourceRef -ErrorAction Stop).Path
+        if (-not $resolvedTask7Root.StartsWith($task7OsTempRoot, [StringComparison]::Ordinal) -or -not $resolvedSourceRef.StartsWith($resolvedTask7Root, [StringComparison]::Ordinal) -or ([IO.Path]::GetFileName($resolvedTask7Root) -cne "carerisk-task7-$task7Guid")) { throw 'Refusing to clean an unowned Task 7 temp path' }
+        Remove-Item -LiteralPath $resolvedTask7Root -Recurse -Force -ErrorAction Stop
+    } else { Write-Error "Task 7 failed; retain bounded GUID-owned parsed metadata at $task7TempRoot for diagnosis. Never stage, copy, export, or upload it." }
+}
 ```
 
-Expected: the current correction performs no image re-resolution and does not overwrite/reselect `base-image.json`; `verify-images` accepts only the frozen measured tuple plus its exact added provenance/version fields. `acquire-webkit-source-reference` is the sole network-enabled interface: it accepts only the literal URL, validates raw length/hash and three assignments, and retains bounded metadata instead of raw source bytes. Every subsequent `verify-images`, deterministic double `inventory`, `verify`, pytest, and later candidate verification invocation has explicit offline/no-egress mode and fails under a network bomb if any network API is reached; no later inventory run may refetch. Review package source URLs, both base-image inventories, embedded-browser revisions/versions, typed tree count/size/algorithm/identity and derived source-relative-file absence, official Playwright tag URL/registry/CDN, exact external source-reference provenance, license texts/references, notices, notice completeness, all eleven distribution surfaces, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components whose bytes could be exported/deployed stop the task. Any `NOASSERTION` outside the exact metadata-only WebKit reviewer record stops the task. Any tuple/provenance/surface-registry drift or reviewer bytes in any closed surface also stops the task.
+Expected: the current correction performs no image re-resolution and does not overwrite/reselect `base-image.json`; `verify-images` accepts only the frozen measured tuple plus its exact added provenance/version fields. `acquire-webkit-source-reference` is the sole network-enabled command: it permits one HTTPS GET to the literal commit-pinned URL, validates raw length/hash and the three assignments, and writes only bounded parsed canonical metadata/evidence (never raw source bytes) to `webkit-source-reference.json` in the verified GUID-owned OS-temp child. Every later `verify-images`, both deterministic `inventory` runs, `verify`, and pytest runs with the explicit `$sourceRef --offline --network-bomb` contract; no later command may refetch. The finalizer removes only the validated current GUID root after all outputs/receipts succeed; on failure it retains only that bounded owned temp evidence for diagnosis and never stages, copies, exports, or uploads it. The eleven sanctioned Task 7 tracked paths remain the only tracked outputs; only parsed canonical metadata needed downstream appears in their policy/inventory records. Review package source URLs, both base-image inventories, embedded-browser revisions/versions, typed tree count/size/algorithm/identity and derived source-relative-file absence, official Playwright tag URL/registry/CDN, exact external source-reference provenance, license texts/references, notices, notice completeness, all eleven distribution surfaces, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components whose bytes could be exported/deployed stop the task.
 
 - [ ] **Step 5: Run reproducibility and installation GREEN**
 
-```powershell
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify --repo-root .
-.venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
-$trackedOutputs = @('space/requirements.lock', 'space/requirements-dev.lock', 'space/SBOM.spdx.json', 'space/THIRD_PARTY_LICENSES.json')
-$first = @($trackedOutputs | ForEach-Object {
-    $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_
-    '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant()
-})
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json
-$second = @($trackedOutputs | ForEach-Object {
-    $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_
-    '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant()
-})
-if ([string]::Join("`n", $first) -cne [string]::Join("`n", $second)) { throw 'Supply-chain outputs are not reproducible' }
-```
-
-Expected: verify and tests pass, regeneration is byte-for-byte stable, every ordinary component is approved-only, the exact WebKit record preserves both SPDX `NOASSERTION` fields plus `reviewer_test_only_not_redistributed` and `complete_digest_bound_notice=false`, and every named distribution-surface mutation is rejected.
+The reproducibility commands are intentionally inside Step 4's live `try` block so both inventory runs consume the same verified `$sourceRef` before the ownership-safe finalizer runs. Expected: verify and tests pass, regeneration is byte-for-byte stable, every ordinary component is approved-only, the exact WebKit record preserves both SPDX `NOASSERTION` fields plus `reviewer_test_only_not_redistributed` and `complete_digest_bound_notice=false`, and every named distribution-surface mutation is rejected.
 
 - [ ] **Step 6: Commit every source and generated supply-chain file explicitly**
 
@@ -3151,7 +3171,7 @@ $expectedWebKit = [ordered]@{
     webkit_tree_total_bytes = 306401261
     webkit_tree_algorithm = 'sha256-canonical-tree-v1'
     webkit_tree_sha256 = 'c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c'
-    image_tree_source_relative_path_absent = $true
+    image_tree_source_relative_path_absence_proof = @{ repository_relative_path = 'browser_patches/webkit/UPSTREAM_CONFIG.sh'; canonical_tree_algorithm = 'sha256-canonical-tree-v1'; canonical_tree_file_count = 38; canonical_tree_total_bytes = 306401261; canonical_tree_sha256 = 'c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c'; present = $false }
     official_webkit_licensing_references = @(
         'https://webkit.org/licensing-webkit/',
         'https://github.com/WebKit/WebKit/blob/343e13bf22dca9d0ec227801419aab0f9001a32f/Source/WebCore/LICENSE-APPLE',
