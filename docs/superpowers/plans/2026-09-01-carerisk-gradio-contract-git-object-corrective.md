@@ -367,7 +367,7 @@ def test_gradio_contract_git_object_matches_controller_custody() -> None:
     (
         (_GRADIO_CONTRACT_BLOB_ENV, ""),
         (_GRADIO_CONTRACT_BLOB_ENV, "A" * 40),
-        (_GRADIO_CONTRACT_SIZE_ENV, "064847"),
+        (_GRADIO_CONTRACT_SIZE_ENV, "01"),
         (_GRADIO_CONTRACT_SHA256_ENV, "g" * 64),
     ),
 )
