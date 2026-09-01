@@ -240,4 +240,3 @@ git commit -m "test(space): deny dynamic reflection boundary"
 ```
 
 Expected: one implementation commit with exactly `tests/test_hf_space_source_boundary.py`, correct `kuotunyu <61350295+kuotunyu@users.noreply.github.com>` author/committer identity, no co-author trailer, clean tracked worktree, and no push.
-
