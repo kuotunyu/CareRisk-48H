@@ -64,7 +64,9 @@ Add negative source mutations for:
 - near-miss `super().__init__`, `gr.__version__`, `type(exc).__name__`, `inspect.signature`, and `inspect.Parameter.empty` shapes;
 - binding/shadowing/import aliases of `type`, `inspect`, `importlib`, `ui_module`, `gr`, and `uvicorn` outside their one exact existing top-level import;
 - `monkeypatch.setattr` assigned to an alias, called through another receiver, called with a nonliteral member, or referenced without being the direct `Call.func`;
-- `monkeypatch.setattr(inspect, "signature", sink)`, `monkeypatch.setattr(inspect, "Parameter", sink)`, `monkeypatch.setattr(gr, "__version__", value)`, `monkeypatch.setattr(socket, "AF_UNIX", value)`, mutation of either permitted `importlib.util` member, and mutation of `ui_module.PublicSurfaceGuard`;
+- every `monkeypatch.setattr` whose literal member is one of `getattr`, `type`, `isinstance`, `super`, `frozenset`, `signature`, `Parameter`, `empty`, `__version__`, `AF_UNIX`, `spec_from_file_location`, `module_from_spec`, or `PublicSurfaceGuard`, regardless of the first-argument receiver; RED cases must include direct receivers, a local receiver alias, `sys.modules["builtins"]`, `sys.modules["inspect"]`, and another registry/subscript receiver;
+- every `monkeypatch.setattr` whose literal member is `create_app`, `build_package_asset_membership`, `mount_gradio_app`, or `run`, except the four exact full-node entrypoint substitutions below. Add RED cases for each exception with a wrong owner, duplicate call, alternate receiver, and changed replacement expression;
+- every unapproved `monkeypatch` method, including `setitem`, `delattr`, and `delenv`; keep only exact direct `setattr` nodes and the current exact direct environment-only `setenv` nodes, and add a `monkeypatch.setitem(sys.modules, "inspect", sink)` RED mutation;
 - assignment/parameter/function/class/import shadowing for `isinstance`, `super`, `frozenset`, `socket`, `pytest`, or any other protected identity; `monkeypatch` is positive only as an exact `pytest.MonkeyPatch` parameter in the owning function and every rebind/import/alternate annotation is negative;
 - `"PublicSurfaceGuard"` as a dynamic member string.
 
@@ -96,6 +98,17 @@ Required context rules:
 - original/effective imports of either sensitive member are rejected;
 - ordinary or two-level aliases are rejected.
 
+The four entrypoint exceptions are allowed only when the file contains exactly one top-level function named `test_entrypoint_mount_and_uvicorn_contract_are_exact` and that function owns exactly these four calls, one occurrence each, with no keywords and these exact AST shapes:
+
+```python
+monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)
+monkeypatch.setattr(ui_module, "build_package_asset_membership", lambda: membership)
+monkeypatch.setattr(gr, "mount_gradio_app", fake_mount)
+monkeypatch.setattr(entrypoint.uvicorn, "run", fake_run)
+```
+
+The names `create_app`, `build_package_asset_membership`, `mount_gradio_app`, and `run` are default-denied as `monkeypatch.setattr` member literals before these four full-node exceptions are applied. An exception does not arise from a receiver/member pair alone.
+
 Replace the existing positive test `test_guard_helper_audit_accepts_bounded_builder_and_guard_alias_lineage` with a negative test of the same alias lineage. No test may continue to assert that builder or guard aliases are accepted.
 
 - [ ] **Step 3: Run RED**
@@ -115,8 +128,9 @@ Use a parent map and finite allowed-node sets. Do not resolve alias values.
 - reject reflection imports/helpers and `importlib.import_module` by source token;
 - reject dunder attributes except exact `super().__init__()` inside a class-owned `__init__`, exact pinned `gr.__version__ == "6.26.0"`, and exact `type(exc).__name__ == "Failed"`;
 - allow `__name__` and `__file__` loads, `from __future__ import annotations`, and class-owned `__init__` / `__call__` definitions only; apply the existing semantic dunder-binding checks everywhere else;
-- permit `monkeypatch` only as an `ast.arg` with exact annotation `pytest.MonkeyPatch` in the owning function; reject every other semantic binding of that name. Permit `monkeypatch.setattr` only as an exact direct callee with three positional arguments, no keywords, and a literal string second argument; every other attribute named `setattr` fails;
-- reject `monkeypatch.setattr` when its receiver/member pair targets an allowlist identity anchor: `inspect.signature`, `inspect.Parameter`, `gr.__version__`, `socket.AF_UNIX`, `importlib.util.spec_from_file_location`, `importlib.util.module_from_spec`, or `ui_module.PublicSurfaceGuard`. Permit the exact four existing substitutions only inside `test_entrypoint_mount_and_uvicorn_contract_are_exact`: `ui_module.create_app`, `ui_module.build_package_asset_membership`, `gr.mount_gradio_app`, and `entrypoint.uvicorn.run`, with their existing direct replacement expressions;
+- permit `monkeypatch` only as an `ast.arg` with exact annotation `pytest.MonkeyPatch` in the owning function; reject every other semantic binding of that name. Permit `monkeypatch.setattr` only as an exact direct callee with three positional arguments, no keywords, and a literal string second argument; every other attribute named `setattr` fails. Permit only the existing exact direct environment-only `monkeypatch.setenv` calls in their current owners; reject every other `monkeypatch` method, including `setitem`, `delattr`, and `delenv`;
+- apply a receiver-independent member-literal denial before any exception: every `monkeypatch.setattr` with member `getattr`, `type`, `isinstance`, `super`, `frozenset`, `signature`, `Parameter`, `empty`, `__version__`, `AF_UNIX`, `spec_from_file_location`, `module_from_spec`, `PublicSurfaceGuard`, `create_app`, `build_package_asset_membership`, `mount_gradio_app`, or `run` fails regardless of whether its receiver is direct, aliased, or obtained through `sys.modules`/another registry;
+- construct exactly four full-node exceptions to that denial, requiring exactly one top-level owner function named `test_entrypoint_mount_and_uvicorn_contract_are_exact`, exactly one occurrence of each call, exact direct callee/receiver/member/replacement AST, three positional arguments, and no keywords: `monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)`, `monkeypatch.setattr(ui_module, "build_package_asset_membership", lambda: membership)`, `monkeypatch.setattr(gr, "mount_gradio_app", fake_mount)`, and `monkeypatch.setattr(entrypoint.uvicorn, "run", fake_run)`. Reject wrong owner, duplicate, missing, alternate receiver, changed replacement, or any fifth protected-member substitution;
 - permit `inspect.signature` only with one positional argument equal to the exact `ui_module.PublicSurfaceGuard` node and no keywords; permit only exact `inspect.Parameter.empty`; reject other `inspect` dynamic members;
 - permit only the current exact `importlib.util` import and exact `importlib.util.spec_from_file_location` / `module_from_spec` callees;
 - reject any `ast.Attribute` whose `.attr` is `PublicSurfaceGuard` or `build_package_asset_membership` unless its receiver is exact `ast.Name(id="ui_module")` and its parent shape is one of the allowed contexts above; enforce this receiver-independent check before the context exceptions;
