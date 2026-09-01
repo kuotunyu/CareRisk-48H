@@ -17,7 +17,7 @@
 - Do not read `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation assets, private ledgers/final locks, or Set C.
 - Do not run the receipt exporter, model code, training, evaluation, or persistent service.
 - Do not create, upload, deploy, or modify a GitHub or Hugging Face resource; do not push this branch.
-- Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; the implicit `__builtins__` mapping; every double-underscore attribute reference; every double-underscore function definition except `__init__` and `__call__`; every double-underscore name load except `__name__` and `__file__`; every double-underscore store/delete except one module-level literal-string `__all__` declaration; exact dynamic protocol-name string literals; `operator.attrgetter`/`operator.methodcaller`; `inspect.getattr_static`; aliased or class-construction `type`; and dynamic class factories. Existing direct one-argument `type(value)` validation remains permitted. From `types`, only `MappingProxyType` may be imported.
+- Product application sources reject direct or aliased `getattr`, `setattr`, `delattr`, `hasattr`, `vars`, `globals`, `locals`, `eval`, `exec`, `compile`, and `__import__`; the implicit `__builtins__` mapping; every double-underscore attribute reference; every double-underscore function definition except `__init__` and `__call__`; every double-underscore name load except `__name__` and `__file__`; every double-underscore store/delete except at most one qualifying module-level literal-string `__all__` declaration; exact dynamic protocol-name string literals; `operator.attrgetter`/`operator.methodcaller`; `inspect.getattr_static`; `type` outside an exact approved validation comparison; and dynamic class factories. The only permitted `type` loads are direct `type(<non-starred expression>) is [not] str|int|frozenset` comparisons with exactly one argument, no keywords, and one comparator. From `types`, only `MappingProxyType` may be imported.
 - Enforcement rejects forbidden builtin `Name` loads and forbidden reflective/helper `Attribute` references at the source token. It does not resolve arbitrary downstream alias flow. Violations are deduplicated and returned in deterministic sorted order.
 - Syntax-defined `__future__`, `__name__`, `__file__`, `__all__`, `__init__`, and `__call__` uses remain permitted when they are not used to retrieve or mutate another attribute.
 - The entry point still requires direct named construction: one `FastAPI(...)`, one `gr.mount_gradio_app(...)`, one `build_package_asset_membership()`, one `PublicSurfaceGuard(...)`, and one `uvicorn.run(...)` beneath the exact main guard.
@@ -147,6 +147,10 @@ Add one test named `test_application_dunder_assignment_and_dynamic_class_constru
     "__getattr__",
 ),
 (
+    "del __getattr__",
+    "__getattr__",
+),
+(
     "Dynamic = type('Dynamic', (), {'__getattr__': handler})",
     "dynamic_type",
 ),
@@ -155,12 +159,40 @@ Add one test named `test_application_dunder_assignment_and_dynamic_class_constru
     "dynamic_type",
 ),
 (
+    "factory = type(ExistingClass)\nDynamic = factory('Dynamic', (), {})",
+    "dynamic_type",
+),
+(
+    "Dynamic = type(ExistingClass)('Dynamic', (), {})",
+    "dynamic_type",
+),
+(
+    "Dynamic = type(*args)",
+    "dynamic_type",
+),
+(
     "from types import new_class\nDynamic = new_class('Dynamic')",
+    "dynamic_class_factory",
+),
+(
+    "import types",
+    "dynamic_class_factory",
+),
+(
+    "import types as t",
+    "dynamic_class_factory",
+),
+(
+    "from types import new_class as factory",
+    "dynamic_class_factory",
+),
+(
+    "from types import MappingProxyType, new_class",
     "dynamic_class_factory",
 ),
 ```
 
-Also mutate a module-level `__all__ = ["Allowed"]` declaration into a class-body `__all__ = ["NotAllowed"]` and require `__all__`; the permitted declaration is exactly one top-level `Assign` or `AnnAssign`, targets only `__all__`, and its value is a list or tuple containing only string literals. Add positive assertions that existing `type(value)` calls and that exact module-level `__all__` declaration produce no reflection finding.
+Also mutate a module-level `__all__ = ["Allowed"]` declaration into each of: a class-body `__all__ = ["NotAllowed"]`, two top-level qualifying `__all__` declarations, and one top-level `__all__ = [runtime_name]`; require `__all__` for every mutation. The exception applies to at most one top-level `Assign` or `AnnAssign`, targets only `__all__`, and its value is a list or tuple containing only string literals. Add positive assertions for singular qualifying `Assign` and `AnnAssign` forms and for the exact approved `type(value) is not str`, `type(value) is not int`, and `type(value) is not frozenset` comparisons. Standalone `type(value)`, nested calls, and starred calls remain negative.
 
 - [ ] **Step 3: Add entry-point and guard-helper bypass mutations**
 
@@ -286,7 +318,9 @@ _SENSITIVE_COMPOSITION_MEMBERS = frozenset(
 )
 ```
 
-Implement `_is_dunder(name: str) -> bool` as `len(name) > 4 and name.startswith("__") and name.endswith("__")`. Identify the sole permitted `__all__` target node only when it belongs to an exact top-level `Assign` or `AnnAssign` whose only target is `__all__` and whose value is a literal list or tuple of strings. Identify the sole permitted `type` load nodes only when an `ast.Call` has exact direct `ast.Name(id="type")` callee, exactly one positional argument, and no keywords; every other `type` load is `dynamic_type`. Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`, when it is a dunder outside `_ALLOWED_DUNDER_NAME_LOADS`, or when it is `type` outside the permitted node set; reject every dunder `ast.Name` in `Store` or `Del` context except that one recorded `__all__` target; reject every dunder `ast.Attribute`; reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`; reject an `ast.FunctionDef` or `ast.AsyncFunctionDef` with a dunder name outside `_ALLOWED_DUNDER_DEFINITIONS`; and reject an exact string constant in `_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS`. Reject every `ast.Import` of `types`; for `ImportFrom(module="types")`, require every original imported name to equal `MappingProxyType`, regardless of local alias. Do not evaluate Python, fold arbitrary expressions, import a module, or follow the value after the forbidden reference.
+Implement `_is_dunder(name: str) -> bool` as `len(name) > 4 and name.startswith("__") and name.endswith("__")`. Identify a permitted `__all__` target node only when the module contains exactly one top-level `Assign` or `AnnAssign` targeting only `__all__`, its value is a literal list or tuple containing only string constants, and there is no second top-level `__all__` declaration; otherwise permit no `__all__` target. Build an AST parent map and identify permitted `type` load nodes only when all of these facts hold: the node is the exact direct `ast.Name(id="type")` callee of an `ast.Call`; the call has exactly one non-`ast.Starred` positional argument and no keywords; the call is the left operand of an `ast.Compare` with exactly one operator and one comparator; the operator is `ast.Is` or `ast.IsNot`; and the comparator is a direct `ast.Name` in `{str, int, frozenset}`. The permitted compare cannot serve as an alias exception for any other `type` load. Every other `type` load is `dynamic_type`.
+
+Implement `_dynamic_reflection_violations(...)` as a pure AST walk with a `set[str]` accumulator and `sorted(...)` return. Reject an `ast.Name` in `ast.Load` context when its identifier is in `_FORBIDDEN_REFLECTION_NAMES`, when it is a dunder outside `_ALLOWED_DUNDER_NAME_LOADS`, or when it is `type` outside the permitted node set; reject every dunder `ast.Name` in `Store` or `Del` context except the sole recorded `__all__` target; reject every dunder `ast.Attribute`; reject an `ast.Attribute` whose `_call_name(...)` is in `_FORBIDDEN_REFLECTION_HELPERS`; reject an `ast.FunctionDef` or `ast.AsyncFunctionDef` with a dunder name outside `_ALLOWED_DUNDER_DEFINITIONS`; and reject an exact string constant in `_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS`. Reject every `ast.Import` whose imported module is `types`, including aliased imports; for `ImportFrom(module="types")`, require every original imported name to equal `MappingProxyType`, regardless of local alias, so a mixed import also fails. Do not evaluate Python, fold arbitrary expressions, import a module, or follow the value after the forbidden reference.
 
 Integrate it in three places:
 
