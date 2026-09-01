@@ -411,10 +411,11 @@ Run:
   tests/test_hf_space_source_boundary.py::test_guard_helper_audit_allows_unrelated_test_introspection `
   tests/test_hf_space_source_boundary.py::test_application_syntax_identities_are_not_reflection
 .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_source_boundary.py space/tests/test_export_contract.py -q
+$env:PYTHONPATH = (Resolve-Path space).Path
 .venv-space\Scripts\python.exe -m pytest space/tests/test_gradio_contract.py -q
 ```
 
-Expected: all new reflection mutations pass; the complete Task 6 boundary suite passes; the Gradio contract remains green with only an already documented platform-capability skip if Windows cannot create the required symlink fixture.
+Expected: all new reflection mutations pass; the complete Task 6 boundary suite passes; the Gradio contract resolves the isolated public package through the same exact `PYTHONPATH=space` environment used throughout the governing HF Space plan and remains green with only an already documented platform-capability skip if Windows cannot create the required symlink fixture. Missing `carerisk_space` without that environment is a plan-command defect, not permission to modify or install the frozen product package.
 
 - [ ] **Step 8: Run static and immutable-scope verification**
 
