@@ -139,6 +139,12 @@ The only `monkeypatch.setenv` exception is exactly one call, owned by the sole t
 
 Add RED mutations for a wrong owner, duplicate call, changed argument, keyword form, changed loop target, and changed/additional key or value.
 
+Actual-source corrective rules, governing over any broader wording above:
+
+- Accept both exact current fixture decorator forms: bare `@pytest.fixture` and `@pytest.fixture(scope="module")`. Add REDs for changed scope/value, additional argument/keyword, alias, and non-decorator use.
+- Reject `request`/`pytestconfig` only as an `ast.arg` fixture-injection point in a top-level collected `test_*` function or top-level function decorated by either exact fixture form. Preserve current nested `async def request`, `RunningWireApp.request`/`requests` methods, method parameters, and local/loop variables named `request`.
+- Permit exactly one first positional parameter `entrypoint: Any` owned by the sole top-level helper `_assert_entrypoint_positional_identity`. Its only `entrypoint` Name loads are exact receivers in `mounted_parent is entrypoint.parent`, `mounted_demo is entrypoint.demo`, and `served_app is entrypoint.app`. Add REDs for wrong owner/position/annotation, duplicate helper/parameter, added load/call/return, alternate attribute, and any local/global/nonlocal/delete/rebind. This helper parameter is disjoint from the protected dynamic-module local in `test_entrypoint_mount_and_uvicorn_contract_are_exact`.
+
 Replace the existing positive test `test_guard_helper_audit_accepts_bounded_builder_and_guard_alias_lineage` with a negative test of the same alias lineage. No test may continue to assert that builder or guard aliases are accepted.
 
 - [ ] **Step 3: Run RED**
@@ -172,6 +178,8 @@ Use a parent map and finite allowed-node sets. Do not resolve alias values.
 - permit `uvicorn` attributes only in their current reviewed direct contexts: the sole exact `uvicorn.Config(marker, ...)` call in `running_wire_app` with the complete pinned keyword/value AST, the direct `uvicorn.Server(config)` call, and the exact entrypoint `run` substitution already enumerated. Require exactly one preceding local assignment `marker = AppEntryMarker(guarded, guarded.package_asset_urls)` in that fixture and no other local marker binding; allow only the existing exact `RunningWireApp.marker` field binding. Require exactly one top-level class definition named `AppEntryMarker`, with empty `decorator_list`, `bases`, `keywords`, and `type_params` where that AST field exists; allow its current annotation/constructor Name loads and reject every other semantic binding/import/alias of that identity. Reject string/path app targets, marker/class rebinds, decorated/inherited/metaclass marker classes, `uvicorn.importer`, alternate receivers, aliases, changed owner/count/arguments, and every other `uvicorn` attribute;
 - reject any `ast.Attribute` whose `.attr` is `PublicSurfaceGuard` or `build_package_asset_membership` unless its receiver is exact `ast.Name(id="ui_module")` and its parent shape is one of the allowed contexts above; enforce this receiver-independent check before the context exceptions;
 - return deduplicated deterministic sorted findings.
+
+For implementation, the actual-source corrective rules above supersede the broader phrases "reject semantic bindings `request`/`pytestconfig`" and "reject every other semantic binding of ... `entrypoint`". The only exceptions are the exact fixture-decorator/name contexts and `_assert_entrypoint_positional_identity` parameter/three-load contexts enumerated above; all near misses fail. The exact `for name, value in {...}.items()` target is an `ast.Tuple` in `Store` context and must be compared with that context rather than a `Load` tuple.
 
 Delete the `_ReflectionAliasState`, marker constants, `_owned_nodes`, mapping/callable state classifiers, fixed-point construction, and module/function reflection evaluator. `_guard_helper_violations` first appends whole-file source findings, then performs existing direct guard/builder argument, membership, assertion, and rejection-path checks without accepting aliases.
 
