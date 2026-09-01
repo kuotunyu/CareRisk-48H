@@ -2225,77 +2225,129 @@ _GRADIO_EXACT_MEMBER_NAMES = frozenset(
         "mount_gradio_app",
     }
 )
-_GRADIO_MONKEYPATCH_SETATTR_SIGNATURES = (
-    ("test_static_document_prerenders_four_exact_scenarios_once", "ui_module", "render_scenario"),
-    ("test_package_asset_missing_root_fails_closed", "ui_module", "BUILD_PATH_LIB"),
-    ("_fake_asset_roots", "ui_module", "BUILD_PATH_LIB"),
-    ("_fake_asset_roots", "ui_module", "STATIC_PATH_LIB"),
-    ("test_linux_symlink_fixture_failure_is_a_failure_not_a_skip", "sys", "platform"),
-    ("test_linux_symlink_fixture_failure_is_a_failure_not_a_skip", "Path", "symlink_to"),
-    ("test_package_asset_root_symlink_fails_closed", "ui_module", "BUILD_PATH_LIB"),
-    ("test_package_asset_root_symlink_fails_closed", "ui_module", "STATIC_PATH_LIB"),
-    ("test_package_asset_containment_escape_fails_closed", "Path", "is_symlink"),
-    ("test_package_asset_duplicate_url_fails_closed", "ui_module", "_canonical_asset_relative"),
+_GRADIO_PROTECTED_ATTRIBUTE_NAMES = frozenset(
+    {
+        "inspect",
+        "importlib",
+        "socket",
+        "sys",
+        "pytest",
+        "ui_module",
+        "gr",
+        "uvicorn",
+        "Path",
+        "SPACE_ROOT",
+        "AppEntryMarker",
+    }
+)
+_GRADIO_LOADER_CAPABILITY_MEMBERS = frozenset(
+    {"get_code", "get_data", "create_module", "exec_module"}
+)
+_GRADIO_CANONICAL_MONKEYPATCH_SETATTR_SOURCE = (
     (
-        "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
-        "gradio_routes",
-        "secure_url_stream_response",
+        "test_static_document_prerenders_four_exact_scenarios_once",
+        "monkeypatch.setattr(ui_module, 'render_scenario', recording_render)",
+    ),
+    (
+        "test_package_asset_missing_root_fails_closed",
+        "monkeypatch.setattr(ui_module, 'BUILD_PATH_LIB', tmp_path / 'missing')",
+    ),
+    ("_fake_asset_roots", "monkeypatch.setattr(ui_module, 'BUILD_PATH_LIB', build)"),
+    ("_fake_asset_roots", "monkeypatch.setattr(ui_module, 'STATIC_PATH_LIB', static)"),
+    (
+        "test_linux_symlink_fixture_failure_is_a_failure_not_a_skip",
+        "monkeypatch.setattr(sys, 'platform', 'linux')",
+    ),
+    (
+        "test_linux_symlink_fixture_failure_is_a_failure_not_a_skip",
+        "monkeypatch.setattr(Path, 'symlink_to', unavailable)",
+    ),
+    (
+        "test_package_asset_root_symlink_fails_closed",
+        "monkeypatch.setattr(ui_module, 'BUILD_PATH_LIB', build_link)",
+    ),
+    (
+        "test_package_asset_root_symlink_fails_closed",
+        "monkeypatch.setattr(ui_module, 'STATIC_PATH_LIB', static)",
+    ),
+    (
+        "test_package_asset_containment_escape_fails_closed",
+        "monkeypatch.setattr(Path, 'is_symlink', "
+        "lambda path: False if path == escape else real_is_symlink(path))",
+    ),
+    (
+        "test_package_asset_duplicate_url_fails_closed",
+        "monkeypatch.setattr(ui_module, '_canonical_asset_relative', lambda relative: 'same.js')",
     ),
     (
         "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
-        "gradio_routes",
-        "file_fetch",
+        "monkeypatch.setattr(gradio_routes, 'secure_url_stream_response', bomb)",
     ),
     (
         "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
-        "gradio_routes.tempfile",
-        "NamedTemporaryFile",
+        "monkeypatch.setattr(gradio_routes, 'file_fetch', bomb)",
     ),
     (
         "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
-        "gradio_routes.tempfile",
-        "TemporaryDirectory",
+        "monkeypatch.setattr(gradio_routes.tempfile, 'NamedTemporaryFile', bomb)",
     ),
     (
         "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
-        "gradio_routes.tempfile",
-        "tempdir",
+        "monkeypatch.setattr(gradio_routes.tempfile, 'TemporaryDirectory', bomb)",
+    ),
+    (
+        "test_direct_outer_boundary_blocks_file_and_upload_before_receive",
+        "monkeypatch.setattr(gradio_routes.tempfile, 'tempdir', str(temp_root))",
     ),
     (
         "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
-        "gradio_routes",
-        "secure_url_stream_response",
+        "monkeypatch.setattr(gradio_routes, 'secure_url_stream_response', bomb)",
     ),
     (
         "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
-        "gradio_routes",
-        "file_fetch",
+        "monkeypatch.setattr(gradio_routes, 'file_fetch', bomb)",
     ),
     (
         "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
-        "gradio_routes.tempfile",
-        "NamedTemporaryFile",
+        "monkeypatch.setattr(gradio_routes.tempfile, 'NamedTemporaryFile', bomb)",
     ),
     (
         "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
-        "gradio_routes.tempfile",
-        "TemporaryDirectory",
+        "monkeypatch.setattr(gradio_routes.tempfile, 'TemporaryDirectory', bomb)",
     ),
     (
         "test_running_outer_boundary_blocks_file_and_upload_before_fetch_or_temp",
-        "gradio_routes.tempfile",
-        "tempdir",
+        "monkeypatch.setattr(gradio_routes.tempfile, 'tempdir', str(temp_root))",
     ),
-    ("test_entrypoint_mount_and_uvicorn_contract_are_exact", "ui_module", "create_app"),
     (
         "test_entrypoint_mount_and_uvicorn_contract_are_exact",
-        "ui_module",
-        "build_package_asset_membership",
+        "monkeypatch.setattr(ui_module, 'create_app', lambda bundle_root=None: demo)",
     ),
-    ("test_entrypoint_mount_and_uvicorn_contract_are_exact", "gr", "mount_gradio_app"),
-    ("test_entrypoint_mount_and_uvicorn_contract_are_exact", "entrypoint.uvicorn", "run"),
-    ("make_unit_failure_bundle", "evidence_module", "RECEIPT_SHA256"),
-    ("make_unit_failure_bundle", "evidence_module", "RECEIPT_GIT_BLOB_SHA"),
+    (
+        "test_entrypoint_mount_and_uvicorn_contract_are_exact",
+        "monkeypatch.setattr(ui_module, 'build_package_asset_membership', lambda: membership)",
+    ),
+    (
+        "test_entrypoint_mount_and_uvicorn_contract_are_exact",
+        "monkeypatch.setattr(gr, 'mount_gradio_app', fake_mount)",
+    ),
+    (
+        "test_entrypoint_mount_and_uvicorn_contract_are_exact",
+        "monkeypatch.setattr(entrypoint.uvicorn, 'run', fake_run)",
+    ),
+    (
+        "make_unit_failure_bundle",
+        "monkeypatch.setattr(evidence_module, 'RECEIPT_SHA256', hashlib.sha256(raw).hexdigest())",
+    ),
+    (
+        "make_unit_failure_bundle",
+        "monkeypatch.setattr(evidence_module, 'RECEIPT_GIT_BLOB_SHA', "
+        "evidence_module.git_blob_sha1(raw))",
+    ),
+)
+_GRADIO_CANONICAL_MONKEYPATCH_SETATTR_DUMPS = tuple(
+    (owner, ast.dump(ast.parse(source, mode="eval").body, include_attributes=False))
+    for owner, source in _GRADIO_CANONICAL_MONKEYPATCH_SETATTR_SOURCE
 )
 _GRADIO_MONKEYPATCH_HELPER_CALLS = {
     "make_unit_failure_bundle": (
@@ -2637,16 +2689,50 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
             ):
                 violations.add(f"literal:{node.value}")
 
+    bounded_log_classes = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "BoundedLogCapture"
+    ]
+    bounded_log_class = bounded_log_classes[0] if len(bounded_log_classes) == 1 else None
+    bounded_log_initializers = (
+        []
+        if bounded_log_class is None
+        else [
+            node
+            for node in bounded_log_class.body
+            if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+        ]
+    )
+    bounded_log_initializer = (
+        bounded_log_initializers[0] if len(bounded_log_initializers) == 1 else None
+    )
+    expected_super_statement = ast.dump(
+        ast.parse("super().__init__(level=logging.DEBUG)").body[0],
+        include_attributes=False,
+    )
+    super_statements = (
+        []
+        if bounded_log_initializer is None
+        else [
+            statement
+            for statement in bounded_log_initializer.body
+            if ast.dump(statement, include_attributes=False) == expected_super_statement
+        ]
+    )
     super_calls = [
         node
-        for node in ast.walk(tree)
+        for statement in super_statements
+        for node in ast.walk(statement)
         if isinstance(node, ast.Call)
         and _is_exact_call(node, "super().__init__(level=logging.DEBUG)")
-        and (owner := _nearest_function(node, parents)) is not None
-        and owner.name == "__init__"
-        and (class_owner := _nearest_class(node, parents)) is not None
-        and class_owner.name == "BoundedLogCapture"
     ]
+    super_parent_valid = (
+        len(super_calls) == 1
+        and bounded_log_initializer is not None
+        and bool(bounded_log_initializer.body)
+        and bounded_log_initializer.body[0] in super_statements
+    )
     version_compares = [
         node
         for node in ast.walk(tree)
@@ -2657,14 +2743,19 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
         and owner.name == "test_gradio_version_and_normal_config_are_static_and_event_free"
     ]
     allowed_dunder_attrs: set[ast.Attribute] = set()
-    for root in [*super_calls, *version_compares, *type_compares]:
+    for root in [
+        *(super_calls if super_parent_valid else []),
+        *version_compares,
+        *type_compares,
+    ]:
         allowed_dunder_attrs.update(
             node
             for node in ast.walk(root)
             if isinstance(node, ast.Attribute) and _is_dunder(node.attr)
         )
-    if len(super_calls) != 1:
+    if not super_parent_valid:
         violations.add("super:exact_context")
+        violations.add("exact_parent:super")
     if len(version_compares) != 1:
         violations.add("gr_version:exact_context")
     for node in ast.walk(tree):
@@ -2772,20 +2863,32 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
     ]
     approved_monkeypatch_calls: set[ast.Call] = set()
     allowed_monkeypatch_loads: set[ast.Name] = set()
-    for expected_signature in _GRADIO_MONKEYPATCH_SETATTR_SIGNATURES:
+    for expected_owner, expected_dump in _GRADIO_CANONICAL_MONKEYPATCH_SETATTR_DUMPS:
         matches = [
             call
             for call in monkeypatch_calls
-            if _direct_monkeypatch_call_signature(call, parents) == expected_signature
+            if ast.dump(call, include_attributes=False) == expected_dump
+            and (owner := _nearest_function(call, parents)) is not None
+            and owner.name == expected_owner
         ]
         if len(matches) != 1:
-            violations.add("monkeypatch:load")
+            violations.add("monkeypatch:canonical")
         else:
             approved_monkeypatch_calls.add(matches[0])
             call_attribute = matches[0].func
             assert isinstance(call_attribute, ast.Attribute)
             assert isinstance(call_attribute.value, ast.Name)
             allowed_monkeypatch_loads.add(call_attribute.value)
+    canonical_setattr_calls = {
+        call
+        for call in monkeypatch_calls
+        if isinstance(call.func, ast.Attribute) and call.func.attr == "setattr"
+    }
+    if (
+        len(canonical_setattr_calls) != len(_GRADIO_CANONICAL_MONKEYPATCH_SETATTR_DUMPS)
+        or canonical_setattr_calls != approved_monkeypatch_calls
+    ):
+        violations.add("monkeypatch:canonical")
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr == "setattr":
             parent = parents.get(node)
@@ -3088,34 +3191,64 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
         if name in {"request", "pytestconfig"} and isinstance(node, ast.arg):
             violations.add(f"pytest:fixture:{name}")
 
-    expected_signature_call = _expression_dump("inspect.signature(ui_module.PublicSurfaceGuard)")
+    guard_constructor_owners = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "test_outer_guard_constructor_is_exact_and_rejects_empty_membership"
+    ]
+    guard_constructor_owner = (
+        guard_constructor_owners[0] if len(guard_constructor_owners) == 1 else None
+    )
+    expected_signature_assignment = ast.dump(
+        ast.parse("parameters = inspect.signature(ui_module.PublicSurfaceGuard).parameters").body[
+            0
+        ],
+        include_attributes=False,
+    )
+    signature_assignments = (
+        []
+        if guard_constructor_owner is None
+        else [
+            statement
+            for statement in guard_constructor_owner.body
+            if ast.dump(statement, include_attributes=False) == expected_signature_assignment
+        ]
+    )
     signature_calls = [
         node
-        for node in ast.walk(tree)
+        for statement in signature_assignments
+        for node in ast.walk(statement)
         if isinstance(node, ast.Call)
-        and ast.dump(node, include_attributes=False) == expected_signature_call
-        and (owner := _nearest_function(node, parents)) is not None
-        and owner.name == "test_outer_guard_constructor_is_exact_and_rejects_empty_membership"
+        and _is_exact_call(node, "inspect.signature(ui_module.PublicSurfaceGuard)")
     ]
-    parameter_empty_compares = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Compare)
-        and ast.dump(node, include_attributes=False)
-        == _expression_dump("item.default is inspect.Parameter.empty")
-        and (owner := _nearest_function(node, parents)) is not None
-        and owner.name == "test_outer_guard_constructor_is_exact_and_rejects_empty_membership"
-    ]
+    expected_parameter_assertion = ast.dump(
+        ast.parse(
+            "assert all(item.default is inspect.Parameter.empty for item in parameters.values())"
+        ).body[0],
+        include_attributes=False,
+    )
+    parameter_empty_assertions = (
+        []
+        if guard_constructor_owner is None
+        else [
+            statement
+            for statement in guard_constructor_owner.body
+            if ast.dump(statement, include_attributes=False) == expected_parameter_assertion
+        ]
+    )
     parameter_empty_attrs = [
         node
-        for compare in parameter_empty_compares
-        for node in ast.walk(compare)
+        for assertion in parameter_empty_assertions
+        for node in ast.walk(assertion)
         if isinstance(node, ast.Attribute) and _call_name(node) == "inspect.Parameter.empty"
     ]
-    if len(signature_calls) != 1:
+    if len(signature_assignments) != 1 or len(signature_calls) != 1:
         violations.add("inspect:signature")
-    if len(parameter_empty_compares) != 1 or len(parameter_empty_attrs) != 1:
+        violations.add("exact_parent:signature")
+    if len(parameter_empty_assertions) != 1 or len(parameter_empty_attrs) != 1:
         violations.add("inspect:Parameter.empty")
+        violations.add("exact_parent:Parameter.empty")
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
             continue
@@ -3143,21 +3276,31 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
         for source in (
             "spec = importlib.util.spec_from_file_location("
             "'carerisk_space_entrypoint', SPACE_ROOT / 'app.py')",
+            "assert spec is not None and spec.loader is not None",
             "entrypoint = importlib.util.module_from_spec(spec)",
             "spec.loader.exec_module(entrypoint)",
         )
     )
-    exact_entrypoint_statements: list[ast.stmt] = []
-    for expected in expected_entrypoint_statements:
-        statement_matches = [
-            statement
-            for statement in entrypoint_statements
-            if ast.dump(statement, include_attributes=False) == expected
-        ]
-        if len(statement_matches) != 1:
-            violations.add("entrypoint:load_chain")
-        else:
-            exact_entrypoint_statements.append(statement_matches[0])
+    exact_entrypoint_sequences = [
+        entrypoint_statements[index : index + len(expected_entrypoint_statements)]
+        for index in range(len(entrypoint_statements) - len(expected_entrypoint_statements) + 1)
+        if tuple(
+            ast.dump(statement, include_attributes=False)
+            for statement in entrypoint_statements[
+                index : index + len(expected_entrypoint_statements)
+            ]
+        )
+        == expected_entrypoint_statements
+    ]
+    exact_entrypoint_statements = (
+        exact_entrypoint_sequences[0] if len(exact_entrypoint_sequences) == 1 else []
+    )
+    if len(exact_entrypoint_sequences) != 1:
+        violations.add("entrypoint:load_chain")
+        violations.add("loader:context")
+    allowed_loader_nodes = {
+        node for statement in exact_entrypoint_statements for node in ast.walk(statement)
+    }
     allowed_spec_bindings: set[ast.AST] = {
         node
         for statement in exact_entrypoint_statements
@@ -3173,13 +3316,24 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
             violations.add(f"entrypoint:binding:{name}")
     for node in ast.walk(tree):
         if (
-            isinstance(node, ast.Attribute)
-            and node.attr == "exec_module"
-            and not any(
-                node in set(ast.walk(statement)) for statement in exact_entrypoint_statements
-            )
+            isinstance(node, ast.Name)
+            and node.id == "spec"
+            and isinstance(node.ctx, ast.Load)
+            and node not in allowed_loader_nodes
         ):
-            violations.add("entrypoint:exec_module")
+            violations.add("loader:context")
+        if isinstance(node, ast.Attribute):
+            if (
+                node.attr == "loader"
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "spec"
+                and node not in allowed_loader_nodes
+            ):
+                violations.add("loader:context")
+            if node.attr in _GRADIO_LOADER_CAPABILITY_MEMBERS and node not in allowed_loader_nodes:
+                violations.add("loader:context")
+                if node.attr == "exec_module":
+                    violations.add("entrypoint:exec_module")
         if isinstance(node, ast.Attribute):
             full_name = _call_name(node)
             if (
@@ -3413,7 +3567,7 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
     }
     allowed_protected_loads["getattr"].update(allowed_getattr_names)
     allowed_protected_loads["type"].update(allowed_type_names)
-    if len(super_calls) == 1:
+    if super_parent_valid:
         allowed_protected_loads["super"].update(
             node
             for node in ast.walk(super_calls[0])
@@ -3431,10 +3585,13 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
             for node in ast.walk(parameter_empty_attrs[0])
             if isinstance(node, ast.Name) and node.id == "inspect"
         )
-    if len(exact_entrypoint_statements) == 3:
+    if len(exact_entrypoint_statements) == 4:
         allowed_protected_loads["importlib"].update(
             node
-            for statement in exact_entrypoint_statements[:2]
+            for statement in (
+                exact_entrypoint_statements[0],
+                exact_entrypoint_statements[2],
+            )
             for node in ast.walk(statement)
             if isinstance(node, ast.Name) and node.id == "importlib"
         )
@@ -3559,6 +3716,44 @@ def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
     allowed_protected_loads["socket"].update(socket_receiver_names)
     allowed_protected_loads["sys"].update(allowed_sys_names)
     allowed_protected_loads["pytest"].update(allowed_pytest_names)
+
+    allowed_protected_attributes: set[ast.Attribute] = set()
+    entrypoint_uvicorn_patch_nodes = [
+        call
+        for call in approved_monkeypatch_calls
+        if len(call.args) == 3
+        and isinstance(call.args[0], ast.Attribute)
+        and isinstance(call.args[0].value, ast.Name)
+        and call.args[0].value.id == "entrypoint"
+        and call.args[0].attr == "uvicorn"
+        and isinstance(call.args[1], ast.Constant)
+        and call.args[1].value == "run"
+        and isinstance(call.args[2], ast.Name)
+        and call.args[2].id == "fake_run"
+        and _nearest_function(call, parents) is entrypoint_owner
+    ]
+    if len(entrypoint_uvicorn_patch_nodes) == 1:
+        entrypoint_uvicorn_target = entrypoint_uvicorn_patch_nodes[0].args[0]
+        assert isinstance(entrypoint_uvicorn_target, ast.Attribute)
+        allowed_protected_attributes.add(entrypoint_uvicorn_target)
+    if len(socket_constructor_calls) == 1:
+        socket_constructor = socket_constructor_calls[0]
+        if (
+            isinstance(socket_constructor.func, ast.Attribute)
+            and isinstance(socket_constructor.func.value, ast.Name)
+            and socket_constructor.func.value.id == "socket"
+            and socket_constructor.func.attr == "socket"
+            and len(socket_constructor.args) == 2
+            and not socket_constructor.keywords
+        ):
+            allowed_protected_attributes.add(socket_constructor.func)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr in _GRADIO_PROTECTED_ATTRIBUTE_NAMES
+            and node not in allowed_protected_attributes
+        ):
+            violations.add(f"protected_attr:{node.attr}")
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Name) or not isinstance(node.ctx, ast.Load):
@@ -3785,6 +3980,197 @@ def _assert_gradio_contract_finding(case: str | tuple[str, str, int], expected: 
     tree = _gradio_contract_tree_for_case(case)
     assert expected in _gradio_test_source_violations(tree)
     assert expected in _guard_helper_violations(tree)
+
+
+def _gradio_contract_tree_with_setattr_replacement(index: int) -> ast.Module:
+    tree = ast.parse(_current_gradio_contract_source())
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    owner_name, expected_dump = _GRADIO_CANONICAL_MONKEYPATCH_SETATTR_DUMPS[index]
+    matches = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and ast.dump(node, include_attributes=False) == expected_dump
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == owner_name
+    ]
+    assert len(matches) == 1
+    replacement = "os.system" if index == 0 else f"replacement_{index}"
+    matches[0].args[2] = ast.parse(replacement, mode="eval").body
+    return ast.fix_missing_locations(tree)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        ("ui_module.gr", "protected_attr:gr"),
+        ("entrypoint.gr", "protected_attr:gr"),
+        ("captured_runner = entrypoint.uvicorn", "protected_attr:uvicorn"),
+        ("ui_module.Path", "protected_attr:Path"),
+        ("evidence_module.Path", "protected_attr:Path"),
+        ("ui_module.inspect", "protected_attr:inspect"),
+        ("evidence_module.importlib", "protected_attr:importlib"),
+        ("constructor = socket.socket", "protected_attr:socket"),
+        (
+            "other.socket(unix_family, socket.SOCK_STREAM)",
+            "protected_attr:socket",
+        ),
+        (
+            "socket.socket(unix_family, socket.SOCK_STREAM)",
+            "protected_attr:socket",
+        ),
+    ),
+)
+def test_gradio_contract_protected_reexports_are_denied(
+    case: str | tuple[str, str, int], expected: str
+) -> None:
+    _assert_gradio_contract_finding(case, expected)
+
+
+_GRADIO_ENTRYPOINT_LOADER_BLOCK = """\
+    spec = importlib.util.spec_from_file_location(
+        "carerisk_space_entrypoint", SPACE_ROOT / "app.py"
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+"""
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        ("loader_alias = spec.loader", "loader:context"),
+        ("spec.loader.get_code('evil')", "loader:context"),
+        ("spec.loader.get_data('evil')", "loader:context"),
+        ("spec.loader.create_module(spec)", "loader:context"),
+        ("spec.loader.exec_module(extra)", "loader:context"),
+        (
+            (
+                _GRADIO_ENTRYPOINT_LOADER_BLOCK,
+                _GRADIO_ENTRYPOINT_LOADER_BLOCK.replace(
+                    "assert spec is not None and spec.loader is not None",
+                    "assert spec is not None",
+                ),
+                1,
+            ),
+            "loader:context",
+        ),
+        (
+            (
+                _GRADIO_ENTRYPOINT_LOADER_BLOCK,
+                "    assert spec is not None and spec.loader is not None\n"
+                "    spec = importlib.util.spec_from_file_location(\n"
+                '        "carerisk_space_entrypoint", SPACE_ROOT / "app.py"\n'
+                "    )\n"
+                "    entrypoint = importlib.util.module_from_spec(spec)\n"
+                "    spec.loader.exec_module(entrypoint)\n",
+                1,
+            ),
+            "loader:context",
+        ),
+        (
+            (
+                _GRADIO_ENTRYPOINT_LOADER_BLOCK,
+                "    spec = importlib.util.spec_from_file_location(\n"
+                '        "carerisk_space_entrypoint", SPACE_ROOT / "app.py"\n'
+                "    )\n"
+                "    entrypoint = importlib.util.module_from_spec(spec)\n"
+                "    assert spec is not None and spec.loader is not None\n"
+                "    spec.loader.exec_module(entrypoint)\n",
+                1,
+            ),
+            "loader:context",
+        ),
+        ("captured_spec = spec", "loader:context"),
+        ("another_loader = spec.loader", "loader:context"),
+    ),
+)
+def test_gradio_contract_loader_object_context_is_exact(
+    case: str | tuple[str, str, int], expected: str
+) -> None:
+    _assert_gradio_contract_finding(case, expected)
+
+
+@pytest.mark.parametrize(
+    "index",
+    range(len(_GRADIO_CANONICAL_MONKEYPATCH_SETATTR_DUMPS)),
+    ids=(
+        f"{owner}-{position}"
+        for position, (owner, _) in enumerate(_GRADIO_CANONICAL_MONKEYPATCH_SETATTR_DUMPS)
+    ),
+)
+def test_gradio_contract_setattr_calls_are_canonical(index: int) -> None:
+    tree = _gradio_contract_tree_with_setattr_replacement(index)
+    expected = "monkeypatch:canonical"
+    assert expected in _gradio_test_source_violations(tree)
+    assert expected in _guard_helper_violations(tree)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        (
+            (
+                "    parameters = inspect.signature(ui_module.PublicSurfaceGuard).parameters",
+                "    signature_result = inspect.signature(ui_module.PublicSurfaceGuard)\n"
+                "    parameters = signature_result.parameters",
+                1,
+            ),
+            "exact_parent:signature",
+        ),
+        (
+            (
+                "    parameters = inspect.signature(ui_module.PublicSurfaceGuard).parameters",
+                "    parameters = inspect.signature("
+                "ui_module.PublicSurfaceGuard).return_annotation",
+                1,
+            ),
+            "exact_parent:signature",
+        ),
+        (
+            (
+                "    assert all(item.default is inspect.Parameter.empty "
+                "for item in parameters.values())",
+                "    assert all(item.annotation is inspect.Parameter.empty "
+                "for item in parameters.values())",
+                1,
+            ),
+            "exact_parent:Parameter.empty",
+        ),
+        (
+            (
+                "        super().__init__(level=logging.DEBUG)",
+                "        if False:\n            super().__init__(level=logging.DEBUG)",
+                1,
+            ),
+            "exact_parent:super",
+        ),
+        (
+            (
+                "        super().__init__(level=logging.DEBUG)",
+                "        try:\n"
+                "            super().__init__(level=logging.DEBUG)\n"
+                "        finally:\n"
+                "            pass",
+                1,
+            ),
+            "exact_parent:super",
+        ),
+        (
+            (
+                "        super().__init__(level=logging.DEBUG)",
+                "        marker = None\n        super().__init__(level=logging.DEBUG)",
+                1,
+            ),
+            "exact_parent:super",
+        ),
+    ),
+)
+def test_gradio_contract_reflection_parents_are_exact(
+    case: str | tuple[str, str, int], expected: str
+) -> None:
+    _assert_gradio_contract_finding(case, expected)
 
 
 @pytest.mark.parametrize(
