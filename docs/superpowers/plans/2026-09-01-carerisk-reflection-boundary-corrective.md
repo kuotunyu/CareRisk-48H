@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Start from design commit `190819a838634bd10412f2af72cdc252f6ecd31a` on branch `docs/carerisk-hf-space-design` with a clean tracked worktree.
+- The governing design is commit `190819a838634bd10412f2af72cdc252f6ecd31a`; the SDD controller records the exact implementation BASE immediately before dispatch. BASE must be a clean descendant of the governing design on branch `docs/carerisk-hf-space-design`.
 - The sole product capability policy is design Section 9.1, “Dynamic reflection is denied by construction.”
 - Do not modify `space/app.py`, `space/carerisk_space/*.py`, the public path list, evidence bytes, deployment identities, dependency locks, Docker files, UI behavior, or any scientific artifact.
 - Do not read `.env`, private data, private research artifacts, model bundles, checkpoints, Set B custody/evaluation assets, private ledgers/final locks, or Set C.
@@ -31,7 +31,7 @@
 - Verify unchanged: `space/tests/test_gradio_contract.py`
 
 **Interfaces:**
-- Consumes: `scan_capabilities(paths: Iterable[Path]) -> list[str]`, `_entrypoint_violations(tree: ast.Module) -> list[str]`, `_guard_helper_violations(tree: ast.Module) -> list[str]`, `_bounded_aliases(tree: ast.AST, roots: frozenset[str]) -> tuple[dict[str, str], set[str]]`.
+- Consumes: the exact implementation BASE recorded by the SDD controller; `scan_capabilities(paths: Iterable[Path]) -> list[str]`, `_entrypoint_violations(tree: ast.Module) -> list[str]`, `_guard_helper_violations(tree: ast.Module) -> list[str]`, `_bounded_aliases(tree: ast.AST, roots: frozenset[str]) -> tuple[dict[str, str], set[str]]`.
 - Produces: `_dynamic_reflection_violations(tree: ast.AST, aliases: dict[str, str] | None = None) -> list[str]` and `_sensitive_reflection_in_helper(function: ast.FunctionDef, aliases: dict[str, str]) -> bool`; the three existing public boundary interfaces remain signature-compatible.
 
 - [ ] **Step 1: Confirm the exact baseline and immutable scope**
@@ -42,10 +42,11 @@ Run:
 git rev-parse HEAD
 git branch --show-current
 git status --short --branch
-git diff --exit-code 190819a838634bd10412f2af72cdc252f6ecd31a -- space/app.py space/carerisk_space space/tests/test_gradio_contract.py
+git merge-base --is-ancestor 190819a838634bd10412f2af72cdc252f6ecd31a HEAD
+git diff --exit-code b01a79315b7b5716159f7bdea802be1339ef0c9b -- space/app.py space/carerisk_space space/tests/test_gradio_contract.py
 ```
 
-Expected: HEAD is exactly `190819a838634bd10412f2af72cdc252f6ecd31a`, branch is `docs/carerisk-hf-space-design`, tracked worktree is clean, and the immutable-scope diff exits zero.
+Expected: HEAD equals the BASE supplied by the SDD controller, branch is `docs/carerisk-hf-space-design`, tracked worktree is clean, the governing design is an ancestor, and the immutable-scope diff from the final old Task 6 implementation exits zero.
 
 - [ ] **Step 2: Add product-source reflection mutations**
 
@@ -224,8 +225,8 @@ Run:
 .venv-space\Scripts\python.exe -m ruff format --check tests/test_hf_space_source_boundary.py
 .venv-space\Scripts\python.exe -m mypy --strict tests/test_hf_space_source_boundary.py
 git diff --check
-git diff --name-only 190819a838634bd10412f2af72cdc252f6ecd31a
-git diff --exit-code 190819a838634bd10412f2af72cdc252f6ecd31a -- space/app.py space/carerisk_space space/tests/test_gradio_contract.py
+git diff --name-only
+git diff --exit-code -- space/app.py space/carerisk_space space/tests/test_gradio_contract.py
 ```
 
 Expected: Ruff, format check, strict Mypy, and whitespace checks pass; the only implementation path is `tests/test_hf_space_source_boundary.py`; all product and Gradio contract files remain byte-identical.
