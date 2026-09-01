@@ -8,7 +8,7 @@
 
 **Tech Stack:** CPython 3.11 slim-bookworm runtime image pinned by patch tag and OCI digest; an official Playwright Python test/reviewer image pinned by matching Playwright patch tag plus OCI index/linux-amd64 digests; Gradio `6.26.0`; standard-library `json`, `hashlib`, `html`, `dataclasses`, `pathlib`, and `typing`; pytest, Ruff, Mypy, Playwright, accessibility tooling, pip hash locks, SPDX 2.3 JSON, and Docker CPU-only smoke tests.
 
-**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is complete and frozen at `3ef09639c4b08f1fc70e931507af79f4ff717fcb`. Task 6 remains blocked after its original five-round breaker and two rejected successor architectures; only the reviewed Architecture C sequence may complete it and release Task 7. No provisional self-SHA is fabricated in this document.
+**Governing design:** `docs/superpowers/specs/2026-08-31-carerisk-48h-hf-space-design.md`. The original design approval was commit `10a85171afeb9fafb531b3bca1128cddc987619e`; central implementation authorization is anchored at corrective plan commit `b3803f6229d0de51f0a006978e26775012edcc3b`. Task 5 is complete and frozen at `3ef09639c4b08f1fc70e931507af79f4ff717fcb`; Task 6 is complete at controller-accepted Architecture C commit `29d93f3fca8a9706a6ee762ac67e0b0fa427b91f`. Central has approved the dated Task 7 reviewer-only WebKit policy correction; Task 7 must follow `docs/superpowers/plans/2026-09-02-carerisk-48h-task7-webkit-reviewer-policy-corrective.md`, and Tasks 8–13 remain blocked until its GREEN/review gates pass. No provisional self-SHA is fabricated in this document.
 
 ## Global Constraints
 
@@ -33,6 +33,9 @@
 - The runtime account is non-login with `/usr/sbin/nologin`; the app uses exec-form startup and never spawns or invokes a shell; unnecessary shell utilities may be excluded. Debian slim may contain `/bin/sh`, and neither its removal nor physical absence is an acceptance requirement.
 - `requirements.lock` contains the complete runtime closure. `requirements-dev.lock` contains the complete runtime-plus-development union closure; every normalized runtime package/version pair is present unchanged in the development lock. Both locks contain exact versions and accepted target-distribution hashes. Docker installation uses `python -m pip install --require-hashes --no-deps` against the appropriate complete closure.
 - The final runtime base uses a real CPython 3.11 slim-bookworm patch tag plus real OCI index/linux-amd64 digests. The test/reviewer base uses the official Playwright Python image whose patch version exactly matches the locked Playwright Python package, with real tag, index digest, linux/amd64 digest, embedded browser revisions, OS/system-package inventory digest, license, and notices recorded. Mutable-only image references are rejected.
+- All bytes that enter the public export, candidate, final runtime, deployment artifact, saved archive, pushed image, or any other distributed output remain universally approved-only. Unknown, missing, incompatible, or non-redistributable licensing for any such byte is a hard export stop.
+- The sole exception is metadata inventory for the exact local/CI reviewer-only WebKit tuple: reviewer tag `mcr.microsoft.com/playwright/python:v1.62.0-noble`, index `sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d`, linux/amd64 manifest `sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59`, Playwright `1.62.0`/tag `v1.62.0`, WebKit revision `2336`, version `26.5`, tree SHA-256 `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`, and upstream base commit `343e13bf22dca9d0ec227801419aab0f9001a32f`. Its SPDX declared/concluded licenses are both exactly `NOASSERTION`, `review_disposition` is exactly `reviewer_test_only_not_redistributed`, and `complete_digest_bound_notice=false`. It must not claim source/binary attestation, complete notice, redistribution approval, or a guessed license expression. Chromium, Firefox, ffmpeg, OS/base-image inventories, and Python components remain approved-only.
+- The exact reviewer image may be pulled and run locally or in CI only. It and all embedded browser/support bytes are never saved, exported, emitted as build output, pushed, uploaded, published, deployed, copied into a public candidate, or inherited by/present in the final runtime. Tuple, official Playwright tag/`browsers.json`/registry/CDN/`UPSTREAM_CONFIG`, upstream commit, official WebKit licensing-reference, `NOASSERTION`, disposition, notice-completeness, or exclusion drift fails closed. Remote metadata remains forbidden unless separately authorized.
 - Registry/package/browser acquisition and Docker build are controlled supply-chain phases: egress is allowed only to retrieve already selected tag/digest/hash-pinned inputs, and all resolved bytes are verified and inventoried. Hash locks and `--pull=false` do not make a networked build offline. Evidence export, test execution, runtime/cold-start execution, and browser review are separate no-egress phases.
 - Never use broad staging (`git add .`, `git add -A`, directory staging, or wildcard staging). Every commit command below names every file explicitly.
 - Export requires a clean source worktree and a nonexistent or empty destination. Never export by copying the working tree, and never commit an export directory.
@@ -73,8 +76,8 @@
 | `space/carerisk_space/evidence.py` | Strict JSON parsing, hash/schema/release/deployment validation, formatting |
 | `space/carerisk_space/scenarios.py` | Four immutable abstract scenarios and exact-ID pure lookup/rendering |
 | `space/carerisk_space/ui.py` | Safe/failure static Gradio `Blocks`, DOM ordering, and outer ASGI guard |
-| `space/SBOM.spdx.json` | Deterministic SPDX record for app, both base images, embedded browsers/system inventory, and locked Python packages |
-| `space/THIRD_PARTY_LICENSES.json` | Reviewed license/notice records for every locked distribution, base image, and embedded browser identity |
+| `space/SBOM.spdx.json` | Deterministic SPDX record for app, both base images, embedded browsers/system inventory, and locked Python packages; the exact excluded reviewer-only WebKit package has declared/concluded `NOASSERTION` metadata |
+| `space/THIRD_PARTY_LICENSES.json` | Reviewed license/notice records for every locked distribution, base image, and embedded browser identity, including the exact metadata-only WebKit `reviewer_test_only_not_redistributed` exception |
 | `space/tests/test_claim_contract.py` | Exact card/UI copy and DOM/focus ordering |
 | `space/tests/test_evidence_contract.py` | Receipt/release/deployment fail-closed validation |
 | `space/tests/test_scenario_contract.py` | Four-state registry, no-score fields, adversarial pure lookup |
@@ -92,8 +95,8 @@
 | `tools/space/requirements-runtime.in` | Reviewed direct runtime requirement input |
 | `tools/space/requirements-dev.in` | Reviewed direct verification requirement input |
 | `tools/space/lock-tooling.txt` | Hash-locked resolver/generator tooling |
-| `tools/space/base-image.json` | Named runtime/reviewer records with patch tags, index/platform digests, Python/Playwright/browser identity, and inventory hashes |
-| `tools/space/license-policy.json` | Reviewed SPDX expressions and dispositions keyed by normalized package/version |
+| `tools/space/base-image.json` | Named runtime/reviewer records with patch tags, index/platform digests, Python/Playwright/browser identity, official tagged/CDN/`UPSTREAM_CONFIG` provenance, and inventory hashes |
+| `tools/space/license-policy.json` | Reviewed SPDX fields, dispositions, notice completeness, distribution scope, and exact fail-closed WebKit reviewer-only policy keyed by normalized package/version |
 | `scripts/build_hf_space_supply_chain.py` | Resolve/verify locks, base reference, inventory, and SPDX outputs |
 | `scripts/export_hf_space.py` | Generate deployment manifest and clean export from committed Git objects |
 | `scripts/review_hf_space_local.py` | Ephemeral local browser/accessibility/cold-start evidence runner |
@@ -1451,11 +1454,53 @@ def test_sbom_and_license_inventory_cover_every_lock_package_once() -> None:
     locked = normalized_locked_packages(RUNTIME_LOCK, DEVELOPMENT_LOCK)
     image_components = {
         "carerisk-space", "python-runtime-base", "playwright-reviewer-base",
-        "chromium", "firefox", "webkit",
+        "chromium", "firefox", "webkit", "ffmpeg",
     }
     assert sbom_package_keys(SBOM) == locked | image_components
     assert license_inventory_keys(LICENSES) == locked | (image_components - {"carerisk-space"})
-    assert all(item["review_disposition"] == "approved" for item in load_licenses(LICENSES))
+    records = {item["package"]: item for item in load_licenses(LICENSES)}
+    assert records["webkit"] == exact_webkit_reviewer_policy_record()
+    assert records["webkit"]["licenseDeclared"] == "NOASSERTION"
+    assert records["webkit"]["licenseConcluded"] == "NOASSERTION"
+    assert records["webkit"]["review_disposition"] == "reviewer_test_only_not_redistributed"
+    assert records["webkit"]["complete_digest_bound_notice"] is False
+    assert all(
+        item["review_disposition"] == "approved"
+        and item["licenseDeclared"] != "NOASSERTION"
+        and item["licenseConcluded"] != "NOASSERTION"
+        for name, item in records.items()
+        if name != "webkit"
+    )
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "reviewer_image_tag", "reviewer_index_digest", "reviewer_linux_amd64_digest",
+        "playwright_version", "playwright_tag", "browsers_json_url",
+        "registry_source_url", "cdn_artifact_url", "upstream_config_path",
+        "upstream_base_commit", "webkit_revision", "webkit_version",
+        "webkit_tree_sha256", "official_webkit_licensing_references",
+        "licenseDeclared", "licenseConcluded", "review_disposition",
+        "complete_digest_bound_notice",
+    ],
+)
+def test_exact_webkit_reviewer_exception_rejects_every_single_field_drift(field: str) -> None:
+    mutated = mutate_exact_webkit_policy(field)
+    with pytest.raises(ValueError, match="WebKit reviewer exception drift"):
+        validate_license_policy(mutated)
+
+def test_noassertion_fails_for_public_or_any_other_component() -> None:
+    for component in ("python-runtime-base", "gradio", "chromium", "firefox", "ffmpeg"):
+        with pytest.raises(ValueError, match="NOASSERTION outside exact reviewer-only WebKit"):
+            validate_license_policy(policy_with_noassertion(component))
+
+@pytest.mark.parametrize(
+    "surface",
+    ["public_export", "candidate", "runtime_stage", "final_image", "deployment_artifact", "saved_archive", "pushed_image"],
+)
+def test_reviewer_or_browser_bytes_fail_every_distribution_surface(surface: str) -> None:
+    with pytest.raises(ValueError, match="reviewer bytes reached distributed surface"):
+        validate_distribution_exclusion(distribution_fixture(surface, "webkit-2336"))
 ```
 
 - [ ] **Step 2: Run RED**
@@ -1488,7 +1533,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 `lock` runs only the hash-locked resolver tooling from `lock-tooling.txt`. It emits `requirements.lock` as the complete runtime closure for the runtime Linux/Python target and `requirements-dev.lock` as the complete runtime-plus-development union closure for the reviewer Linux/Python target. The normalized package/version pairs from the runtime lock must be an unchanged subset of the development lock. Each lock is installed alone with `--require-hashes --no-deps`; a controlled acquisition step first fills a temporary wheelhouse with only accepted hashes, then a separate no-egress `--no-index` step verifies installation from that wheelhouse. Do not describe the controlled acquisition step as offline.
 
-`inventory` extracts metadata and notices from exact accepted wheels and both exact image manifests/inventories, includes the reviewer image's embedded browser revisions and system packages, joins every component to an explicit approved `license-policy.json` record, and serializes sorted canonical JSON with a final newline. `SBOM.spdx.json`, `THIRD_PARTY_LICENSES.json`, and their tests cover both base images as well as the Python and browser components; the final runtime image still contains only the runtime base and runtime lock.
+`inventory` extracts metadata and notices from exact accepted wheels and both exact image manifests/inventories, includes the reviewer image's embedded browser revisions/versions/system packages, joins every component to `license-policy.json`, and serializes sorted canonical JSON with a final newline. Ordinary records must be approved with concluded redistribution-compatible expressions. One separate validator recognizes only the exact WebKit reviewer tuple and emits the metadata-only exception; it may not share a permissive `NOASSERTION` branch with ordinary components. `SBOM.spdx.json` and `THIRD_PARTY_LICENSES.json` cover both base-image inventories and browser identities, but the final runtime and every distributed byte set still contain only approved runtime bytes.
+
+The exact WebKit record is version `26.5`, revision `2336`, canonical-tree SHA-256 `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`, and is bound to reviewer tag/index/manifest `mcr.microsoft.com/playwright/python:v1.62.0-noble` / `sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d` / `sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59`. It records Playwright `1.62.0`, tag `v1.62.0`, the official tagged `browsers.json` and registry source, the resolved official CDN artifact, `/ms-playwright/webkit-2336/UPSTREAM_CONFIG`, upstream base commit `343e13bf22dca9d0ec227801419aab0f9001a32f`, and the exact official WebKit licensing-reference set from design Section 10.1. Its SPDX declared and concluded values are exactly `NOASSERTION`, its `review_disposition` is exactly `reviewer_test_only_not_redistributed`, and `complete_digest_bound_notice` is exactly false. It must not claim bitwise source/binary attestation, complete notice, redistribution approval, or a guessed expression.
+
+`verify_all` also consumes an explicit distribution-exclusion description and rejects reviewer/WebKit/browser bytes in the public export, candidate, runtime stage, final image, deployment artifact, saved archive, pushed image, or any other distributed surface. Until Task 8/9/11/13 provide their concrete manifests and image inspections, Task 7 tests use synthetic surface fixtures for every named boundary; the downstream tasks must replace those fixtures with authoritative exporter/workflow/image evidence without weakening this pure fail-closed validator. Chromium, Firefox, ffmpeg, operating-system/base-image records, and Python packages remain approved-only.
 
 The direct runtime input contains only `gradio==6.26.0`; a candidate range such as a broad major-version interval is forbidden. The direct development input contains the same exact Gradio pin plus pytest, Ruff, Mypy, PyYAML, packaging, the exact Playwright Python pin matching the reviewer image, accessibility tooling, lock verification, vulnerability scanning, and license/SBOM verification tools. The development lock remains the complete runtime-plus-development union closure, and contract tests verify the installed Gradio version as well as the exact direct pin and equal runtime/development lock entries. It does not rely on Playwright wheels to supply browsers or Debian packages, and Dockerfile generation must not run `playwright install` or `apt-get install` in the reviewer stage. Product code still imports only Gradio, standard library, and local modules.
 
@@ -1503,7 +1552,7 @@ python -m venv $toolVenv
 & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json
 ```
 
-Expected: this explicitly controlled, logged egress phase acquires only the selected registry/package/browser references and verifies every digest/hash. Every generated file contains actual values and hashes. Review package source URLs, both base-image inventories, embedded-browser revisions, license texts, notices, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components stop the task.
+Expected: this explicitly controlled, logged egress phase acquires only the selected registry/package/browser references and verifies every digest/hash. Every generated file contains actual values and hashes. Review package source URLs, both base-image inventories, embedded-browser revisions/versions, official tagged Playwright/registry/CDN/`UPSTREAM_CONFIG` provenance, upstream base commit, license texts/references, notices, notice completeness, distribution scopes, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components whose bytes could be exported/deployed stop the task. Any `NOASSERTION` outside the exact metadata-only WebKit reviewer record stops the task. Any drift of that exact record or any path by which its bytes could reach a distributed/runtime surface also stops the task.
 
 - [ ] **Step 5: Run reproducibility and installation GREEN**
 
@@ -1523,7 +1572,7 @@ $second = @($trackedOutputs | ForEach-Object {
 if ([string]::Join("`n", $first) -cne [string]::Join("`n", $second)) { throw 'Supply-chain outputs are not reproducible' }
 ```
 
-Expected: verify and tests pass, and regeneration is byte-for-byte stable.
+Expected: verify and tests pass, regeneration is byte-for-byte stable, every ordinary component is approved-only, the exact WebKit record preserves both SPDX `NOASSERTION` fields plus `reviewer_test_only_not_redistributed` and `complete_digest_bound_notice=false`, and every named distribution-surface mutation is rejected.
 
 - [ ] **Step 6: Commit every source and generated supply-chain file explicitly**
 
@@ -1573,6 +1622,25 @@ def test_manifest_is_non_self_referential(git_repo: Path) -> None:
     assert is_ancestor(git_repo, APP_SOURCE_SHA, MANIFEST_SOURCE_SHA)
     assert "destination_commit" not in manifest
     assert manifest_entry(manifest, "deployment-manifest.json").get("sha256") is None
+
+def test_export_contains_webkit_policy_metadata_but_no_reviewer_or_browser_bytes(
+    tmp_path: Path, git_repo: Path
+) -> None:
+    receipt = export_space(
+        repo_root=git_repo,
+        app_source_sha=APP_SOURCE_SHA,
+        manifest_source_sha=MANIFEST_SOURCE_SHA,
+        destination=tmp_path / "candidate",
+    )
+    assert_exact_webkit_metadata_only(receipt.destination)
+    assert_no_reviewer_or_browser_bytes(receipt.destination)
+
+@pytest.mark.parametrize("token", REVIEWER_BROWSER_BYTE_SIGNATURES)
+def test_export_rejects_reviewer_or_browser_byte_signatures(
+    token: bytes, exporter_case: ExporterCase
+) -> None:
+    with pytest.raises(ExportError, match="reviewer bytes reached public export"):
+        exporter_case.run_with_added_bytes("runtime_code", token)
 ```
 
 - [ ] **Step 2: Run RED**
@@ -1628,6 +1696,8 @@ def test_source_maps_partition_the_exact_public_allowlist() -> None:
 ```
 
 Invoke `git cat-file blob` with the already validated exact commit-and-path argument, or use an equivalent no-checkout Git object read. Reject a dirty worktree before manifest generation or export. Reject missing/non-commit SHAs, non-ancestor manifest commit, mutable tag mismatch, path traversal, symlinks, special files, collisions, unsorted/duplicate paths, hash/size mismatch, secret/private-key signatures, denied suffixes/content, and any final path-set difference. Write into a newly created destination only; on failure remove only that verified temporary destination.
+
+The exporter permits the canonical text metadata record for the exact WebKit reviewer exception only inside `SBOM.spdx.json` and `THIRD_PARTY_LICENSES.json`. It rejects an executable/archive/binary payload, filesystem entry, source mapping, Docker context addition, manifest capability, or byte signature from the reviewer image or any embedded Chromium/Firefox/WebKit/ffmpeg tree. Tests mutate each destination category, including otherwise allowlisted `runtime_code`, `test`, `supply_chain`, and `metadata` files, so changing a capability label cannot launder reviewer bytes. `deployment-manifest.json` records the reviewer tuple only as non-distributed verification provenance and never as a source/destination artifact.
 
 For `docs/final-result-receipt.json`, the exporter must read blob `b13ec7655bbdb8db1079c3b4793a0bf5590ef69c` (3,363 bytes) and require SHA-256 `d32d833af25e4ebb2f5bd06b64343eb36d7cd180c8e9777f539f6401b78064b3`; checkout line endings and normalization are invalid.
 
@@ -1711,6 +1781,27 @@ def test_runtime_entrypoint_clears_injected_environment_before_python_import() -
     assert json_instruction(dockerfile, "CMD") == ["python", "app.py"]
     assert "SPACE_ID=" not in dockerfile
     assert "PORT=" not in dockerfile
+
+def test_reviewer_stage_is_local_ci_only_and_cannot_flow_into_runtime_or_export() -> None:
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    graph = parse_dockerfile_stage_graph(dockerfile)
+    assert graph.parents("runtime") == ()
+    assert graph.base("runtime") == recorded_runtime_platform_ref()
+    assert graph.base("test") == recorded_reviewer_platform_ref()
+    assert not graph.copies_from("runtime", "test")
+    assert_no_reviewer_or_browser_byte_signatures(graph.runtime_instructions("runtime"))
+    assert_no_distribution_commands(dockerfile, forbidden=(
+        "docker save", "docker export", "docker push", "buildx --output",
+        "--output=type=registry", "--push",
+    ))
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["runtime_from_test", "copy_from_test", "copy_ms_playwright", "runtime_browser_path", "runtime_reviewer_digest"],
+)
+def test_runtime_rejects_each_reviewer_byte_flow_mutation(mutation: str) -> None:
+    with pytest.raises(ValueError, match="reviewer bytes reached runtime"):
+        validate_dockerfile_policy(mutated_dockerfile(mutation))
 ```
 
 - [ ] **Step 2: Run RED**
@@ -1726,7 +1817,9 @@ Expected: FAIL because the Space Dockerfile and smoke contract do not exist.
 
 The generated Dockerfile must expose named `test` and `runtime` stages with no ancestry between them. `test` starts from the exact official Playwright Python reviewer tag plus recorded linux/amd64 digest, installs the complete `requirements-dev.lock` union closure with hashes and no dependency resolution, and contains the six public test modules. Its Playwright Python version is exactly the one matched by the reviewer image and it uses only the Chromium/Firefox/WebKit bytes already embedded in that pinned image; it runs no browser download, `playwright install`, or unrecorded `apt` acquisition. This stage never becomes or contributes a filesystem layer to the deployed stage.
 
-`runtime` starts independently from the exact CPython 3.11 slim-bookworm runtime tag plus recorded linux/amd64 digest. It uses explicit `COPY` for runtime files only, creates numeric UID/GID `10001`, assigns `/usr/sbin/nologin`, retains no writable home, installs `requirements.lock` with hashes and no dependency resolution, excludes tests/dev tools/browser/reviewer layers from the final image, and uses `USER 10001:10001`. The image inventory must prove `/usr/bin/env` exists and record its owning Debian package/version. The exec-form `ENTRYPOINT` is exactly `/usr/bin/env -i` followed by the fixed assignments `PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin`, `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`, `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1`, `GRADIO_ANALYTICS_ENABLED=False`, `HF_HUB_DISABLE_TELEMETRY=True`, `GRADIO_WATCH_DIRS=`, `GRADIO_VIBE_MODE=`, `GRADIO_HOT_RELOAD=false`, `GRADIO_RUN_HISTORY=False`, `GRADIO_SSR_MODE=False`, `GRADIO_MCP_SERVER=False`, `GRADIO_ALLOWED_PATHS=`, and `GRADIO_BLOCKED_PATHS=/`; exec-form `CMD ["python", "app.py"]` follows it. This clears Docker/Hugging Face environment injection before any Python or Gradio import while retaining only the reviewed runtime variables. Gradio `Blocks(analytics_enabled=False)` writes the same exact value `True`, so tests require pre-import, post-Blocks, PID 1, and every child to agree without a two-value exception. Poison runs inject `0` and secret-shaped alternatives and prove they are scrubbed. No `SPACE_ID`, `PORT`, Secret, Variable, or credential is required or preserved. Tests inspect final image history/package inventory and fail if Playwright, pytest, browser files, or a reviewer-layer digest appears.
+`runtime` starts independently from the exact CPython 3.11 slim-bookworm runtime tag plus recorded linux/amd64 digest. It uses explicit `COPY` for runtime files only, creates numeric UID/GID `10001`, assigns `/usr/sbin/nologin`, retains no writable home, installs `requirements.lock` with hashes and no dependency resolution, excludes tests/dev tools/browser/reviewer layers from the final image, and uses `USER 10001:10001`. The image inventory must prove `/usr/bin/env` exists and record its owning Debian package/version. The exec-form `ENTRYPOINT` is exactly `/usr/bin/env -i` followed by the fixed assignments `PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin`, `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`, `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1`, `GRADIO_ANALYTICS_ENABLED=False`, `HF_HUB_DISABLE_TELEMETRY=True`, `GRADIO_WATCH_DIRS=`, `GRADIO_VIBE_MODE=`, `GRADIO_HOT_RELOAD=false`, `GRADIO_RUN_HISTORY=False`, `GRADIO_SSR_MODE=False`, `GRADIO_MCP_SERVER=False`, `GRADIO_ALLOWED_PATHS=`, and `GRADIO_BLOCKED_PATHS=/`; exec-form `CMD ["python", "app.py"]` follows it. This clears Docker/Hugging Face environment injection before any Python or Gradio import while retaining only the reviewed runtime variables. Gradio `Blocks(analytics_enabled=False)` writes the same exact value `True`, so tests require pre-import, post-Blocks, PID 1, and every child to agree without a two-value exception. Poison runs inject `0` and secret-shaped alternatives and prove they are scrubbed. No `SPACE_ID`, `PORT`, Secret, Variable, or credential is required or preserved. Tests inspect final image history/package inventory and fail if Playwright, pytest, browser files, a reviewer-layer digest, or any reviewer/browser byte signature appears.
+
+The `test` stage is review infrastructure only. It can be built and run locally or in CI by exact digest, but build/review tooling must not save, export, push, upload, publish, deploy, or emit it as any artifact/output. The runtime stage has no ancestry from `test`, no `COPY --from=test`, no `/ms-playwright` content, and no browser/reviewer layer or package. Static mutations independently introduce each forbidden ancestry/copy/path/digest form and must fail before a build.
 
 Do not add an assertion or removal step for `/bin/sh`. The accepted proof is non-login passwd metadata plus absence of shell calls in application AST and exec-form startup.
 
@@ -2463,6 +2556,23 @@ def test_app_source_workflow_runs_source_gates_only_without_manifest() -> None:
     assert "verify_hf_space_candidate.py" in candidate_commands
     assert "provisional" not in SPACE_CI.read_text(encoding="utf-8").lower()
 
+def test_ci_never_distributes_reviewer_image_or_browser_bytes() -> None:
+    workflow = yaml.safe_load(SPACE_CI.read_text(encoding="utf-8"))
+    commands = "\n".join(
+        step.get("run", "") for job in workflow["jobs"].values() for step in job["steps"]
+    )
+    assert recorded_reviewer_platform_ref() in commands
+    assert_no_distribution_commands(commands, forbidden=(
+        "docker save", "docker export", "docker push", "buildx --push",
+        "--output=type=registry", "--output=type=oci", "--output=type=docker",
+    ))
+    assert not any(
+        "actions/upload-artifact" in step.get("uses", "")
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+    )
+    assert_reviewer_runs_are_ephemeral_local_ci_only(workflow)
+
 CUSTODY_ENVIRONMENT = "carerisk-contract-custody"
 CUSTODY_NAMES = (
     "CARERISK_GRADIO_CONTRACT_BLOB_SHA1",
@@ -2763,7 +2873,7 @@ steps:
       "$REVIEWER_IMAGE" python -m pytest tests/test_hf_space_source_boundary.py
 ```
 
-The separate `candidate_gates` job has `needs: source_gates` and the exact condition `${{ needs.source_gates.outputs.manifest_present == 'true' }}`. Thus it is skipped on the app-source commit, where the manifest does not yet exist, and becomes required after the manifest commit exists. Only that job invokes the ownership-safe clean-export verifier, controlled digest/hash-pinned image/dependency acquisition and build, followed by no-egress tests/runtime/browser review, vulnerability/license scan, and no public artifact upload. Workflow-contract tests assert both branches. A fabricated, empty, copied, or provisional manifest is forbidden; absence is a normal source-only state, not something CI repairs.
+The separate `candidate_gates` job has `needs: source_gates` and the exact condition `${{ needs.source_gates.outputs.manifest_present == 'true' }}`. Thus it is skipped on the app-source commit, where the manifest does not yet exist, and becomes required after the manifest commit exists. Only that job invokes the ownership-safe clean-export verifier, controlled digest/hash-pinned image/dependency acquisition and build, followed by no-egress tests/runtime/browser review and vulnerability/license scan. Neither job uploads artifacts or caches reviewer/browser image bytes. Both jobs forbid image save/export/output/push/upload/publish/deploy commands; the exact reviewer image is ephemeral local/CI-only and is removed only through exact task ownership. Workflow-contract tests assert both branches and mutation-test every forbidden reviewer distribution command/output form. A fabricated, empty, copied, or provisional manifest is forbidden; absence is a normal source-only state, not something CI repairs. Creating/changing Actions Environment values or any other remote metadata remains separately forbidden.
 
 - [ ] **Step 4: Run the complete app-source verification locally**
 
@@ -2856,7 +2966,7 @@ if ((git rev-parse HEAD^).Trim() -cne $appSourceSha) { throw 'Manifest is not th
 
 **Interfaces:**
 - Consumes: app-source SHA from `deployment-manifest.json` and current manifest-source SHA.
-- Produces: a final JSON receipt on stdout after ownership-safe cleanup; no tracked change and no commit.
+- Produces: a final JSON receipt on stdout after ownership-safe cleanup, including exact WebKit metadata/exclusion evidence; no tracked change and no commit.
 
 - [ ] **Step 1: Verify clean two-commit inputs before creating any temporary path**
 
@@ -2886,13 +2996,13 @@ if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'In
 
 1. Re-check clean-worktree and two-commit preconditions. Create `candidate` and `review` children only beneath the owned run root. Run exporter and `verify-export` before any controlled acquisition/build command. Export code is restricted by source tests to local Git object reads and has no networking API/import/call path.
 2. Read both exact tag/platform-digest records from `base-image.json`. For each, run `docker image inspect` against the concatenated recorded tag and linux/amd64 digest and verify `RepoDigests`; if and only if that exact image is absent, perform a logged controlled `docker pull` of the same immutable reference, then re-inspect. Reject a tag-only or wrong-platform image. This is controlled supply-chain acquisition, not test execution.
-3. In the same controlled supply-chain/build phase, build `--target test` and `--target runtime` from the exact candidate. Network access is permitted only for digest/hash-pinned base and Python package acquisition and every accepted byte must match the image digest or lock hash. `--pull=false` may be used only after exact local image verification and is never evidence that the build was offline. Verify built image histories/inventories: test uses the reviewer base; runtime uses only the CPython base and contains no dev/browser/model package.
-4. End the acquisition/build phase. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start passes adversarial values for the exact Gradio `6.26.0` source-derived environment-read inventory. The required named matrix includes `GRADIO_ANALYTICS_ENABLED`, `HF_HUB_DISABLE_TELEMETRY`, `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `GRADIO_ROOT_PATH`, `GRADIO_SHARE`, `GRADIO_MONITORING_ENABLED`, `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, plus `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect pre-import state, post-Blocks state, `/proc/1/environ`, and every runtime child environment and require exact equality with the fixed `ENTRYPOINT` allowlist, including `HF_HUB_DISABLE_TELEMETRY=True`; poison values `0` and hostile strings must be absent. Prove fixed port 7860, zero app-owned input/dependency/function/API config, pinned `enable_queue == true`, zero public state delta, mount mapping, exact two-argument direct outer-wrapper identity with nonempty pinned-root membership, and exact programmatic Uvicorn `http="h11"`; reject `auto`, `httptools`, CLI/environment selection, or inference from an absent package. Derive sorted package membership/content-tree digests from the exact runtime wheel and compare them with the reviewer image; require only regular non-symlink root-contained members. Against loopback Host `127.0.0.1:7860`, require healthy exact root/config/theme/manifest/favicon/package members and logo digests plus unavailable API/queue/history/monitoring. Direct pure-ASGI probes require the fixed guard 404 message sequence with `b"Not Found"` and `content-length: 9` before FastAPI/Gradio/downstream/body receive for the complete hostile method/path/query/authority/header/cookie/raw-path/WebSocket matrix, including `HEAD` on every non-root path, syntactically valid nonexistent assets, metadata/PWA variants, and missing/duplicate/combined/whitespace/unlisted Host scopes. Separately send raw HTTP/1.1 bytes to the untouched explicitly configured Uvicorn+h11 server: missing and duplicate Host must each return exact 400 with no ASGI app-entry marker delta, while a valid unlisted single Host must enter the guard and return 404. Wire-level blocked non-root `HEAD` must return 404 with zero entity bytes and `content-length: 9`; root `HEAD` remains the sole allowed HEAD and also has zero wire entity bytes. Record zero CORS/compression, canary/reflection, outbound fetches, temp delta, and echo at each layer. Sentinel/root-block/max-upload remain separate defense-in-depth observations. No execution-phase command downloads a dependency.
+3. In the same controlled supply-chain/build phase, build `--target test` and `--target runtime` from the exact candidate. Network access is permitted only for digest/hash-pinned base and Python package acquisition and every accepted byte must match the image digest or lock hash. `--pull=false` may be used only after exact local image verification and is never evidence that the build was offline. Verify built image histories/inventories: test uses the reviewer base; runtime uses only the CPython base and contains no dev/browser/model package. The build command has no `--push`, registry/OCI/Docker `--output`, exporter, saver, uploader, or publisher. The test image is retained only as an exact task-owned local/CI resource and may not be emitted or persisted outside that local engine.
+4. End the acquisition/build phase. Before execution, validate the exact WebKit exception record and independently scan the clean export, candidate build context, runtime-stage history/filesystem, final image, deployment manifest, and planned Docker commands. The only allowed WebKit occurrence outside the ephemeral reviewer/test image is the metadata-only record in `SBOM.spdx.json` and `THIRD_PARTY_LICENSES.json`; every other reviewer/browser/support byte signature or artifact path fails. Run all six public tests and `pip check` from the standalone test image with `docker run --network none --cpus=2`. Inventory `/usr/bin/env` in the final runtime and its owning Debian package/version, then run UID/GID/nologin/read-only/tmpfs/CPU smoke and three cold starts with `--network none`. Every runtime start passes adversarial values for the exact Gradio `6.26.0` source-derived environment-read inventory. The required named matrix includes `GRADIO_ANALYTICS_ENABLED`, `HF_HUB_DISABLE_TELEMETRY`, `GRADIO_WATCH_DIRS`, `GRADIO_VIBE_MODE`, `GRADIO_HOT_RELOAD`, `GRADIO_RUN_HISTORY`, `GRADIO_SSR_MODE`, `GRADIO_MCP_SERVER`, `GRADIO_ALLOWED_PATHS`, `GRADIO_BLOCKED_PATHS`, `GRADIO_ROOT_PATH`, `GRADIO_SHARE`, `GRADIO_MONITORING_ENABLED`, `GRADIO_DEBUG`, `GRADIO_SERVER_NAME`, `GRADIO_SERVER_PORT`, `GRADIO_NUM_WORKERS`, `GRADIO_NODE_PATH`, `GRADIO_LOCAL_DEV_MODE`, and `GRADIO_NODE_SERVER_PORT`, plus `SPACE_ID`, `PORT`, and a secret-shaped canary. Inspect pre-import state, post-Blocks state, `/proc/1/environ`, and every runtime child environment and require exact equality with the fixed `ENTRYPOINT` allowlist, including `HF_HUB_DISABLE_TELEMETRY=True`; poison values `0` and hostile strings must be absent. Prove fixed port 7860, zero app-owned input/dependency/function/API config, pinned `enable_queue == true`, zero public state delta, mount mapping, exact two-argument direct outer-wrapper identity with nonempty pinned-root membership, and exact programmatic Uvicorn `http="h11"`; reject `auto`, `httptools`, CLI/environment selection, or inference from an absent package. Derive sorted package membership/content-tree digests from the exact runtime wheel and compare them with the reviewer image; require only regular non-symlink root-contained members. Against loopback Host `127.0.0.1:7860`, require healthy exact root/config/theme/manifest/favicon/package members and logo digests plus unavailable API/queue/history/monitoring. Direct pure-ASGI probes require the fixed guard 404 message sequence with `b"Not Found"` and `content-length: 9` before FastAPI/Gradio/downstream/body receive for the complete hostile method/path/query/authority/header/cookie/raw-path/WebSocket matrix, including `HEAD` on every non-root path, syntactically valid nonexistent assets, metadata/PWA variants, and missing/duplicate/combined/whitespace/unlisted Host scopes. Separately send raw HTTP/1.1 bytes to the untouched explicitly configured Uvicorn+h11 server: missing and duplicate Host must each return exact 400 with no ASGI app-entry marker delta, while a valid unlisted single Host must enter the guard and return 404. Wire-level blocked non-root `HEAD` must return 404 with zero entity bytes and `content-length: 9`; root `HEAD` remains the sole allowed HEAD and also has zero wire entity bytes. Record zero CORS/compression, canary/reflection, outbound fetches, temp delta, and echo at each layer. Sentinel/root-block/max-upload remain separate defense-in-depth observations. No execution-phase command downloads a dependency.
 5. Inspect and record the exact final runtime image digest before creating any variant. Generate four literal task-owned Dockerfiles and minimal contexts for only `receipt_missing`, `receipt_hash_mismatch`, `release_relationship_invalid`, and `deployment_manifest_invalid`. Each uses `FROM <exact local final digest>`, `--pull=false --network=none`, the complete exact ownership labels GUID/`resource_role=failure_variant`/base digest/code/`NEVER_DEPLOY=true`, exact local reference `carerisk-local:<GUID>-NEVER_DEPLOY-<code>`, temporary `USER 0`, one literal package-relative evidence removal/replacement, and final `USER 10001:10001`. Reject remote registries, caller-controlled images/paths/Dockerfiles/commands, bind mounts, environment/path injection, push, save, export/output, or any fifth variant. After each successful build, freshly inspect the exact local reference and require exactly one intended evidence-path delta, exact entrypoint/CMD/app-source/lock/asset/other-path byte parity with the final image, and exactly its own expected failure code. Only then create and controller-retain the code's immutable `FailureVariantRecord` containing exact reference, inspected image ID/content digest, final base digest, code, GUID, labels, and inspection evidence. A record may not be synthesized from a later label lookup. `receipt_schema_invalid` receives no image: its strict-parser/UI/ASGI behavior is exercised only with the existing explicit unit test anchor seam, while the final receipt records that live bytes are dominated by the immutable receipt identity gate and marks it `not_live_reviewed`.
-6. Create the Docker `--internal` network with the complete ownership labels exact current GUID plus `resource_role=network`. Run the exact final image with network alias `carerisk-app` in a normal container labeled exact GUID/`resource_role=normal`/exact final-image digest, then separately run each retained variant reference in a container named exactly `carerisk-<GUID>-NEVER_DEPLOY-<code>` and labeled exact GUID/`resource_role=failure_variant`/exact base digest/code/`NEVER_DEPLOY=true`, all with the same alias, entrypoint, command, environment scrub, runtime flags, and no-egress network. Normal, reviewer, and network resource names must not contain `NEVER_DEPLOY`. Run the exact reviewer image in a container labeled exact GUID/`resource_role=reviewer`/exact reviewer-image digest against `http://carerisk-app:7860` for all five live page states at 1440×900 and 390×844. Apply shared assertions to all ten records; apply four-radio/panel/keyboard/focus/visibility/normal-claims assertions only to the two normal records; apply zero-control/panel/transition/metric/canonical-value plus exact code/message assertions only to the eight reachable-failure records. Verify root/config/exact theme/manifest/favicon/package members, exact membership/tree digest parity, zero app-owned inputs/dependencies/functions/API, pinned `enable_queue == true`, exact request method/path/query, zero outer blocks/POST/event/session/queue/public-state delta/external/console errors, and no partial evidence/download/model initialization. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile authority/query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, metadata/PWA, absent-asset, encoded, traversal, case, and slash probes. Missing/duplicate raw-wire Host and blocked-wire-HEAD evidence remains layer-separated. Any route, parser, variant, delta, authority, asset, state, or assertion drift stops verification for exact source audit, RED test, and central review; no wildcard or fifth live failure is added.
+6. Create the Docker `--internal` network with the complete ownership labels exact current GUID plus `resource_role=network`. Run the exact final image with network alias `carerisk-app` in a normal container labeled exact GUID/`resource_role=normal`/exact final-image digest, then separately run each retained variant reference in a container named exactly `carerisk-<GUID>-NEVER_DEPLOY-<code>` and labeled exact GUID/`resource_role=failure_variant`/exact base digest/code/`NEVER_DEPLOY=true`, all with the same alias, entrypoint, command, environment scrub, runtime flags, and no-egress network. Normal, reviewer, and network resource names must not contain `NEVER_DEPLOY`. Run the exact reviewer image in a container labeled exact GUID/`resource_role=reviewer`/exact reviewer-image digest against `http://carerisk-app:7860` for all five live page states at 1440×900 and 390×844. The reviewer container is local/CI-only, ephemeral, and is never committed, saved, exported, pushed, uploaded, published, or deployed. Apply shared assertions to all ten records; apply four-radio/panel/keyboard/focus/visibility/normal-claims assertions only to the two normal records; apply zero-control/panel/transition/metric/canonical-value plus exact code/message assertions only to the eight reachable-failure records. Verify root/config/exact theme/manifest/favicon/package members, exact membership/tree digest parity, zero app-owned inputs/dependencies/functions/API, pinned `enable_queue == true`, exact request method/path/query, zero outer blocks/POST/event/session/queue/public-state delta/external/console errors, and no partial evidence/download/model initialization. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile authority/query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, metadata/PWA, absent-asset, encoded, traversal, case, and slash probes. Missing/duplicate raw-wire Host and blocked-wire-HEAD evidence remains layer-separated. Any route, parser, variant, delta, authority, asset, state, or assertion drift stops verification for exact source audit, RED test, and central review; no wildcard or fifth live failure is added.
 7. In `finally`, enumerate only the literal resource IDs recorded by the current run and freshly inspect each one before deletion. Dispatch by Docker resource type and validate the complete exact reserved ownership-label schema, current GUID, role, identity/reference, and applicable final/reviewer/base digest and failure code. For failure images and containers, retrieve the controller-retained expected record by code and independently compare the actual image reference, image ID, and content digest to it; for a container, also require Docker `.Image` and configured image reference to identify that same record. Labels are necessary but insufficient. Tests with labels/base/code left correct but variant digest swapped, reference changed, container `.Image` wrong, or configured image reference wrong must fail closed and preserve the resource. Failure-container names must exactly match `carerisk-<GUID>-NEVER_DEPLOY-<code>`; normal/reviewer/network names must omit `NEVER_DEPLOY`. Normal, reviewer, and network resources never carry or are validated as failure variants. Missing retained records, missing or extra contradictory labels, ambiguous reference/identity, stale GUID, digest/code/reference mismatch, or type/role/name mismatch fails closed and preserves that resource. Only after every Docker resource passes its own schema may the verifier validate and delete the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect resource/path untouched for manual inspection; it never uses broad filters or broadens the delete target.
 
-Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The final receipt includes clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime and four derived image digests; exact parser identity `h11`; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; normal-only static radio visibility transitions; failure-only zero-surface counts; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; three normal cold starts; ten viewport/state records; four controller-retained variant reference/ID/digest/base/code/GUID/label/delta records; five-code owning-gate/live-reachability/evidence-type/precedence/status records; exact role-specific normal/reviewer/network/failure cleanup records including failure container names and actual image/container-to-record identity comparisons; and no-egress observations. `receipt_schema_invalid` is recorded as unit/component/ASGI evidence with its exact three-part failure copy and sole bounded code, dominated by the immutable receipt anchor, and `not_live_reviewed`, never as a passed live state. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the explicit h11 parser, direct outer ASGI/authority boundary, exact package membership, accepted Host identity, or role-specific cleanup identity is absent, ineffective, ambiguous, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
+Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The exact reviewer image remains local/CI-only and no save/export/output/push/upload/publication/deployment path exists. The clean export, candidate, runtime stage, final image, deployment artifacts, and Docker command plan contain no reviewer/browser bytes; only the exact metadata-only WebKit record is present in the two inventory documents. The final receipt includes the exact tag/index/manifest/Playwright/WebKit revision/version/tree/tagged-provenance/`UPSTREAM_CONFIG`/upstream-commit/licensing-reference tuple, both SPDX `NOASSERTION` values, `reviewer_test_only_not_redistributed`, `complete_digest_bound_notice=false`, all named exclusion gates, and zero reviewer-byte distribution observations, in addition to clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime and four derived image digests; exact parser identity `h11`; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; normal-only static radio visibility transitions; failure-only zero-surface counts; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; three normal cold starts; ten viewport/state records; four controller-retained variant reference/ID/digest/base/code/GUID/label/delta records; five-code owning-gate/live-reachability/evidence-type/precedence/status records; exact role-specific normal/reviewer/network/failure cleanup records including failure container names and actual image/container-to-record identity comparisons; and no-egress observations. `receipt_schema_invalid` is recorded as unit/component/ASGI evidence with its exact three-part failure copy and sole bounded code, dominated by the immutable receipt anchor, and `not_live_reviewed`, never as a passed live state. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the explicit h11 parser, direct outer ASGI/authority boundary, exact package membership, accepted Host identity, WebKit exception/exclusion boundary, or role-specific cleanup identity is absent, ineffective, ambiguous, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
 
 - [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
 
@@ -2941,6 +3051,14 @@ $requiredTrue = @(
     'cleanup_failure_variant_image_identity_exact',
     'cleanup_failure_variant_container_identity_exact',
     'cleanup_ambiguous_resources_preserved',
+    'webkit_reviewer_exception_tuple_exact',
+    'webkit_spdx_declared_noassertion_exact',
+    'webkit_spdx_concluded_noassertion_exact',
+    'webkit_reviewer_test_only_not_redistributed_exact',
+    'webkit_complete_digest_bound_notice_false',
+    'public_export_approved_bytes_only',
+    'candidate_reviewer_bytes_absent', 'runtime_reviewer_bytes_absent',
+    'deployment_reviewer_bytes_absent', 'reviewer_distribution_commands_absent',
     'accessibility_passed', 'cleanup_passed'
 )
 foreach ($field in $requiredTrue) {
@@ -2989,6 +3107,11 @@ if ([string]::Join('|', [string[]]@($receipt.cleanup_resource_roles)) -cne [stri
 if ([string]$receipt.cleanup_normal_final_image_digest -cne [string]$receipt.runtime_image_digest) { throw 'Normal cleanup digest mismatch' }
 if ([string]$receipt.cleanup_reviewer_image_digest -cne [string]$receipt.reviewer_image_digest) { throw 'Reviewer cleanup digest mismatch' }
 if ($receipt.cleanup_failure_variant_resource_count -ne 8) { throw 'Failure cleanup resource count mismatch' } # four images + four containers
+$expectedWebKit = 'mcr.microsoft.com/playwright/python:v1.62.0-noble|sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d|sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59|1.62.0|v1.62.0|2336|26.5|c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c|343e13bf22dca9d0ec227801419aab0f9001a32f|NOASSERTION|NOASSERTION|reviewer_test_only_not_redistributed|false'
+if ([string]$receipt.webkit_reviewer_policy_tuple -cne $expectedWebKit) { throw 'Exact WebKit reviewer policy tuple mismatch' }
+foreach ($field in @('public_export_reviewer_byte_count', 'candidate_reviewer_byte_count', 'runtime_reviewer_byte_count', 'deployment_reviewer_byte_count', 'reviewer_distribution_command_count')) {
+    if ($receipt.$field -ne 0) { throw "Reviewer-only bytes crossed distribution boundary: $field" }
+}
 $expectedReachability = @(
     'receipt_missing|literal_receipt_path|true|final_image_variant|runtime_reachable|reviewed',
     'receipt_hash_mismatch|immutable_receipt_sha256_git_blob|true|final_image_variant|runtime_reachable|reviewed',

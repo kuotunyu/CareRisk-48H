@@ -1,7 +1,7 @@
 # CareRisk 48H — Evidence & Abstention Explorer Design
 
 **Date:** 2026-08-31
-**Status:** Task 5 complete; Task 6 blocked behind Architecture C fix round 1 and fresh review; Task 7 not released
+**Status:** Task 6 complete at the controller-accepted Architecture C commit; Task 7 reviewer-only WebKit policy correction approved, implementation pending; Tasks 8–13 blocked behind Task 7 GREEN
 **Product surface:** Gradio Docker Space
 **Canonical future destination:** `https://huggingface.co/spaces/steven0226/carerisk-48h`
 **Evidence release:** GitHub tag `v0.2.0`
@@ -241,8 +241,8 @@ The clean export contains exactly these destination paths:
 | `v0.2.0` legal metadata | `LICENSE` | Apache-2.0 code license |
 | `v0.2.0` legal metadata | `NOTICE` | PhysioNet attribution and boundary |
 | `v0.2.0` legal metadata | `CITATION.cff` | v0.2.0 citation |
-| Space source | `SBOM.spdx.json` | Exact source/runtime dependency SBOM |
-| Space source | `THIRD_PARTY_LICENSES.json` | Dependency license inventory |
+| Space source | `SBOM.spdx.json` | Exact source/runtime dependency SBOM plus metadata-only inventory for the excluded reviewer tuple |
+| Space source | `THIRD_PARTY_LICENSES.json` | Dependency license inventory, including the excluded reviewer-only WebKit `NOASSERTION` record but no reviewer/browser bytes |
 | Space source | `tests/test_claim_contract.py` | Exact copy and DOM-order contract |
 | Space source | `tests/test_evidence_contract.py` | Receipt/release fail-closed contract |
 | Space source | `tests/test_scenario_contract.py` | Fixed scenario and no-score contract |
@@ -345,11 +345,31 @@ For the current migration, `space/tests/test_gradio_contract.py` remains byte-id
 - The lock is compiled for the single supported Linux/Python target used by the Docker image. Cross-platform convenience ranges are not part of the public runtime contract.
 - The Docker `FROM` instruction contains both an explicit CPython 3.11 slim-bookworm patch tag and its immutable OCI `sha256:` digest. A mutable tag without digest fails verification.
 - The deployment manifest records the base image repository, tag, digest, runtime-lock SHA-256, development-lock SHA-256, SBOM SHA-256, and third-party-license inventory SHA-256.
-- `SBOM.spdx.json` identifies the app, base image, and every locked Python distribution with version, package URL, hashes, and license expression.
-- `THIRD_PARTY_LICENSES.json` contains one reviewed record per runtime and development dependency, including package, version, license expression, source URL, notice requirement, and review disposition.
-- Unknown, missing, non-redistributable, or incompatible licenses block export. License conclusions are recorded as inventory evidence, not inferred from package names.
+- `SBOM.spdx.json` identifies the app, runtime base image, reviewer base image, embedded reviewer browsers, and every locked Python distribution with exact version, package URL, hashes, and license fields. A component's presence in this metadata inventory does not imply that its bytes are present in the public export or final runtime.
+- `THIRD_PARTY_LICENSES.json` contains one reviewed record per runtime and development dependency, including package, version, license fields, source URL, notice status, review disposition, and distribution scope.
+- Every component whose bytes enter the clean public export, candidate context, final runtime image, deployment artifact, saved image/archive, pushed image, or other distributed output must have an approved redistribution-compatible policy record. Unknown, missing, incompatible, or non-redistributable licensing for any such byte is a hard export stop.
+- The only `NOASSERTION` exception is the exact reviewer-only WebKit tuple in Section 10.1. It is metadata-inventoried but its browser and reviewer-image bytes are not distributed. No other component may use `NOASSERTION`, the exception may not be generalized to a version range or different platform, and no policy may infer a license expression from a project or package name.
 - Container scanning must report no unresolved critical or high vulnerability. A time-bounded, documented exception requires separate central approval; this design grants none.
 - No build credential, private index, token, or authenticated package source is permitted.
+
+### 10.1 Exact reviewer-only WebKit policy exception
+
+This exception permits local and CI review execution only for one immutable tuple. It grants no redistribution approval and does not relax the universal approved-only rule for deployed or distributed bytes:
+
+- Reviewer image tag: `mcr.microsoft.com/playwright/python:v1.62.0-noble`.
+- Reviewer OCI index digest: `sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d`.
+- Reviewer linux/amd64 manifest digest: `sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59`.
+- Playwright Python and official Playwright tag: `1.62.0` and `v1.62.0`.
+- WebKit revision, browser version, and canonical tree identity: revision `2336`, version `26.5`, algorithm `sha256-canonical-tree-v1`, SHA-256 `c9df99c2d0597f5c9d6bc8084a83c6ab9e929a17282859bee951cedc87562c8c`.
+- Official Playwright provenance references: tag `https://github.com/microsoft/playwright/tree/v1.62.0`; tagged browser map `https://github.com/microsoft/playwright/blob/v1.62.0/packages/playwright-core/browsers.json`; tagged registry source `https://github.com/microsoft/playwright/blob/v1.62.0/packages/playwright-core/src/server/registry/index.ts`; resolved official CDN artifact `https://cdn.playwright.dev/dbazure/download/playwright/builds/webkit/2336/webkit-ubuntu-24.04.zip`; and exact image path `/ms-playwright/webkit-2336/UPSTREAM_CONFIG`.
+- `UPSTREAM_CONFIG` must identify upstream base commit `343e13bf22dca9d0ec227801419aab0f9001a32f`.
+- Official WebKit licensing references are `https://webkit.org/licensing-webkit/`, `https://github.com/WebKit/WebKit/blob/343e13bf22dca9d0ec227801419aab0f9001a32f/Source/WebCore/LICENSE-APPLE`, and `https://github.com/WebKit/WebKit/blob/343e13bf22dca9d0ec227801419aab0f9001a32f/Source/WebCore/LICENSE-LGPL-2`. They are contextual upstream references only; they do not attest that the exact packaged binary is completely covered by a digest-bound notice set.
+
+The WebKit policy record must use `licenseDeclared="NOASSERTION"`, `licenseConcluded="NOASSERTION"`, `review_disposition="reviewer_test_only_not_redistributed"`, and `complete_digest_bound_notice=false`. The license inventory must preserve those exact semantics; the SPDX package entry must preserve the exact declared and concluded values. It must not claim bitwise source-to-binary attestation, a complete notice set, redistribution approval, or a guessed SPDX expression.
+
+The exception is fail closed. Any drift in image tag, index digest, linux/amd64 manifest, Playwright version/tag, `browsers.json`, registry/CDN reference, WebKit revision/version/tree identity, `UPSTREAM_CONFIG` path/base commit, official licensing-reference set, exact `NOASSERTION` fields, disposition, or `complete_digest_bound_notice=false` stops verification. Any WebKit or reviewer-image byte in the public export, candidate context, runtime stage, final image, deployment artifact, saved archive, pushed image, or other distribution path also stops verification. Chromium, Firefox, ffmpeg, both operating-system inventories, both base-image records, and every Python component remain governed by the ordinary approved-only rule.
+
+The reviewer image is ephemeral local/CI verification infrastructure. It may be pulled and run by exact digest, but it is never saved, exported, emitted as a build output, pushed, uploaded, published, deployed, copied into a public candidate, or used as an ancestor/layer/filesystem source for the final runtime stage. The SBOM and license inventory may carry the tuple's metadata-only record because those records make the exclusion auditable; they do not carry the browser bytes.
 
 ## 11. Container and runtime contract
 
@@ -467,7 +487,7 @@ The card links to the exact GitHub `v0.2.0` tag, source repository, release mani
 - Controller-custodied Git-object identity for `space/tests/test_gradio_contract.py`, eight temporary-object byte-mutation tests, direct review of the raw `git cat-file blob` source, and execution of that exact object's Gradio suite. Identity is never treated as a substitute for source review.
 - Gradio static-config, outer-ASGI, route-inventory, and API-absence capability tests from Section 13.
 - Exact clean-export path, size, hash, symlink, denylist, secret-pattern, private-key, large-file, and binary-signature tests.
-- Space card metadata, license boundary, citation, NOTICE, SBOM, and one-license-record-per-lock-package tests.
+- Space card metadata, license boundary, citation, NOTICE, SBOM, and one-license-record-per-lock-package tests. Supply-chain mutation coverage must reject `NOASSERTION` on every public/deployed component, `NOASSERTION` on any non-WebKit component, every single-field drift of the exact Section 10.1 tuple/provenance/exclusion record, `complete_digest_bound_notice=true`, a guessed WebKit license expression, and any reviewer/WebKit/browser byte entering the clean export, candidate, runtime stage, final image, deployment artifact, saved archive, pushed image, or other distributed output.
 - `ruff`, strict type checking for Space modules, `pip check`, and full Space-specific pytest.
 
 Tests must not import the existing dashboard, model package, data parser, guard, synthetic cohort generator, or final evaluation code. They use only committed public evidence bytes and abstract synthetic states.
@@ -482,6 +502,7 @@ Tests must not import the existing dashboard, model package, data parser, guard,
 - Verify the normal state only from the exact inspected final runtime image. Verify the four runtime-reachable evidence failures (`receipt_missing`, `receipt_hash_mismatch`, `release_relationship_invalid`, and `deployment_manifest_invalid`) only from local images derived from that exact final-image digest under the `NEVER_DEPLOY` contract below; do not alter committed files or add a product configuration surface. `receipt_schema_invalid` remains in the five-code fail-closed taxonomy but is not live-reachable because the immutable receipt SHA-256/Git-blob gate owns precedence in the candidate runtime.
 - Generate and compare image SBOM to the committed dependency SBOM; inventory differences fail.
 - Scan vulnerabilities and licenses under the contract in Section 10.
+- Treat the reviewer image as ephemeral local/CI-only infrastructure. The verifier may pull and run its exact digest, but every command plan and image-history/export inspection must prove that the reviewer image and its Chromium/Firefox/WebKit/ffmpeg bytes are never saved, exported, pushed, uploaded, emitted as build output, copied into the candidate, inherited by the runtime stage, present in the final image, or named by the deployment manifest as a distributed artifact. The metadata-only SBOM/license records remain required.
 
 Four failure-review images are local verification instruments, never release candidates. After the exact final image is built and its digest is inspected, the verifier creates a task-owned GUID directory beneath the validated OS temporary root and writes one literal Dockerfile per runtime-reachable failure code. Each Dockerfile uses `FROM <exact-local-final-image-digest>`, is built with `--pull=false --network=none`, switches to `USER 0` only for the single package-relative evidence mutation needed by that state, and restores `USER 10001:10001`. The four mutually exclusive mutations are: remove only the receipt for `receipt_missing`; alter only receipt bytes for `receipt_hash_mismatch`; alter only release-relationship content for `release_relationship_invalid`; and alter only deployment-manifest content for `deployment_manifest_invalid`. Each mutation must produce exactly its expected bounded code and no other code.
 
@@ -551,6 +572,7 @@ Implementation is eligible for deployment review only when all statements below 
 - Scenario output is limited to `evidence available`/`evidence withheld`, gate booleans, and one enumerated reason; no score or case decision exists anywhere in source, config, response, card, or screenshot.
 - Every displayed quantitative value is derived from the validated exact receipt.
 - Receipt, release, tag, app-source commit, export paths, hashes, locks, base digest, SBOM, and licenses are mutually consistent.
+- Every distributed/public/runtime byte has an approved redistribution-compatible policy disposition. The sole exact WebKit reviewer tuple is present only as an SBOM/license metadata record with `licenseDeclared="NOASSERTION"`, `licenseConcluded="NOASSERTION"`, `review_disposition="reviewer_test_only_not_redistributed"`, and `complete_digest_bound_notice=false`; its tuple/provenance/exclusion fields match Section 10.1 and no reviewer/browser byte reaches any public export, candidate, runtime, deployment, saved artifact, pushed image, or other distribution path.
 - App source has no model/data/scoring imports, no product filesystem writes, no environment configuration, and no outbound network capability.
 - The public Gradio contract test resolves to reviewed blob `7c75d61c53eccdc93f69e7e3bb1eb09346eb5f04` (64,847 raw bytes; SHA-256 `101893daf6f20f9b507a00d0ac8da7fa383f83007520b4db61b710d1814df2a8`) through controller custody and `git cat-file`; no candidate-controlled constant or manifest can bless a changed target.
 - Container passes non-root, read-only, bounded tmpfs, CPU-only, network-disabled smoke; its `/usr/bin/env -i` entrypoint removes injected environment values before import and preserves only the reviewed allowlist.
@@ -560,4 +582,4 @@ Implementation is eligible for deployment review only when all statements below 
 
 ## 19. Design review handoff
 
-This specification governs the already authorized local implementation plan. Task 5 is complete and frozen at `3ef09639c4b08f1fc70e931507af79f4ff717fcb`. Original Task 6 reached its five-round breaker; its bounded reflection-alias successor and closed-world source-token successor each then exhausted their separate three-candidate breakers and remain rejected. Architecture C docs and raw-object review passed, but its first boundary-only candidate `e9650ed00468f8bcc95b6972d44d1d9923e14b9f` was independently rejected with Critical `0`, Important `2`, Minor `0` because Git routing remained ambient and Git subprocesses were unbounded. The only permitted continuation is the bounded fix-round-1 plan: exact five-case RED, boundary-file-only hardening, fresh review, and controller reruns. Task 7 remains blocked until every Architecture C gate passes and ignored custody explicitly records Task 6 complete plus the exact accepted release SHA. Export generation, supply-chain/container candidate work, authenticated collision checking, Actions Environment/variable mutation, Space creation/upload, and GitHub About work remain behind their later plan and separate written gates.
+This specification governs the already authorized local implementation plan. Task 5 remains frozen at `3ef09639c4b08f1fc70e931507af79f4ff717fcb`; Task 6 is complete at controller-accepted Architecture C commit `29d93f3fca8a9706a6ee762ac67e0b0fa427b91f`, with its rejected predecessors still rejected. Task 7 measured and hash-locked the exact runtime and reviewer inputs but correctly stopped before inventory GREEN because the reviewer WebKit tree had no complete digest-bound license notice. Central has now approved only the Section 10.1 policy split. Task 7 may resume solely through the dated corrective implementation plan, preserve the exact accepted tuple, and prove exclusion from every distribution/runtime path. Tasks 8–13 remain blocked until that corrective implementation is GREEN and reviewed. Authenticated collision checking, Actions Environment/variable mutation, Space creation/upload, public image publication, and GitHub About work remain behind their later plan and separate written gates.
