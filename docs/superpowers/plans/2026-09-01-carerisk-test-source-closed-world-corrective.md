@@ -64,6 +64,8 @@ Add negative source mutations for:
 - near-miss `super().__init__`, `gr.__version__`, `type(exc).__name__`, `inspect.signature`, and `inspect.Parameter.empty` shapes;
 - binding/shadowing/import aliases of `type`, `inspect`, `importlib`, `ui_module`, `gr`, and `uvicorn` outside their one exact existing top-level import;
 - `monkeypatch.setattr` assigned to an alias, called through another receiver, called with a nonliteral member, or referenced without being the direct `Call.func`;
+- `monkeypatch.setattr(inspect, "signature", sink)`, `monkeypatch.setattr(inspect, "Parameter", sink)`, `monkeypatch.setattr(gr, "__version__", value)`, `monkeypatch.setattr(socket, "AF_UNIX", value)`, mutation of either permitted `importlib.util` member, and mutation of `ui_module.PublicSurfaceGuard`;
+- assignment/parameter/function/class/import shadowing for `isinstance`, `super`, `frozenset`, `socket`, `pytest`, or any other protected identity; `monkeypatch` is positive only as an exact `pytest.MonkeyPatch` parameter in the owning function and every rebind/import/alternate annotation is negative;
 - `"PublicSurfaceGuard"` as a dynamic member string.
 
 Keep current `import importlib.util` and its exact `spec_from_file_location` / `module_from_spec` calls. Keep exact unaliased `import inspect`, `inspect.Parameter.empty`, and the one exact signature call defined below. No wildcard or near-match is allowed.
@@ -90,8 +92,11 @@ Required context rules:
 
 - every `ui_module.build_package_asset_membership` attribute is the exact direct callee of a zero-argument, zero-keyword call;
 - every `ui_module.PublicSurfaceGuard` attribute is exactly one of: direct `Call.func`; the sole positional argument of `inspect.signature(...)`; or argument index 1 of direct `isinstance(value, ui_module.PublicSurfaceGuard)` with no keywords;
+- either sensitive attribute name is rejected on every receiver other than the exact unshadowed `ui_module` name, independently of alias analysis;
 - original/effective imports of either sensitive member are rejected;
 - ordinary or two-level aliases are rejected.
+
+Replace the existing positive test `test_guard_helper_audit_accepts_bounded_builder_and_guard_alias_lineage` with a negative test of the same alias lineage. No test may continue to assert that builder or guard aliases are accepted.
 
 - [ ] **Step 3: Run RED**
 
@@ -105,15 +110,16 @@ Use a parent map and finite allowed-node sets. Do not resolve alias values.
 
 - identify the two exact allowed `getattr` callee `Name` nodes;
 - identify the one exact allowed `type` callee in `type(exc).__name__ == "Failed"`;
-- reject any semantic binding/import original/effective name that shadows a protected builtin or protected module identity;
+- reject any semantic binding/import original/effective name that shadows a protected builtin or protected module identity. Protected identities include `getattr`, `type`, `isinstance`, `super`, `frozenset`, `inspect`, `importlib`, `socket`, `pytest`, `ui_module`, `gr`, and `uvicorn`; allow only their exact existing top-level import nodes where applicable;
 - reject every forbidden builtin `Name` load except the two recorded `getattr` nodes and the one recorded `type` node;
 - reject reflection imports/helpers and `importlib.import_module` by source token;
 - reject dunder attributes except exact `super().__init__()` inside a class-owned `__init__`, exact pinned `gr.__version__ == "6.26.0"`, and exact `type(exc).__name__ == "Failed"`;
-- allow `__file__` load, `from __future__ import annotations`, and class-owned `__init__` / `__call__` definitions only; apply the existing semantic dunder-binding checks everywhere else;
-- permit `monkeypatch.setattr` only as an exact direct callee with three positional arguments, no keywords, and a literal string second argument; every other attribute named `setattr` fails;
+- allow `__name__` and `__file__` loads, `from __future__ import annotations`, and class-owned `__init__` / `__call__` definitions only; apply the existing semantic dunder-binding checks everywhere else;
+- permit `monkeypatch` only as an `ast.arg` with exact annotation `pytest.MonkeyPatch` in the owning function; reject every other semantic binding of that name. Permit `monkeypatch.setattr` only as an exact direct callee with three positional arguments, no keywords, and a literal string second argument; every other attribute named `setattr` fails;
+- reject `monkeypatch.setattr` when its receiver/member pair targets an allowlist identity anchor: `inspect.signature`, `inspect.Parameter`, `gr.__version__`, `socket.AF_UNIX`, `importlib.util.spec_from_file_location`, `importlib.util.module_from_spec`, or `ui_module.PublicSurfaceGuard`. Permit the exact four existing substitutions only inside `test_entrypoint_mount_and_uvicorn_contract_are_exact`: `ui_module.create_app`, `ui_module.build_package_asset_membership`, `gr.mount_gradio_app`, and `entrypoint.uvicorn.run`, with their existing direct replacement expressions;
 - permit `inspect.signature` only with one positional argument equal to the exact `ui_module.PublicSurfaceGuard` node and no keywords; permit only exact `inspect.Parameter.empty`; reject other `inspect` dynamic members;
 - permit only the current exact `importlib.util` import and exact `importlib.util.spec_from_file_location` / `module_from_spec` callees;
-- enforce the builder/guard context rules above;
+- reject any `ast.Attribute` whose `.attr` is `PublicSurfaceGuard` or `build_package_asset_membership` unless its receiver is exact `ast.Name(id="ui_module")` and its parent shape is one of the allowed contexts above; enforce this receiver-independent check before the context exceptions;
 - return deduplicated deterministic sorted findings.
 
 Delete the `_ReflectionAliasState`, marker constants, `_owned_nodes`, mapping/callable state classifiers, fixed-point construction, and module/function reflection evaluator. `_guard_helper_violations` first appends whole-file source findings, then performs existing direct guard/builder argument, membership, assertion, and rejection-path checks without accepting aliases.
