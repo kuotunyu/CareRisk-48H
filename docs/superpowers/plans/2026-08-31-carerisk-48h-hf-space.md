@@ -2453,6 +2453,50 @@ CUSTODY_NAMES = (
     "CARERISK_GRADIO_CONTRACT_RAW_SIZE",
     "CARERISK_GRADIO_CONTRACT_RAW_SHA256",
 )
+CUSTODY_VALIDATOR_LINES = (
+    '[[ "$CARERISK_GRADIO_CONTRACT_BLOB_SHA1" =~ ^[0-9a-f]{40}$ ]] || exit 1',
+    '[[ "$CARERISK_GRADIO_CONTRACT_RAW_SIZE" =~ ^(0|[1-9][0-9]*)$ ]] || exit 1',
+    '[[ "$CARERISK_GRADIO_CONTRACT_RAW_SHA256" =~ ^[0-9a-f]{64}$ ]] || exit 1',
+)
+CUSTODY_VALIDATOR = "\n".join(CUSTODY_VALIDATOR_LINES)
+CUSTODY_VARIABLE_REFERENCES = {
+    CUSTODY_NAMES[0]: "${{ vars.CARERISK_GRADIO_CONTRACT_BLOB_SHA1 }}",
+    CUSTODY_NAMES[1]: "${{ vars.CARERISK_GRADIO_CONTRACT_RAW_SIZE }}",
+    CUSTODY_NAMES[2]: "${{ vars.CARERISK_GRADIO_CONTRACT_RAW_SHA256 }}",
+}
+
+
+def _normalized_custody_script(value: str) -> str:
+    return "\n".join(
+        line.rstrip()
+        for line in value.replace("\r\n", "\n").strip().split("\n")
+    )
+
+
+def _custody_step(job: dict[str, Any]) -> dict[str, Any]:
+    steps = [step for step in job["steps"] if step.get("id") == "custody"]
+    assert len(steps) == 1
+    return steps[0]
+
+
+def _run_extracted_custody_validator(
+    validator: str,
+    values: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    bash = shutil.which("bash")
+    assert bash is not None
+    environment = {
+        name: value for name, value in os.environ.items() if name not in CUSTODY_NAMES
+    }
+    environment.update(values)
+    return subprocess.run(
+        [bash, "-c", validator],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
 
 def test_space_ci_transports_external_custody_without_literal_values() -> None:
     workflow_text = SPACE_CI.read_text(encoding="utf-8")
@@ -2466,13 +2510,16 @@ def test_space_ci_transports_external_custody_without_literal_values() -> None:
             name for name in job["env"] if name.startswith("CARERISK_GRADIO_CONTRACT_")
         } == set(CUSTODY_NAMES)
         for name in CUSTODY_NAMES:
-            assert job["env"][name] == "${{ vars." + name + " }}"
-        custody_steps = [step for step in job["steps"] if step.get("id") == "custody"]
-        assert len(custody_steps) == 1
-        custody_command = custody_steps[0]["run"]
-        assert "^[0-9a-f]{40}$" in custody_command
-        assert "^(0|[1-9][0-9]*)$" in custody_command
-        assert "^[0-9a-f]{64}$" in custody_command
+            assert job["env"][name] == CUSTODY_VARIABLE_REFERENCES[name]
+        assert "continue-on-error" not in job
+        custody_step = _custody_step(job)
+        assert custody_step["shell"] == "bash"
+        assert "if" not in custody_step
+        assert "continue-on-error" not in custody_step
+        custody_command = _normalized_custody_script(custody_step["run"])
+        assert custody_command == CUSTODY_VALIDATOR
+        for required_line in CUSTODY_VALIDATOR_LINES:
+            assert required_line in custody_command
         guarded_steps = [
             index
             for index, step in enumerate(job["steps"])
@@ -2482,7 +2529,7 @@ def test_space_ci_transports_external_custody_without_literal_values() -> None:
             )
         ]
         assert guarded_steps
-        assert job["steps"].index(custody_steps[0]) < min(guarded_steps)
+        assert job["steps"].index(custody_step) < min(guarded_steps)
     source_commands = "\n".join(
         step.get("run", "") for step in workflow["jobs"]["source_gates"]["steps"]
     )
@@ -2490,7 +2537,50 @@ def test_space_ci_transports_external_custody_without_literal_values() -> None:
         assert f"--env {name}" in source_commands
     for value in (expected_values[0], str(expected_values[1]), expected_values[2]):
         assert value not in workflow_text
+
+
+def test_space_ci_executes_the_extracted_custody_validator_fail_closed() -> None:
+    workflow = yaml.safe_load(SPACE_CI.read_text(encoding="utf-8"))
+    source_validator = _normalized_custody_script(
+        _custody_step(workflow["jobs"]["source_gates"])["run"]
+    )
+    candidate_validator = _normalized_custody_script(
+        _custody_step(workflow["jobs"]["candidate_gates"])["run"]
+    )
+    assert source_validator == candidate_validator == CUSTODY_VALIDATOR
+
+    valid = {
+        CUSTODY_NAMES[0]: "a" * 40,
+        CUSTODY_NAMES[1]: "1",
+        CUSTODY_NAMES[2]: "b" * 64,
+    }
+    invalid = (
+        {},
+        {name: value for name, value in valid.items() if name != CUSTODY_NAMES[0]},
+        {name: value for name, value in valid.items() if name != CUSTODY_NAMES[1]},
+        {name: value for name, value in valid.items() if name != CUSTODY_NAMES[2]},
+        {**valid, CUSTODY_NAMES[0]: "A" * 40},
+        {**valid, CUSTODY_NAMES[2]: "B" * 64},
+        {**valid, CUSTODY_NAMES[1]: "01"},
+        {**valid, CUSTODY_NAMES[1]: "+1"},
+        {**valid, CUSTODY_NAMES[1]: "-1"},
+        {**valid, CUSTODY_NAMES[0]: "g" * 40},
+        {**valid, CUSTODY_NAMES[1]: "1.0"},
+        {**valid, CUSTODY_NAMES[2]: "g" * 64},
+    )
+    for values in invalid:
+        assert _run_extracted_custody_validator(source_validator, values).returncode != 0
+    assert _run_extracted_custody_validator(source_validator, valid).returncode == 0
 ```
+
+Add the existing-standard-library imports `os`, `shutil`, and `subprocess`, plus
+`Any` from `typing`, for this executable contract. The test executes the
+normalized `run` value extracted
+from the parsed workflow, not a replacement validator assembled by the test.
+Consequently, echoing regex text, putting validation behind `if`, marking the
+step or job `continue-on-error`, or changing `shell: bash` cannot satisfy the
+contract. The shape-only positive values above are deliberately not the
+controller's real tuple.
 
 - [ ] **Step 2: Run RED**
 
