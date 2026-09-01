@@ -843,19 +843,18 @@ def test_exact_instance_state_ignores_poisoned_framework_environment(
 
 
 def test_outer_guard_constructor_is_exact_and_rejects_empty_membership() -> None:
-    guard_type = ui_module.PublicSurfaceGuard
-    parameters = inspect.signature(guard_type).parameters
+    parameters = inspect.signature(ui_module.PublicSurfaceGuard).parameters
     assert tuple(parameters) == ("downstream", "package_asset_urls")
     assert all(item.default is inspect.Parameter.empty for item in parameters.values())
     membership = ui_module.build_package_asset_membership()
     assert isinstance(membership, frozenset)
     assert membership
-    guard = guard_type(DownstreamRecorder(), membership)
+    guard = ui_module.PublicSurfaceGuard(DownstreamRecorder(), membership)
     assert guard.package_asset_urls == membership
     with pytest.raises(ValueError, match="package_asset_membership_empty"):
-        guard_type(DownstreamRecorder(), frozenset())
+        ui_module.PublicSurfaceGuard(DownstreamRecorder(), frozenset())
     with pytest.raises(ValueError, match="package_asset_membership_not_immutable"):
-        guard_type(DownstreamRecorder(), set(membership))
+        ui_module.PublicSurfaceGuard(DownstreamRecorder(), set(membership))
 
 
 @pytest.mark.parametrize(

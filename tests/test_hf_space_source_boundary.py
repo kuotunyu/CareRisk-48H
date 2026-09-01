@@ -2064,15 +2064,12 @@ def test_asset_builder_runtime_rejects_missing_file_and_symlink_roots(
         ui_module.build_package_asset_membership()
 
 
-def _expected_rejection_guard_calls(
-    function: ast.FunctionDef,
-    aliases: dict[str, str],
-) -> set[ast.Call]:
+def _expected_rejection_guard_calls(function: ast.FunctionDef) -> set[ast.Call]:
     calls: set[ast.Call] = set()
     for node in ast.walk(function):
         if not isinstance(node, (ast.With, ast.AsyncWith)) or not any(
             isinstance(item.context_expr, ast.Call)
-            and _resolved_name(item.context_expr.func, aliases) == "pytest.raises"
+            and _call_name(item.context_expr.func) == "pytest.raises"
             for item in node.items
         ):
             continue
@@ -2081,283 +2078,1028 @@ def _expected_rejection_guard_calls(
             for statement in node.body
             for call in ast.walk(statement)
             if isinstance(call, ast.Call)
-            and _resolved_name(call.func, aliases) == "ui_module.PublicSurfaceGuard"
+            and _call_name(call.func) == "ui_module.PublicSurfaceGuard"
         )
     return calls
 
 
-_ReflectionAliasState = tuple[set[str], set[str], set[str], set[str], set[str]]
-_SENSITIVE_ALIAS = "sensitive"
-_BUILTIN_MODULE_ALIAS = "builtin_module"
-_BUILTIN_MAPPING_ALIAS = "builtin_mapping"
-_REFLECTION_CALLABLE_ALIAS = "reflection_callable"
-_VARS_CALLABLE_ALIAS = "vars_callable"
+_GRADIO_CANONICAL_IMPORT_SOURCE = """\
+from __future__ import annotations
+import asyncio
+import hashlib
+import importlib.util
+import inspect
+import io
+import json
+import logging
+import os
+import re
+import socket
+import sys
+import threading
+import time
+from collections import Counter, deque
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, cast, get_args
+import carerisk_space.evidence as evidence_module
+import carerisk_space.ui as ui_module
+import gradio as gr
+import gradio.routes as gradio_routes
+import httpx
+import pytest
+import uvicorn
+from carerisk_space.contracts import PRODUCT_NAME, EvidenceFailureCode, EvidenceViewModel
+from carerisk_space.evidence import load_evidence
+from carerisk_space.scenarios import SCENARIOS, render_scenario
+from fastapi import FastAPI
+from gradio.routes import BUILD_PATH_LIB, STATIC_PATH_LIB
+from test_claim_contract import EXPECTED_EN, EXPECTED_ZH_TW
+from test_evidence_contract import receipt_raw, release_raw, valid_manifest_bytes
+from test_scenario_contract import EXPECTED_IDS
+"""
+_GRADIO_CANONICAL_IMPORT_DUMPS = tuple(
+    ast.dump(node, include_attributes=False)
+    for node in ast.parse(_GRADIO_CANONICAL_IMPORT_SOURCE).body
+)
+_GRADIO_ALL_FAILURE_CODES_DUMP = ast.dump(
+    ast.parse(
+        "ALL_FAILURE_CODES = cast(tuple[EvidenceFailureCode, ...], get_args(EvidenceFailureCode))"
+    ).body[0],
+    include_attributes=False,
+)
+_GRADIO_SPACE_ROOT_DUMP = ast.dump(
+    ast.parse("SPACE_ROOT = Path(__file__).resolve().parents[1]").body[0],
+    include_attributes=False,
+)
+_GRADIO_PROTECTED_IDENTITIES = frozenset(
+    {
+        "getattr",
+        "type",
+        "isinstance",
+        "super",
+        "frozenset",
+        "inspect",
+        "importlib",
+        "socket",
+        "sys",
+        "pytest",
+        "ui_module",
+        "gr",
+        "uvicorn",
+        "Path",
+        "SPACE_ROOT",
+        "AppEntryMarker",
+    }
+)
+_GRADIO_FORBIDDEN_BUILTIN_LOADS = frozenset(
+    set(_FORBIDDEN_REFLECTION_NAMES) | {"breakpoint", "help", "dir"}
+)
+_GRADIO_FORBIDDEN_PATCH_NAMES = frozenset({"unittest", "mock", "patch", "pytest_mock", "mocker"})
+_GRADIO_FORBIDDEN_DYNAMIC_MEMBERS = frozenset(
+    {
+        "importorskip",
+        "importer",
+        "import_from_string",
+        "resolve_name",
+        "locate",
+        "find_spec",
+        "import_plugin",
+        "load_setuptools_entrypoints",
+        "pluginmanager",
+    }
+)
+_GRADIO_FORBIDDEN_FRAME_MEMBERS = frozenset(
+    {
+        "gi_frame",
+        "cr_frame",
+        "ag_frame",
+        "tb_frame",
+        "f_builtins",
+        "f_globals",
+        "f_locals",
+        "f_back",
+        "_getframe",
+        "_current_frames",
+        "sys",
+    }
+)
+_GRADIO_PROTECTED_MEMBERS = frozenset(
+    {
+        "getattr",
+        "type",
+        "isinstance",
+        "super",
+        "frozenset",
+        "signature",
+        "Parameter",
+        "empty",
+        "__version__",
+        "AF_UNIX",
+        "spec_from_file_location",
+        "module_from_spec",
+        "PublicSurfaceGuard",
+        "create_app",
+        "build_package_asset_membership",
+        "mount_gradio_app",
+        "run",
+    }
+)
+_GRADIO_ENTRYPOINT_PATCH_SOURCE = (
+    'monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)',
+    'monkeypatch.setattr(ui_module, "build_package_asset_membership", lambda: membership)',
+    'monkeypatch.setattr(gr, "mount_gradio_app", fake_mount)',
+    'monkeypatch.setattr(entrypoint.uvicorn, "run", fake_run)',
+)
 
 
-def _owned_nodes(statements: Iterable[ast.stmt]) -> list[ast.AST]:
-    owned: list[ast.AST] = []
-    pending: list[ast.AST] = list(statements)
-    while pending:
-        node = pending.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            continue
-        owned.append(node)
-        pending.extend(ast.iter_child_nodes(node))
-    return owned
+def _parsed_expression_statement_value(source: str) -> ast.expr:
+    statement = ast.parse(source).body[0]
+    assert isinstance(statement, ast.Expr)
+    return statement.value
 
 
-def _assignment_names(node: ast.AST) -> set[str]:
-    return {target.id for target in _assignment_targets(node) if isinstance(target, ast.Name)}
+_GRADIO_ENTRYPOINT_PATCH_DUMPS = tuple(
+    ast.dump(_parsed_expression_statement_value(source), include_attributes=False)
+    for source in _GRADIO_ENTRYPOINT_PATCH_SOURCE
+)
+_GRADIO_ENTRYPOINT_IDENTITY_HELPER_SOURCE = """\
+def _assert_entrypoint_positional_identity(
+    entrypoint: Any,
+    mounted_parent: FastAPI,
+    mounted_demo: gr.Blocks,
+    served_app: Any,
+) -> None:
+    assert mounted_parent is entrypoint.parent
+    assert mounted_demo is entrypoint.demo
+    assert served_app is entrypoint.app
+    assert isinstance(served_app, ui_module.PublicSurfaceGuard)
+    assert served_app.downstream is mounted_parent
+"""
+_GRADIO_ENTRYPOINT_IDENTITY_HELPER_DUMP = ast.dump(
+    ast.parse(_GRADIO_ENTRYPOINT_IDENTITY_HELPER_SOURCE).body[0],
+    include_attributes=False,
+)
+_GRADIO_ENTRYPOINT_IDENTITY_CALL_SOURCE = (
+    "_assert_entrypoint_positional_identity("
+    "entrypoint, mount_positional[0][0], mount_positional[0][1], "
+    "uvicorn_positional[0])",
+    "_assert_entrypoint_positional_identity(entrypoint, wrong_parent, entrypoint.demo, wrong_app)",
+)
+_GRADIO_ENTRYPOINT_IDENTITY_CALL_DUMPS = tuple(
+    ast.dump(ast.parse(source, mode="eval").body, include_attributes=False)
+    for source in _GRADIO_ENTRYPOINT_IDENTITY_CALL_SOURCE
+)
 
 
-def _effective_import_name(node: ast.alias, parent: ast.AST) -> str:
-    if isinstance(parent, ast.Import):
-        return node.asname or node.name.split(".", 1)[0]
-    return node.asname or node.name
-
-
-def _state_has_name(node: ast.expr, names: set[str]) -> bool:
-    return isinstance(node, ast.Name) and node.id in names
-
-
-def _mapping_source(node: ast.expr, state: _ReflectionAliasState) -> bool:
-    _, builtin_modules, builtin_mappings, _, vars_callables = state
-    if _state_has_name(node, builtin_mappings):
-        return True
-    if (
-        isinstance(node, ast.Attribute)
-        and node.attr == "__dict__"
-        and _state_has_name(node.value, builtin_modules)
-    ):
-        return True
-    if not (
-        isinstance(node, ast.Call)
-        and len(node.args) == 1
-        and not node.keywords
-        and _state_has_name(node.args[0], builtin_modules)
-    ):
-        return False
-    return _state_has_name(node.func, vars_callables) or _reflection_callable_source(
-        node.func,
-        state,
-    )
-
-
-def _reflection_callable_source(
-    node: ast.expr,
-    state: _ReflectionAliasState,
-) -> bool:
-    _, builtin_modules, _, reflection_callables, _ = state
-    if isinstance(node, ast.Name):
-        return node.id in reflection_callables
-    if isinstance(node, ast.Attribute):
-        if _call_name(node) in reflection_callables:
-            return True
-        if node.attr == "__call__":
-            return _reflection_callable_source(node.value, state)
-        return node.attr != "__dict__" and _state_has_name(node.value, builtin_modules)
-    if isinstance(node, ast.Subscript):
-        return _mapping_source(node.value, state)
-    if isinstance(node, ast.Call):
-        if (
-            isinstance(node.func, ast.Attribute)
-            and node.func.attr == "get"
-            and _mapping_source(node.func.value, state)
-        ):
-            return True
-        return (
-            bool(node.args)
-            and _state_has_name(node.args[0], builtin_modules)
-            and _reflection_callable_source(node.func, state)
-        )
-    return False
-
-
-def _bounded_reflection_state(
-    statements: Iterable[ast.stmt],
-    inherited: _ReflectionAliasState | None = None,
-    *,
-    include_parent: bool = False,
-) -> _ReflectionAliasState:
-    if inherited is None:
-        sensitive_aliases = {"ui_module", "gr", "uvicorn"}
-        builtin_module_aliases: set[str] = set()
-        builtin_mapping_aliases = {"__builtins__"}
-        reflection_callable_aliases = set(
-            (_FORBIDDEN_REFLECTION_NAMES - {"__builtins__"}) | _FORBIDDEN_REFLECTION_HELPERS
-        )
-        vars_callable_aliases = {"vars"}
-    else:
-        (
-            sensitive_aliases,
-            builtin_module_aliases,
-            builtin_mapping_aliases,
-            reflection_callable_aliases,
-            vars_callable_aliases,
-        ) = (set(items) for items in inherited)
-    if include_parent:
-        sensitive_aliases.add("parent")
-    state = (
-        sensitive_aliases,
-        builtin_module_aliases,
-        builtin_mapping_aliases,
-        reflection_callable_aliases,
-        vars_callable_aliases,
-    )
-    owned = _owned_nodes(statements)
-    for node in owned:
-        if isinstance(node, ast.Import):
-            for imported in node.names:
-                if imported.name == "builtins":
-                    builtin_module_aliases.add(_effective_import_name(imported, node))
-        elif isinstance(node, ast.ImportFrom):
-            for imported in node.names:
-                effective_name = _effective_import_name(imported, node)
-                if imported.name == "__builtins__":
-                    builtin_mapping_aliases.add(effective_name)
-                if (
-                    node.module == "builtins"
-                    and imported.name in _FORBIDDEN_REFLECTION_NAMES
-                    and imported.name != "__builtins__"
-                ):
-                    reflection_callable_aliases.add(effective_name)
-                    if imported.name == "vars":
-                        vars_callable_aliases.add(effective_name)
-
-    assignments = [
-        node
-        for node in owned
-        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None
-    ]
-    for _ in range(len(assignments) + 1):
-        changed = False
-        for assignment in assignments:
-            value = assignment.value
-            if value is None:
-                continue
-            targets = _assignment_names(assignment)
-            transitions = (
-                (sensitive_aliases, _state_has_name(value, sensitive_aliases)),
-                (builtin_module_aliases, _state_has_name(value, builtin_module_aliases)),
-                (builtin_mapping_aliases, _mapping_source(value, state)),
-                (reflection_callable_aliases, _reflection_callable_source(value, state)),
-                (vars_callable_aliases, _state_has_name(value, vars_callable_aliases)),
+def _semantic_binding_records(
+    tree: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> list[tuple[str, ast.AST]]:
+    records: list[tuple[str, ast.AST]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            records.append((node.id, node))
+        elif isinstance(node, ast.arg):
+            records.append((node.arg, node))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            records.append((node.name, node))
+        elif isinstance(node, ast.alias):
+            records.extend(
+                (name, node)
+                for name in _alias_original_and_effective_names(node, parents.get(node))
             )
-            for aliases, applies in transitions:
-                if applies and not targets <= aliases:
-                    aliases.update(targets)
-                    changed = True
-        if not changed:
-            break
-    return state
+        elif isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)) and node.name:
+            records.append((node.name, node))
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            records.append((node.rest, node))
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            records.extend((name, node) for name in node.names)
+    return records
 
 
-def _reflection_state_aliases(state: _ReflectionAliasState) -> dict[str, str]:
-    categories: dict[str, set[str]] = {}
-    for marker, names in zip(
-        (
-            _SENSITIVE_ALIAS,
-            _BUILTIN_MODULE_ALIAS,
-            _BUILTIN_MAPPING_ALIAS,
-            _REFLECTION_CALLABLE_ALIAS,
-            _VARS_CALLABLE_ALIAS,
-        ),
-        state,
-        strict=True,
-    ):
-        for name in names:
-            categories.setdefault(name, set()).add(marker)
-    return {name: "|".join(sorted(markers)) for name, markers in categories.items()}
+def _nearest_function(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    current = parents.get(node)
+    while current is not None:
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return current
+        current = parents.get(current)
+    return None
 
 
-def _aliases_in_category(aliases: dict[str, str], marker: str) -> set[str]:
-    return {name for name, categories in aliases.items() if marker in categories.split("|")}
+def _nearest_class(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> ast.ClassDef | None:
+    current = parents.get(node)
+    while current is not None:
+        if isinstance(current, ast.ClassDef):
+            return current
+        current = parents.get(current)
+    return None
 
 
-def _sensitive_reflection_in_nodes(
-    nodes: Iterable[ast.AST],
-    aliases: dict[str, str],
+def _expression_dump(source: str) -> str:
+    return ast.dump(ast.parse(source, mode="eval").body, include_attributes=False)
+
+
+def _is_exact_call(node: ast.AST, source: str) -> bool:
+    return isinstance(node, ast.Call) and ast.dump(
+        node, include_attributes=False
+    ) == _expression_dump(source)
+
+
+def _is_exact_decorator_call(
+    call: ast.Call,
+    parents: dict[ast.AST, ast.AST],
 ) -> bool:
-    state = (
-        _aliases_in_category(aliases, _SENSITIVE_ALIAS),
-        _aliases_in_category(aliases, _BUILTIN_MODULE_ALIAS),
-        _aliases_in_category(aliases, _BUILTIN_MAPPING_ALIAS),
-        _aliases_in_category(aliases, _REFLECTION_CALLABLE_ALIAS),
-        _aliases_in_category(aliases, _VARS_CALLABLE_ALIAS),
+    owner = _nearest_function(call, parents)
+    return owner is not None and call in owner.decorator_list
+
+
+def _binding_is_canonical_import(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+    canonical_import_nodes: set[ast.stmt],
+) -> bool:
+    return isinstance(node, ast.alias) and parents.get(node) in canonical_import_nodes
+
+
+def _gradio_test_source_violations(tree: ast.Module) -> list[str]:
+    violations: set[str] = set()
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+
+    module_imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    import_dumps = tuple(ast.dump(node, include_attributes=False) for node in module_imports)
+    canonical_import_nodes: set[ast.stmt] = set()
+    if import_dumps != _GRADIO_CANONICAL_IMPORT_DUMPS:
+        violations.add("imports:closed_world")
+    else:
+        canonical_import_nodes.update(module_imports)
+    if len(
+        [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
+    ) != len(module_imports):
+        violations.add("imports:nested")
+    if (
+        len(tree.body) < 36
+        or tuple(tree.body[:34]) != tuple(module_imports)
+        or ast.dump(tree.body[34], include_attributes=False) != _GRADIO_ALL_FAILURE_CODES_DUMP
+        or ast.dump(tree.body[35], include_attributes=False) != _GRADIO_SPACE_ROOT_DUMP
+    ):
+        violations.add("module:prefix")
+
+    binding_records = _semantic_binding_records(tree, parents)
+    for name, node in binding_records:
+        if name in _GRADIO_FORBIDDEN_PATCH_NAMES:
+            violations.add(f"binding:{name}")
+        if name in _GRADIO_FORBIDDEN_DYNAMIC_MEMBERS:
+            violations.add(f"binding:{name}")
+        if name in {"breakpoint", "help", "dir", "_getframe", "_current_frames"}:
+            violations.add(f"binding:{name}")
+        if name in _GRADIO_PROTECTED_IDENTITIES and not _binding_is_canonical_import(
+            node, parents, canonical_import_nodes
+        ):
+            if name == "SPACE_ROOT" and node is getattr(tree.body[35], "targets", [None])[0]:
+                continue
+            if name == "AppEntryMarker" and isinstance(node, ast.ClassDef):
+                continue
+            violations.add(f"binding:{name}")
+
+    allowed_getattr_names: set[ast.Name] = set()
+    getattr_contracts = (
+        ("getattr(inner, 'original_router', None)", "collect"),
+        ("getattr(socket, 'AF_UNIX', None)", "test_package_asset_special_file_fails_closed"),
     )
-    sensitive_aliases = state[0]
+    for source, owner_name in getattr_contracts:
+        matches = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and _is_exact_call(node, source)
+            and (owner := _nearest_function(node, parents)) is not None
+            and owner.name == owner_name
+        ]
+        if len(matches) != 1 or not isinstance(matches[0].func, ast.Name):
+            violations.add(f"getattr:{owner_name}")
+        else:
+            allowed_getattr_names.add(matches[0].func)
 
-    def is_sensitive_receiver(node: ast.expr) -> bool:
-        while isinstance(node, ast.Attribute):
-            node = node.value
-        return _state_has_name(node, sensitive_aliases)
+    expected_type_compare = _expression_dump("type(exc).__name__ == 'Failed'")
+    type_compares = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and ast.dump(node, include_attributes=False) == expected_type_compare
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "test_linux_symlink_fixture_failure_is_a_failure_not_a_skip"
+    ]
+    allowed_type_names = {
+        node
+        for compare in type_compares
+        for node in ast.walk(compare)
+        if isinstance(node, ast.Name) and node.id == "type"
+    }
+    if len(type_compares) != 1 or len(allowed_type_names) != 1:
+        violations.add("type:exact_context")
 
-    for node in nodes:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if node.id in _GRADIO_FORBIDDEN_BUILTIN_LOADS and node not in allowed_getattr_names:
+                violations.add(f"name:{node.id}")
+            if node.id in _GRADIO_FORBIDDEN_PATCH_NAMES:
+                violations.add(f"name:{node.id}")
+            if node.id in _GRADIO_FORBIDDEN_DYNAMIC_MEMBERS:
+                violations.add(f"name:{node.id}")
+            if node.id == "type" and node not in allowed_type_names:
+                violations.add("name:type")
+            if node.id == "isinstance":
+                parent = parents.get(node)
+                if not (
+                    isinstance(parent, ast.Call)
+                    and parent.func is node
+                    and not parent.keywords
+                    and len(parent.args) == 2
+                ):
+                    violations.add("name:isinstance")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if (
+                node.value in _FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS
+                or node.value == "PublicSurfaceGuard"
+            ):
+                violations.add(f"literal:{node.value}")
+
+    super_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_exact_call(node, "super().__init__(level=logging.DEBUG)")
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "__init__"
+        and (class_owner := _nearest_class(node, parents)) is not None
+        and class_owner.name == "BoundedLogCapture"
+    ]
+    version_compares = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and ast.dump(node, include_attributes=False)
+        == _expression_dump("gr.__version__ == '6.26.0'")
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "test_gradio_version_and_normal_config_are_static_and_event_free"
+    ]
+    allowed_dunder_attrs: set[ast.Attribute] = set()
+    for root in [*super_calls, *version_compares, *type_compares]:
+        allowed_dunder_attrs.update(
+            node
+            for node in ast.walk(root)
+            if isinstance(node, ast.Attribute) and _is_dunder(node.attr)
+        )
+    if len(super_calls) != 1:
+        violations.add("super:exact_context")
+    if len(version_compares) != 1:
+        violations.add("gr_version:exact_context")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and _is_dunder(node.attr):
+            if node not in allowed_dunder_attrs:
+                violations.add(f"dunder:{node.attr}")
+        elif (
+            isinstance(node, ast.Name)
+            and isinstance(node.ctx, ast.Load)
+            and _is_dunder(node.id)
+            and node.id not in {"__file__", "__name__"}
+        ):
+            violations.add(f"dunder:{node.id}")
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        if node.attr in _GRADIO_FORBIDDEN_DYNAMIC_MEMBERS:
+            violations.add(f"dynamic_member:{node.attr}")
+        if node.attr in _GRADIO_FORBIDDEN_FRAME_MEMBERS:
+            violations.add(f"frame_member:{node.attr}")
+        if node.attr == "modules":
+            violations.add("registry:modules")
+        if node.attr == "patch":
+            violations.add("patch:attribute")
+        if isinstance(node.ctx, (ast.Store, ast.Del)) and node.attr in _GRADIO_PROTECTED_MEMBERS:
+            violations.add(f"protected_store:{node.attr}")
+
+    top_level_entrypoints = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "test_entrypoint_mount_and_uvicorn_contract_are_exact"
+    ]
+    entrypoint_owner = top_level_entrypoints[0] if len(top_level_entrypoints) == 1 else None
+    if entrypoint_owner is None:
+        violations.add("entrypoint:owner")
+
+    identity_helpers = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_assert_entrypoint_positional_identity"
+    ]
+    identity_helper = identity_helpers[0] if len(identity_helpers) == 1 else None
+    exact_identity_helper_argument: ast.arg | None = None
+    if (
+        identity_helper is None
+        or ast.dump(identity_helper, include_attributes=False)
+        != _GRADIO_ENTRYPOINT_IDENTITY_HELPER_DUMP
+    ):
+        violations.add("entrypoint:identity_helper")
+    else:
+        exact_identity_helper_argument = identity_helper.args.args[0]
+
+    allowed_identity_helper_loads: set[ast.Name] = set()
+    for expected_dump in _GRADIO_ENTRYPOINT_IDENTITY_CALL_DUMPS:
+        matches = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and ast.dump(node, include_attributes=False) == expected_dump
+            and _nearest_function(node, parents) is entrypoint_owner
+        ]
+        if len(matches) != 1 or not isinstance(matches[0].func, ast.Name):
+            violations.add("entrypoint:identity_callsite")
+        else:
+            allowed_identity_helper_loads.add(matches[0].func)
+    identity_helper_loads = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and node.id == "_assert_entrypoint_positional_identity"
+        and isinstance(node.ctx, ast.Load)
+    ]
+    if len(identity_helper_loads) != 2 or any(
+        node not in allowed_identity_helper_loads for node in identity_helper_loads
+    ):
+        violations.add("entrypoint:identity_load")
+    for name, node in binding_records:
+        if name == "_assert_entrypoint_positional_identity" and node is not identity_helper:
+            violations.add("entrypoint:identity_binding")
+
+    entrypoint_patch_nodes: set[ast.Call] = set()
+    for expected_dump in _GRADIO_ENTRYPOINT_PATCH_DUMPS:
+        matches = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and ast.dump(node, include_attributes=False) == expected_dump
+            and _nearest_function(node, parents) is entrypoint_owner
+        ]
+        if len(matches) != 1:
+            violations.add("entrypoint:patch_exception")
+        else:
+            entrypoint_patch_nodes.add(matches[0])
+
+    monkeypatch_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "monkeypatch"
+    ]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == "setattr":
+            parent = parents.get(node)
+            if not (
+                isinstance(node.value, ast.Name)
+                and node.value.id == "monkeypatch"
+                and isinstance(parent, ast.Call)
+                and parent.func is node
+                and len(parent.args) == 3
+                and not parent.keywords
+                and isinstance(parent.args[1], ast.Constant)
+                and isinstance(parent.args[1].value, str)
+            ):
+                violations.add("monkeypatch:setattr_shape")
+    for call in monkeypatch_calls:
+        call_attribute = call.func
+        assert isinstance(call_attribute, ast.Attribute)
+        method = call_attribute.attr
+        if method == "setattr":
+            if not (
+                len(call.args) == 3
+                and not call.keywords
+                and isinstance(call.args[1], ast.Constant)
+                and isinstance(call.args[1].value, str)
+            ):
+                violations.add("monkeypatch:setattr_shape")
+                continue
+            member = call.args[1].value
+            if member in _GRADIO_PROTECTED_MEMBERS and call not in entrypoint_patch_nodes:
+                violations.add(f"monkeypatch:protected:{member}")
+        elif method != "setenv":
+            violations.add(f"monkeypatch:method:{method}")
+
+    monkeypatch_args = [
+        node for node in ast.walk(tree) if isinstance(node, ast.arg) and node.arg == "monkeypatch"
+    ]
+    annotation_dump = _expression_dump("pytest.MonkeyPatch")
+    for argument in monkeypatch_args:
+        if (
+            argument.annotation is None
+            or ast.dump(argument.annotation, include_attributes=False) != annotation_dump
+        ):
+            violations.add("monkeypatch:annotation")
+    for name, node in binding_records:
+        if name == "monkeypatch" and node not in monkeypatch_args:
+            violations.add("monkeypatch:binding")
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Name)
+            and node.id == "monkeypatch"
+            and isinstance(node.ctx, ast.Load)
+        ):
+            continue
+        owner = _nearest_function(node, parents)
+        owner_arguments = (
+            []
+            if owner is None
+            else [*owner.args.posonlyargs, *owner.args.args, *owner.args.kwonlyargs]
+        )
+        if not any(argument in monkeypatch_args for argument in owner_arguments):
+            violations.add("monkeypatch:unowned_load")
+
+    setenv_calls: list[ast.Call] = []
+    for call in monkeypatch_calls:
+        call_attribute = call.func
+        assert isinstance(call_attribute, ast.Attribute)
+        if call_attribute.attr == "setenv":
+            setenv_calls.append(call)
+    if len(setenv_calls) != 1:
+        violations.add("monkeypatch:setenv_count")
+    else:
+        setenv_call = setenv_calls[0]
+        setenv_owner = _nearest_function(setenv_call, parents)
+        expression = parents.get(setenv_call)
+        loop = parents.get(expression) if expression is not None else None
+        target_statement = ast.parse("for name, value in (): pass").body[0]
+        assert isinstance(target_statement, ast.For)
+        expected_target = ast.dump(target_statement.target, include_attributes=False)
+        expected_iter = _expression_dump(
+            "{'GRADIO_ANALYTICS_ENABLED': 'true', "
+            "'HF_HUB_DISABLE_TELEMETRY': '0', "
+            "'GRADIO_WATCH_DIRS': '/CANARY_7419', "
+            "'GRADIO_VIBE_MODE': 'true', "
+            "'GRADIO_ROOT_PATH': '/CANARY_7419', "
+            "'SPACE_ID': 'CANARY_7419/space', "
+            "'PORT': '9999'}.items()"
+        )
+        if not (
+            setenv_owner is not None
+            and setenv_owner.name
+            == "test_exact_instance_state_ignores_poisoned_framework_environment"
+            and _is_exact_call(setenv_call, "monkeypatch.setenv(name, value)")
+            and isinstance(expression, ast.Expr)
+            and isinstance(loop, ast.For)
+            and expression in loop.body
+            and ast.dump(loop.target, include_attributes=False) == expected_target
+            and ast.dump(loop.iter, include_attributes=False) == expected_iter
+            and loop.body == [expression]
+        ):
+            violations.add("monkeypatch:setenv_shape")
+
+    allowed_pytest_names: set[ast.Name] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        full_name = _call_name(node)
+        if full_name is None or not full_name.startswith("pytest"):
+            continue
+        parent = parents.get(node)
+        if (
+            full_name == "pytest.mark"
+            and isinstance(parent, ast.Attribute)
+            and parent.attr == "parametrize"
+        ):
+            allowed_pytest_names.update(
+                child
+                for child in ast.walk(node)
+                if isinstance(child, ast.Name) and child.id == "pytest"
+            )
+            continue
+        if full_name == "pytest.fixture":
+            if (
+                isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node in parent.decorator_list
+            ):
+                allowed_pytest_names.update(
+                    child
+                    for child in ast.walk(node)
+                    if isinstance(child, ast.Name) and child.id == "pytest"
+                )
+                continue
+            if (
+                isinstance(parent, ast.Call)
+                and parent.func is node
+                and _is_exact_decorator_call(parent, parents)
+                and ast.dump(parent, include_attributes=False)
+                == _expression_dump("pytest.fixture(scope='module')")
+            ):
+                allowed_pytest_names.update(
+                    child
+                    for child in ast.walk(node)
+                    if isinstance(child, ast.Name) and child.id == "pytest"
+                )
+                continue
+        if (
+            full_name == "pytest.mark.parametrize"
+            and isinstance(parent, ast.Call)
+            and parent.func is node
+            and _is_exact_decorator_call(parent, parents)
+        ):
+            allowed_pytest_names.update(
+                child
+                for child in ast.walk(node)
+                if isinstance(child, ast.Name) and child.id == "pytest"
+            )
+            continue
+        if (
+            full_name in {"pytest.raises", "pytest.skip", "pytest.fail"}
+            and isinstance(parent, ast.Call)
+            and parent.func is node
+        ):
+            allowed_pytest_names.update(
+                child
+                for child in ast.walk(node)
+                if isinstance(child, ast.Name) and child.id == "pytest"
+            )
+            continue
+        if (
+            full_name in {"pytest.MonkeyPatch", "pytest.TempPathFactory"}
+            and isinstance(parent, ast.arg)
+            and parent.annotation is node
+        ):
+            allowed_pytest_names.update(
+                child
+                for child in ast.walk(node)
+                if isinstance(child, ast.Name) and child.id == "pytest"
+            )
+            continue
+        violations.add(f"pytest:{full_name}")
+    if any(
+        node not in allowed_pytest_names
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and node.id == "pytest" and isinstance(node.ctx, ast.Load)
+    ):
+        violations.add("pytest:context")
+    for name, node in binding_records:
+        if name in {"request", "pytestconfig"} and isinstance(node, ast.arg):
+            violations.add(f"pytest:fixture:{name}")
+
+    expected_signature_call = _expression_dump("inspect.signature(ui_module.PublicSurfaceGuard)")
+    signature_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and ast.dump(node, include_attributes=False) == expected_signature_call
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "test_outer_guard_constructor_is_exact_and_rejects_empty_membership"
+    ]
+    parameter_empty_attrs = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and _call_name(node) == "inspect.Parameter.empty"
+    ]
+    if len(signature_calls) != 1:
+        violations.add("inspect:signature")
+    if len(parameter_empty_attrs) != 1:
+        violations.add("inspect:Parameter.empty")
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        full_name = _call_name(node)
+        if full_name is None or not full_name.startswith("inspect."):
+            continue
+        if full_name == "inspect.signature" and any(
+            isinstance(parent, ast.Call) and parent.func is node for parent in [parents.get(node)]
+        ):
+            continue
+        parameter_parent = parents.get(node)
+        if (
+            full_name == "inspect.Parameter"
+            and isinstance(parameter_parent, ast.Attribute)
+            and parameter_parent.attr == "empty"
+        ):
+            continue
+        if full_name == "inspect.Parameter.empty" and node in parameter_empty_attrs:
+            continue
+        violations.add(f"inspect:{full_name}")
+
+    entrypoint_statements = [] if entrypoint_owner is None else entrypoint_owner.body
+    expected_entrypoint_statements = tuple(
+        ast.dump(ast.parse(source).body[0], include_attributes=False)
+        for source in (
+            "spec = importlib.util.spec_from_file_location("
+            "'carerisk_space_entrypoint', SPACE_ROOT / 'app.py')",
+            "entrypoint = importlib.util.module_from_spec(spec)",
+            "spec.loader.exec_module(entrypoint)",
+        )
+    )
+    exact_entrypoint_statements: list[ast.stmt] = []
+    for expected in expected_entrypoint_statements:
+        statement_matches = [
+            statement
+            for statement in entrypoint_statements
+            if ast.dump(statement, include_attributes=False) == expected
+        ]
+        if len(statement_matches) != 1:
+            violations.add("entrypoint:load_chain")
+        else:
+            exact_entrypoint_statements.append(statement_matches[0])
+    allowed_spec_bindings: set[ast.AST] = {
+        node
+        for statement in exact_entrypoint_statements
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Name)
+        and node.id in {"spec", "entrypoint"}
+        and isinstance(node.ctx, ast.Store)
+    }
+    if exact_identity_helper_argument is not None:
+        allowed_spec_bindings.add(exact_identity_helper_argument)
+    for name, node in binding_records:
+        if name in {"spec", "entrypoint"} and node not in allowed_spec_bindings:
+            violations.add(f"entrypoint:binding:{name}")
+    for node in ast.walk(tree):
         if (
             isinstance(node, ast.Attribute)
-            and node.attr
-            in (_FORBIDDEN_DYNAMIC_PROTOCOL_LITERALS | {"__dict__", "__globals__", "__class__"})
-            and is_sensitive_receiver(node.value)
-        ):
-            return True
-        if (
-            isinstance(node, ast.Call)
-            and node.args
-            and is_sensitive_receiver(node.args[0])
-            and (
-                _reflection_callable_source(node.func, state)
-                or isinstance(node.func, ast.Call)
-                and _call_name(node.func.func) in _FORBIDDEN_REFLECTION_HELPERS
+            and node.attr == "exec_module"
+            and not any(
+                node in set(ast.walk(statement)) for statement in exact_entrypoint_statements
             )
         ):
-            return True
-    return False
+            violations.add("entrypoint:exec_module")
+        if isinstance(node, ast.Attribute):
+            full_name = _call_name(node)
+            if (
+                full_name is not None
+                and full_name.startswith("importlib.")
+                and full_name
+                not in {
+                    "importlib.util",
+                    "importlib.util.spec_from_file_location",
+                    "importlib.util.module_from_spec",
+                }
+            ):
+                violations.add(f"importlib:{full_name}")
 
+    allowed_space_root_names: set[ast.Name] = set()
+    if (
+        len(tree.body) >= 36
+        and ast.dump(tree.body[35], include_attributes=False) == _GRADIO_SPACE_ROOT_DUMP
+    ):
+        allowed_space_root_names.update(
+            node
+            for node in ast.walk(tree.body[35])
+            if isinstance(node, ast.Name) and node.id == "SPACE_ROOT"
+        )
+    source_read_dump = _expression_dump(
+        "(SPACE_ROOT / 'carerisk_space' / 'ui.py').read_text(encoding='utf-8')"
+    )
+    for call in [node for node in ast.walk(tree) if isinstance(node, ast.Call)]:
+        if ast.dump(call, include_attributes=False) == source_read_dump:
+            allowed_space_root_names.update(
+                node
+                for node in ast.walk(call)
+                if isinstance(node, ast.Name) and node.id == "SPACE_ROOT"
+            )
+    if exact_entrypoint_statements:
+        allowed_space_root_names.update(
+            node
+            for node in ast.walk(exact_entrypoint_statements[0])
+            if isinstance(node, ast.Name) and node.id == "SPACE_ROOT"
+        )
+    all_space_root_names = [
+        node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == "SPACE_ROOT"
+    ]
+    if len(all_space_root_names) != 3 or any(
+        node not in allowed_space_root_names for node in all_space_root_names
+    ):
+        violations.add("SPACE_ROOT:context")
 
-def _sensitive_reflection_in_helper(
-    function: ast.FunctionDef,
-    aliases: dict[str, str],
-) -> bool:
-    return _sensitive_reflection_in_nodes(_owned_nodes(function.body), aliases)
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Name) and node.id == "Path" and isinstance(node.ctx, ast.Load)
+        ):
+            continue
+        parent = parents.get(node)
+        if isinstance(parent, ast.Attribute) and _call_name(parent) == "Path.is_symlink":
+            statement = parents.get(parent)
+            if (
+                isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and statement.targets[0].id == "real_is_symlink"
+            ):
+                continue
+        if isinstance(parent, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+            violations.add("Path:alias")
+
+    config_dump = _expression_dump(
+        "uvicorn.Config(marker, host='127.0.0.1', port=7860, workers=1, http='h11', "
+        "proxy_headers=False, forwarded_allow_ips='', access_log=False, server_header=False, "
+        "date_header=False, log_config=None, lifespan='on')"
+    )
+    config_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and ast.dump(node, include_attributes=False) == config_dump
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "running_wire_app"
+    ]
+    server_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_exact_call(node, "uvicorn.Server(config)")
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "running_wire_app"
+    ]
+    if len(config_calls) != 1:
+        violations.add("uvicorn:Config")
+    if len(server_calls) != 1:
+        violations.add("uvicorn:Server")
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "uvicorn"
+        ):
+            parent = parents.get(node)
+            if not (
+                isinstance(parent, ast.Call)
+                and parent.func is node
+                and (parent in config_calls or parent in server_calls)
+            ):
+                violations.add(f"uvicorn:{node.attr}")
+
+    marker_classes = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "AppEntryMarker"
+    ]
+    marker_class = marker_classes[0] if len(marker_classes) == 1 else None
+    if marker_class is None or (
+        marker_class.decorator_list
+        or marker_class.bases
+        or marker_class.keywords
+        or getattr(marker_class, "type_params", [])
+    ):
+        violations.add("AppEntryMarker:header")
+    marker_assignment_dump = ast.dump(
+        ast.parse("marker = AppEntryMarker(guarded, guarded.package_asset_urls)").body[0],
+        include_attributes=False,
+    )
+    marker_assignments = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and ast.dump(node, include_attributes=False) == marker_assignment_dump
+        and (owner := _nearest_function(node, parents)) is not None
+        and owner.name == "running_wire_app"
+    ]
+    marker_fields: list[ast.AnnAssign] = []
+    for node in ast.walk(tree):
+        marker_parent = parents.get(node)
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "marker"
+            and isinstance(marker_parent, ast.ClassDef)
+            and marker_parent.name == "RunningWireApp"
+            and isinstance(node.annotation, ast.Name)
+            and node.annotation.id == "AppEntryMarker"
+            and node.value is None
+        ):
+            marker_fields.append(node)
+    allowed_marker_bindings = {
+        node
+        for statement in [*marker_assignments, *marker_fields]
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Name) and node.id == "marker" and isinstance(node.ctx, ast.Store)
+    }
+    for name, node in binding_records:
+        if name == "marker" and node not in allowed_marker_bindings:
+            violations.add("marker:binding")
+        if name == "AppEntryMarker" and node is not marker_class:
+            violations.add("AppEntryMarker:binding")
+    if len(marker_assignments) != 1 or len(marker_fields) != 1:
+        violations.add("marker:lineage")
+    allowed_marker_identity_loads = {
+        node
+        for statement in [*marker_assignments, *marker_fields]
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Name)
+        and node.id == "AppEntryMarker"
+        and isinstance(node.ctx, ast.Load)
+    }
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "AppEntryMarker"
+            and isinstance(node.ctx, ast.Load)
+            and node not in allowed_marker_identity_loads
+        ):
+            violations.add("AppEntryMarker:load")
+
+    allowed_sys_names: set[ast.Name] = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Name) and node.id == "sys" and isinstance(node.ctx, ast.Load)):
+            continue
+        parent = parents.get(node)
+        if (isinstance(parent, ast.Attribute) and parent.attr == "platform") or (
+            isinstance(parent, ast.Call)
+            and parent.args
+            and parent.args[0] is node
+            and isinstance(parent.func, ast.Attribute)
+            and _call_name(parent.func) == "monkeypatch.setattr"
+            and len(parent.args) == 3
+            and isinstance(parent.args[1], ast.Constant)
+            and parent.args[1].value == "platform"
+        ):
+            allowed_sys_names.add(node)
+    if any(
+        node not in allowed_sys_names
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and node.id == "sys" and isinstance(node.ctx, ast.Load)
+    ):
+        violations.add("sys:context")
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute) or node.attr not in {
+            "PublicSurfaceGuard",
+            "build_package_asset_membership",
+        }:
+            continue
+        if not (isinstance(node.value, ast.Name) and node.value.id == "ui_module"):
+            violations.add(f"sensitive_receiver:{node.attr}")
+            continue
+        parent = parents.get(node)
+        if node.attr == "build_package_asset_membership":
+            if not (
+                isinstance(parent, ast.Call)
+                and parent.func is node
+                and not parent.args
+                and not parent.keywords
+            ):
+                violations.add("sensitive_context:builder")
+            continue
+        direct_constructor = isinstance(parent, ast.Call) and parent.func is node
+        signature_argument = any(
+            isinstance(call, ast.Call)
+            and call in signature_calls
+            and len(call.args) == 1
+            and call.args[0] is node
+            for call in [parent]
+        )
+        isinstance_argument = (
+            isinstance(parent, ast.Call)
+            and isinstance(parent.func, ast.Name)
+            and parent.func.id == "isinstance"
+            and len(parent.args) == 2
+            and parent.args[1] is node
+            and not parent.keywords
+        )
+        if not (direct_constructor or signature_argument or isinstance_argument):
+            violations.add("sensitive_context:guard")
+
+    return sorted(violations)
 
 
 def _guard_helper_violations(tree: ast.Module) -> list[str]:
-    violations: list[str] = []
-    module_state = _bounded_reflection_state(tree.body)
-    if _sensitive_reflection_in_nodes(
-        _owned_nodes(tree.body),
-        _reflection_state_aliases(module_state),
-    ):
-        violations.append("module:sensitive_reflection")
+    violations = _gradio_test_source_violations(tree)
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
     functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
     for function in functions:
-        function_state = _bounded_reflection_state(
-            function.body,
-            module_state,
-            include_parent=True,
-        )
-        reflection_aliases = _reflection_state_aliases(function_state)
-        if _sensitive_reflection_in_helper(function, reflection_aliases):
-            violations.append(f"{function.name}:sensitive_reflection")
-        aliases, _ = _bounded_aliases(
-            function,
-            frozenset({"ui_module", "gr", "parent", "uvicorn"})
-            | _FORBIDDEN_REFLECTION_NAMES
-            | _FORBIDDEN_REFLECTION_HELPERS,
-        )
-        all_guard_calls = _resolved_calls(function, aliases, "ui_module.PublicSurfaceGuard")
+        all_guard_calls = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and _call_name(node.func) == "ui_module.PublicSurfaceGuard"
+            and _nearest_function(node, parents) is function
+        ]
         if not all_guard_calls:
             continue
-        rejected_calls = _expected_rejection_guard_calls(function, aliases)
+        rejected_calls = _expected_rejection_guard_calls(function)
         guard_calls = [call for call in all_guard_calls if call not in rejected_calls]
         if not guard_calls:
             violations.append(f"{function.name}:positive_guard_call")
             continue
-        builder_calls = _resolved_calls(
-            function,
-            aliases,
-            "ui_module.build_package_asset_membership",
-        )
+        builder_calls = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and _call_name(node.func) == "ui_module.build_package_asset_membership"
+            and _nearest_function(node, parents) is function
+        ]
         assignments = [
             node
             for node in ast.walk(function)
@@ -2422,7 +3164,430 @@ def _guard_helper_violations(tree: ast.Module) -> list[str]:
             and max(node.lineno for node in checkpoints) < min(call.lineno for call in guard_calls)
         ):
             violations.append(f"{function.name}:builder_assertion_order")
-    return violations
+    return sorted(set(violations))
+
+
+def _current_gradio_contract_source() -> str:
+    return (SPACE_ROOT / "tests" / "test_gradio_contract.py").read_text(encoding="utf-8")
+
+
+def _mutated_gradio_contract_tree(old: str, new: str, *, count: int = 1) -> ast.Module:
+    source = _current_gradio_contract_source()
+    assert source.count(old) >= count
+    return ast.parse(source.replace(old, new, count))
+
+
+def _gradio_contract_tree_with_appendix(appendix: str) -> ast.Module:
+    return ast.parse(f"{_current_gradio_contract_source()}\n{appendix}\n")
+
+
+def test_gradio_contract_source_is_closed_world_reflection_free() -> None:
+    tree = _tree(SPACE_ROOT / "tests" / "test_gradio_contract.py")
+    assert _gradio_test_source_violations(tree) == []
+
+
+@pytest.mark.parametrize(
+    "appendix",
+    (
+        "reflect = getattr",
+        "reflect = setattr",
+        "reflect = delattr",
+        "reflect = hasattr",
+        "reflect = vars",
+        "reflect = globals",
+        "reflect = locals",
+        "reflect = eval",
+        "reflect = exec",
+        "reflect = compile",
+        "reflect = __import__",
+        "mapping = __builtins__",
+        "import builtins",
+        "from builtins import getattr as reflect",
+        "from operator import attrgetter as reflect",
+        "from operator import methodcaller as reflect",
+        "reflect = inspect.getattr_static",
+        "reflect = inspect.getmembers",
+        "reflect = importlib.import_module",
+        "value = ui_module.__dict__",
+        "value = ui_module.__globals__",
+        "value = ui_module.__class__",
+        "value = ui_module.__getattribute__",
+        "value = ui_module.__getattr__",
+        "value = ui_module.__setattr__",
+        "value = ui_module.__delattr__",
+        "value = ui_module.__getitem__",
+        "value = ui_module.__call__",
+        "def added():\n    return getattr(inner, 'router', None)",
+        "def added():\n    return getattr(other, 'original_router', None)",
+        "def added():\n    return getattr(inner, 'original_router')",
+        "def added():\n    return getattr(inner, 'original_router', False)",
+        "def added():\n    return getattr(inner, 'original_router', None, None)",
+        "def added():\n    return getattr(inner, name='original_router', default=None)",
+        "def added():\n    reflect = getattr\n    return reflect(inner, 'original_router', None)",
+        "captured = lambda: getattr",
+        "def added(reflect=getattr):\n    return reflect(inner, 'original_router', None)",
+        "def getattr(value):\n    return value",
+        "class getattr:\n    pass",
+        "def added(getattr):\n    return getattr(inner, 'original_router', None)",
+        "def added():\n    return getattr(socket, 'SOCK_STREAM', None)",
+        "def added():\n    return getattr(other, 'AF_UNIX', None)",
+        "def added():\n    return getattr(socket, 'AF_UNIX')",
+        "def added():\n    return getattr(socket, 'AF_UNIX', False)",
+        "def added():\n    return getattr(socket, name='AF_UNIX', default=None)",
+        "type = sink",
+        "inspect = sink",
+        "importlib = sink",
+        "ui_module = sink",
+        "gr = sink",
+        "uvicorn = sink",
+        "isinstance = sink",
+        "super = sink",
+        "frozenset = sink",
+        "socket = sink",
+        "pytest = sink",
+        "breakpoint()",
+        "bp = breakpoint\nbp()",
+        "dir(ui_module)",
+        "lookup = dir\nlookup(ui_module)",
+        "help('evil_module')",
+        "help('carerisk_space.ui.' + 'Public' + 'SurfaceGuard')",
+        "from unittest.mock import patch",
+        "from unittest.mock import patch as replace",
+        "import mock",
+        "import pytest_mock",
+        "def added(mocker):\n    return mocker.patch('x')",
+        "@patch('x')\ndef added():\n    pass",
+        "def added():\n    with patch.object(ui_module, 'x'):\n        pass",
+        "def added():\n    return pytest.importorskip('pkgutil').resolve_name('x')",
+        "def added():\n    return uvicorn.importer.import_from_string('x')",
+        "def added():\n    return pytest.main([])",
+        "def added(request):\n    return request.config.pluginmanager.import_plugin('x')",
+        "class TestEscape:\n"
+        "    def test_escape(self, request):\n"
+        "        return request.module.importlib.reload(ui_module)",
+        "fixture_alias = pytest.fixture\n@fixture_alias\ndef alias_fixture():\n    return None",
+        "fixture_value = pytest.fixture",
+        "_assert_entrypoint_positional_identity = sink",
+        "loaded_identity_helper = _assert_entrypoint_positional_identity",
+        "def third_identity_callsite():\n"
+        "    return _assert_entrypoint_positional_identity(a, b, c, d)",
+        "def _assert_entrypoint_positional_identity(entrypoint: Any):\n    return entrypoint",
+        "from escape import _assert_entrypoint_positional_identity",
+        "del _assert_entrypoint_positional_identity",
+        "def rebind_identity_helper():\n"
+        "    global _assert_entrypoint_positional_identity\n"
+        "    _assert_entrypoint_positional_identity = sink",
+        "def outer_identity_binding():\n"
+        "    _assert_entrypoint_positional_identity = sink\n"
+        "    def inner_identity_binding():\n"
+        "        nonlocal _assert_entrypoint_positional_identity\n"
+        "        return _assert_entrypoint_positional_identity",
+        "resolver = locate\nvalue = resolver('carerisk_space.ui.PublicSurfaceGuard')",
+        "value = find_spec('evil')",
+        "value = object().gi_frame",
+        "value = object().cr_frame",
+        "value = object().ag_frame",
+        "value = object().tb_frame",
+        "value = object().f_builtins",
+        "value = object().f_globals",
+        "value = object().f_locals",
+        "value = object().f_back",
+        "value = object()._getframe",
+        "value = object()._current_frames",
+        "value = os.sys",
+        "value = sys.modules",
+        "from sys import modules",
+        "from sys import modules as registry",
+        "registry = sys.modules\nregistry.update({'inspect': sink})",
+        "alias = Path",
+        "SPACE_ROOT = Path('/tmp')",
+        "del SPACE_ROOT",
+        "def added():\n    global SPACE_ROOT\n    SPACE_ROOT = Path('/tmp')",
+        "(SPACE_ROOT / 'carerisk_space' / 'ui.py').write_text('x')",
+        "os.environ['PYTHONBREAKPOINT'] = "
+        "'carerisk_space.ui.Public' + 'SurfaceGuard'\nbreakpoint()",
+    ),
+)
+def test_gradio_contract_source_rejects_reflection_near_misses(appendix: str) -> None:
+    assert _gradio_test_source_violations(_gradio_contract_tree_with_appendix(appendix))
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "count"),
+    (
+        (
+            "parameters = inspect.signature(ui_module.PublicSurfaceGuard).parameters",
+            "guard_type = ui_module.PublicSurfaceGuard\n"
+            "    parameters = inspect.signature(guard_type).parameters",
+            1,
+        ),
+        (
+            "membership = ui_module.build_package_asset_membership()",
+            "builder = ui_module.build_package_asset_membership\n    membership = builder()",
+            1,
+        ),
+        (
+            "return ui_module.PublicSurfaceGuard(parent, membership)",
+            "ui_alias = ui_module\n    return ui_alias.PublicSurfaceGuard(parent, membership)",
+            1,
+        ),
+        (
+            "parameters = inspect.signature(ui_module.PublicSurfaceGuard).parameters",
+            "parameters = inspect.signature(ui_module.build_package_asset_membership).parameters",
+            1,
+        ),
+        (
+            "assert isinstance(membership, frozenset)",
+            "assert isinstance(ui_module.PublicSurfaceGuard, frozenset)",
+            1,
+        ),
+        (
+            'monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)',
+            'monkeypatch.setattr(ui_alias, "create_app", lambda bundle_root=None: demo)',
+            1,
+        ),
+        (
+            'monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)',
+            'monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: membership)',
+            1,
+        ),
+        (
+            'monkeypatch.setattr(ui_module, "build_package_asset_membership", lambda: membership)',
+            'monkeypatch.setattr(ui_alias, "build_package_asset_membership", lambda: membership)',
+            1,
+        ),
+        (
+            'monkeypatch.setattr(gr, "mount_gradio_app", fake_mount)',
+            'monkeypatch.setattr(gr_alias, "mount_gradio_app", fake_mount)',
+            1,
+        ),
+        (
+            'monkeypatch.setattr(entrypoint.uvicorn, "run", fake_run)',
+            'monkeypatch.setattr(entrypoint.uvicorn, "run", lambda *args: None)',
+            1,
+        ),
+        (
+            'monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)',
+            'monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)\n'
+            '    monkeypatch.setattr(ui_module, "create_app", lambda bundle_root=None: demo)',
+            1,
+        ),
+        (
+            "def test_entrypoint_mount_and_uvicorn_contract_are_exact(",
+            "def test_wrong_owner(",
+            1,
+        ),
+        (
+            '@pytest.fixture(scope="module")',
+            '@pytest.fixture(scope="session")',
+            1,
+        ),
+        (
+            '@pytest.fixture(scope="module")',
+            '@pytest.fixture(scope="module", autouse=False)',
+            1,
+        ),
+        (
+            '@pytest.fixture(scope="module")',
+            '@pytest.fixture("module")',
+            1,
+        ),
+        (
+            "@pytest.fixture\n",
+            "@pytest.fixture()\n",
+            1,
+        ),
+        (
+            "@pytest.fixture\n",
+            "fixture_alias = pytest.fixture\n@fixture_alias\n",
+            1,
+        ),
+        (
+            "@pytest.fixture\n",
+            "pytest.fixture\n@pytest.fixture\n",
+            1,
+        ),
+        (
+            "def _assert_entrypoint_positional_identity(",
+            "def _wrong_identity_helper_owner(",
+            1,
+        ),
+        (
+            "    entrypoint: Any,\n    mounted_parent: FastAPI,",
+            "    mounted_parent: FastAPI,\n    entrypoint: Any,",
+            1,
+        ),
+        (
+            "    entrypoint: Any,",
+            "    entrypoint: object,",
+            1,
+        ),
+        (
+            "def _assert_entrypoint_positional_identity(",
+            "@pytest.fixture\ndef _assert_entrypoint_positional_identity(",
+            1,
+        ),
+        (
+            "    entrypoint: Any,\n    mounted_parent: FastAPI,",
+            "    entrypoint: Any,\n    entrypoint_again: Any,\n    mounted_parent: FastAPI,",
+            1,
+        ),
+        (
+            "    assert served_app.downstream is mounted_parent",
+            "    assert served_app.downstream is mounted_parent\n    return None",
+            1,
+        ),
+        (
+            "    assert mounted_parent is entrypoint.parent",
+            "    if False:\n        assert mounted_parent is entrypoint.parent",
+            1,
+        ),
+        (
+            "    assert mounted_parent is entrypoint.parent",
+            "    try:\n        assert mounted_parent is entrypoint.parent\n"
+            "    finally:\n        pass",
+            1,
+        ),
+        (
+            "    assert mounted_parent is entrypoint.parent\n"
+            "    assert mounted_demo is entrypoint.demo",
+            "    assert mounted_demo is entrypoint.demo\n"
+            "    assert mounted_parent is entrypoint.parent",
+            1,
+        ),
+        (
+            "    assert mounted_parent is entrypoint.parent\n",
+            "",
+            1,
+        ),
+        (
+            "    assert mounted_parent is entrypoint.parent",
+            "    assert mounted_parent == entrypoint.parent",
+            1,
+        ),
+        (
+            "    _assert_entrypoint_positional_identity(\n        entrypoint,",
+            "    holder._assert_entrypoint_positional_identity(\n        entrypoint,",
+            1,
+        ),
+        (
+            'monkeypatch.setattr(sys, "platform", "linux")',
+            'monkeypatch.setattr(sys.modules["builtins"], "isinstance", sink)',
+            1,
+        ),
+        (
+            'monkeypatch.setattr(sys, "platform", "linux")',
+            'target = inspect\n    monkeypatch.setattr(target, "signature", sink)',
+            1,
+        ),
+        (
+            'monkeypatch.setattr(sys, "platform", "linux")',
+            'monkeypatch.setitem(sys.modules, "inspect", sink)',
+            1,
+        ),
+        (
+            "monkeypatch.setenv(name, value)",
+            "monkeypatch.setenv(name=name, value=value)",
+            1,
+        ),
+        (
+            "monkeypatch.setenv(name, value)",
+            "monkeypatch.setenv(name, 'changed')",
+            1,
+        ),
+        (
+            "monkeypatch.setenv(name, value)",
+            "monkeypatch.setenv(name, value)\n        monkeypatch.setenv(name, value)",
+            1,
+        ),
+        (
+            "def test_exact_instance_state_ignores_poisoned_framework_environment(",
+            "def test_wrong_setenv_owner(",
+            1,
+        ),
+        (
+            '"PORT": "9999",',
+            '"PORT": "9998",',
+            1,
+        ),
+        (
+            '"PORT": "9999",',
+            '"PORT": "9999",\n        "EXTRA": "forbidden",',
+            1,
+        ),
+        (
+            "for name, value in {",
+            "for key, value in {",
+            1,
+        ),
+        (
+            '"carerisk_space_entrypoint", SPACE_ROOT / "app.py"',
+            '"evil_entrypoint", SPACE_ROOT / "app.py"',
+            1,
+        ),
+        (
+            "entrypoint = importlib.util.module_from_spec(spec)",
+            "entrypoint = importlib.util.module_from_spec(spec, extra=True)",
+            1,
+        ),
+        (
+            "spec.loader.exec_module(entrypoint)",
+            "loader.exec_module(entrypoint)",
+            1,
+        ),
+        (
+            "config = uvicorn.Config(\n        marker,",
+            "config = uvicorn.Config(\n        'carerisk_space.app:app',",
+            1,
+        ),
+        (
+            'http="h11",',
+            'http="auto",',
+            1,
+        ),
+        (
+            "marker = AppEntryMarker(guarded, guarded.package_asset_urls)",
+            "marker = 'carerisk_space.app:app'",
+            1,
+        ),
+        (
+            "class AppEntryMarker:",
+            "@lambda cls: cls\nclass AppEntryMarker:",
+            1,
+        ),
+        (
+            "class AppEntryMarker:",
+            "class AppEntryMarker(object):",
+            1,
+        ),
+        (
+            "class AppEntryMarker:",
+            "class AppEntryMarker(metaclass=type):",
+            1,
+        ),
+        (
+            "import inspect\nimport io",
+            "import inspect as inspection\nimport io",
+            1,
+        ),
+        (
+            "import inspect\nimport io",
+            "import io\nimport inspect",
+            1,
+        ),
+        (
+            "ALL_FAILURE_CODES = cast(tuple[EvidenceFailureCode, ...], "
+            "get_args(EvidenceFailureCode))\nSPACE_ROOT",
+            "ALL_FAILURE_CODES = cast(tuple[EvidenceFailureCode, ...], "
+            "get_args(EvidenceFailureCode))\nDRIFT = True\nSPACE_ROOT",
+            1,
+        ),
+    ),
+)
+def test_gradio_contract_sensitive_members_have_exact_contexts(
+    old: str, new: str, count: int
+) -> None:
+    assert _gradio_test_source_violations(_mutated_gradio_contract_tree(old, new, count=count))
 
 
 def test_existing_guard_helpers_derive_membership_from_the_pinned_builder() -> None:
@@ -2475,7 +3640,7 @@ def _compose(parent):
         _assert_guard_helper_audit_rejects(monkeypatch, source)
 
 
-def test_guard_helper_audit_accepts_bounded_builder_and_guard_alias_lineage() -> None:
+def test_guard_helper_audit_rejects_bounded_builder_and_guard_alias_lineage() -> None:
     tree = ast.parse(
         """
 def _compose(parent):
@@ -2489,7 +3654,7 @@ def _compose(parent):
     return guard_alias(parent, membership)
 """
     )
-    assert _guard_helper_violations(tree) == []
+    assert _guard_helper_violations(tree)
 
 
 def test_guard_helper_audit_rejects_sensitive_reflection_candidates() -> None:
@@ -2771,17 +3936,17 @@ def _compose(parent):
         assert _guard_helper_violations(ast.parse(source))
 
 
-def test_guard_helper_audit_allows_unrelated_test_introspection() -> None:
-    tree = ast.parse(
+def test_guard_helper_audit_allows_unrelated_attributes_and_request_locals() -> None:
+    tree = _gradio_contract_tree_with_appendix(
         """
 def _other_member(other):
-    return getattr(other, "get")
+    return other.get
 
-def _original_router(inner):
-    return getattr(inner, "original_router", None)
-
-def _unix_family(socket):
-    return getattr(socket, "AF_UNIX", None)
+def _request_local(request_bytes):
+    request = request_bytes
+    for request in (request,):
+        pass
+    return request
 """
     )
     assert _guard_helper_violations(tree) == []
