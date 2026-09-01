@@ -1415,31 +1415,111 @@ each task/session rather than relying on inherited shell state.
 - Create: `space/THIRD_PARTY_LICENSES.json`
 
 **Interfaces:**
-- Consumes: reviewed direct requirement inputs, official package indexes, official OCI registry metadata, and reviewed SPDX license policy.
+- Consumes: reviewed direct requirement inputs, the already measured and frozen lock/image records with their historic official-index/OCI provenance, the controller-created bounded source-reference metadata, and reviewed SPDX license policy. This corrective resume performs no package-index, wheel, registry, image, or browser acquisition.
 - Produces: deterministic locks and public supply-chain files plus `verify_all(repo_root: Path, *, source_reference: WebKitSourceReference, offline: Literal[True], network_bomb: Literal[True]) -> None`.
 
 - [ ] **Step 0: Start the one controller-owned source-reference session before any Task 7 RED/test**
 
-Run this once in the PowerShell session that will execute every later Task 7 command. It is intentionally before Step 1/RED. The actual lock and image measured partials already exist as frozen custody inputs: this correction must not re-resolve/reselect them or repeat any earlier controlled dependency/wheel acquisition. The only newly authorized network action in this resume is the literal raw-source metadata GET below.
+Run this controller-owned PowerShell procedure once in the session that will execute every later Task 7 command. It is intentionally before Step 1/RED and does not call product code or a future `scripts/build_hf_space_supply_chain.py` command. The actual lock and image measured partials already exist as frozen custody inputs: this correction must not re-resolve/reselect them or repeat any earlier controlled dependency/wheel acquisition. The only newly authorized network action in this resume is one normal-TLS HTTPS GET of the literal commit-pinned raw-source URL below. The response exists only as a transient raw file under this run's exact OS-temp child; after raw-byte validation, only bounded parsed metadata/evidence remains in `$sourceRef`.
 
 ```powershell
 $toolVenv = '.venv-space-lock'
 $task7Guid = [guid]::NewGuid().ToString('N')
-$task7OsTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$sourceUrl = 'https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh'
+$task7OsTempItem = Get-Item -LiteralPath ([IO.Path]::GetFullPath([IO.Path]::GetTempPath())) -Force -ErrorAction Stop
+if (-not $task7OsTempItem.PSIsContainer -or ($task7OsTempItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'OS temp root is not an exact regular directory' }
+$task7OsTempRoot = [IO.Path]::GetFullPath($task7OsTempItem.FullName)
 $task7TempRoot = Join-Path $task7OsTempRoot "carerisk-task7-$task7Guid"
+$sourceRaw = Join-Path $task7TempRoot 'webkit-upstream-config.raw'
 $sourceRef = Join-Path $task7TempRoot 'webkit-source-reference.json'
-if (([IO.Path]::GetFileName($task7TempRoot) -cne "carerisk-task7-$task7Guid") -or -not ([IO.Path]::GetFullPath($task7TempRoot).StartsWith($task7OsTempRoot, [StringComparison]::Ordinal)) -or [IO.Path]::GetFullPath($task7TempRoot).Equals($task7OsTempRoot, [StringComparison]::Ordinal)) { throw 'Task 7 temp root is not an owned OS-temp child' }
+if (([IO.Path]::GetFileName($task7TempRoot) -cne "carerisk-task7-$task7Guid") -or ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($task7TempRoot)) -cne $task7OsTempRoot) -or [IO.Path]::GetFullPath($task7TempRoot).Equals($task7OsTempRoot, [StringComparison]::Ordinal)) { throw 'Task 7 temp root is not an owned OS-temp child' }
+
+function Resolve-Task7OwnedCleanupTarget {
+    param(
+        [Parameter(Mandatory)][string]$CandidateRoot,
+        [Parameter(Mandatory)][string]$VerifiedOsTempRoot,
+        [Parameter(Mandatory)][string]$RunGuid,
+        [Parameter(Mandatory)][string[]]$AllowedChildNames,
+        [Parameter(Mandatory)][string[]]$RequiredChildNames
+    )
+    if ($RunGuid -cnotmatch '^[0-9a-f]{32}$') { throw 'Task 7 cleanup GUID is invalid' }
+    $osTemp = Get-Item -LiteralPath $VerifiedOsTempRoot -Force -ErrorAction Stop
+    $candidate = Get-Item -LiteralPath $CandidateRoot -Force -ErrorAction Stop
+    if (-not $osTemp.PSIsContainer -or -not $candidate.PSIsContainer -or ($osTemp.Attributes -band [IO.FileAttributes]::ReparsePoint) -or ($candidate.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Task 7 cleanup root is not a regular directory' }
+    $resolvedOsTemp = [IO.Path]::GetFullPath($osTemp.FullName)
+    $resolvedCandidate = [IO.Path]::GetFullPath($candidate.FullName)
+    if ($resolvedCandidate.Equals($resolvedOsTemp, [StringComparison]::Ordinal) -or ([IO.Path]::GetDirectoryName($resolvedCandidate) -cne $resolvedOsTemp) -or ([IO.Path]::GetFileName($resolvedCandidate) -cne "carerisk-task7-$RunGuid")) { throw 'Task 7 cleanup target is outside the exact owned OS-temp child' }
+    $children = @(Get-ChildItem -LiteralPath $resolvedCandidate -Force -ErrorAction Stop)
+    foreach ($child in $children) {
+        if ($child.PSIsContainer -or ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) -or ($AllowedChildNames -cnotcontains $child.Name) -or ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($child.FullName)) -cne $resolvedCandidate)) { throw 'Task 7 cleanup child identity is ambiguous' }
+    }
+    foreach ($required in $RequiredChildNames) {
+        if (@($children.Name) -cnotcontains $required) { throw 'Task 7 cleanup required child is missing' }
+    }
+    return $resolvedCandidate
+}
+
 New-Item -ItemType Directory -LiteralPath $task7TempRoot -ErrorAction Stop | Out-Null
+[void](Resolve-Task7OwnedCleanupTarget -CandidateRoot $task7TempRoot -VerifiedOsTempRoot $task7OsTempRoot -RunGuid $task7Guid -AllowedChildNames @() -RequiredChildNames @())
 try {
-    & "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py acquire-webkit-source-reference --url https://raw.githubusercontent.com/microsoft/playwright/e3950d9c140d007bd52853b45813c6274b24e36f/browser_patches/webkit/UPSTREAM_CONFIG.sh --metadata-output $sourceRef --run-guid $task7Guid --allow-network
-    if (-not (Test-Path -LiteralPath $sourceRef -PathType Leaf)) { throw 'Task 7 source-reference metadata was not created' }
+    $handler = [Net.Http.HttpClientHandler]::new()
+    $handler.AllowAutoRedirect = $false
+    $client = [Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds(30)
+    $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, [Uri]$sourceUrl)
+    try {
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        if ([int]$response.StatusCode -ne 200) { throw 'Pinned upstream source GET did not return HTTP 200' }
+        $rawBytes = $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+    } finally {
+        if ($null -ne $response) { $response.Dispose() }
+        $request.Dispose()
+        $client.Dispose()
+        $handler.Dispose()
+    }
+    $rawStream = [IO.FileStream]::new($sourceRaw, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $rawStream.Write($rawBytes, 0, $rawBytes.Length) } finally { $rawStream.Dispose() }
+    if ($rawBytes.Length -ne 126) { throw 'Pinned upstream source length drift' }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $rawHash = -join ($sha.ComputeHash($rawBytes) | ForEach-Object { $_.ToString('x2') }) } finally { $sha.Dispose() }
+    if ($rawHash -cne '3554c5b666ed87032fb22e78956f8a2fffe1faede63ae8dcae60a26961f6419c') { throw 'Pinned upstream source hash drift' }
+    $sourceText = [Text.UTF8Encoding]::new($false, $true).GetString($rawBytes)
+    function Read-ExactUpstreamAssignment([string]$Name) {
+        $matches = [regex]::Matches($sourceText, ('(?m)^{0}="([^"\r\n]+)"$' -f [regex]::Escape($Name)))
+        if ($matches.Count -ne 1) { throw "Pinned upstream assignment drift: $Name" }
+        return $matches[0].Groups[1].Value
+    }
+    $remoteUrl = Read-ExactUpstreamAssignment 'REMOTE_URL'
+    $baseBranch = Read-ExactUpstreamAssignment 'BASE_BRANCH'
+    $baseRevision = Read-ExactUpstreamAssignment 'BASE_REVISION'
+    if ($remoteUrl -cne 'https://github.com/WebKit/WebKit.git' -or $baseBranch -cne 'main' -or $baseRevision -cne '343e13bf22dca9d0ec227801419aab0f9001a32f') { throw 'Pinned upstream assignments drift' }
+    $ownedRoot = Resolve-Task7OwnedCleanupTarget -CandidateRoot $task7TempRoot -VerifiedOsTempRoot $task7OsTempRoot -RunGuid $task7Guid -AllowedChildNames @('webkit-upstream-config.raw', 'webkit-source-reference.json') -RequiredChildNames @('webkit-upstream-config.raw')
+    Remove-Item -LiteralPath $sourceRaw -Force -ErrorAction Stop
+    $sourceMetadata = [ordered]@{
+        schema_version = 1; run_guid = $task7Guid; phase = 'controller_controlled_acquisition_complete'
+        network_permission = 'exact_commit_pinned_https_get_once'; https_get_count = 1; raw_body_retained = $false
+        playwright_tag = 'v1.62.0'; playwright_tag_commit = 'e3950d9c140d007bd52853b45813c6274b24e36f'
+        repository_relative_path = 'browser_patches/webkit/UPSTREAM_CONFIG.sh'; commit_pinned_raw_url = $sourceUrl
+        raw_byte_length = 126; raw_sha256 = $rawHash; remote_url = $remoteUrl; base_branch = $baseBranch; base_revision = $baseRevision
+    }
+    $sourceJson = $sourceMetadata | ConvertTo-Json -Compress -Depth 3
+    $metadataBytes = [Text.UTF8Encoding]::new($false).GetBytes($sourceJson + "`n")
+    $metadataStream = [IO.FileStream]::new($sourceRef, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $metadataStream.Write($metadataBytes, 0, $metadataBytes.Length) } finally { $metadataStream.Dispose() }
+    [void](Resolve-Task7OwnedCleanupTarget -CandidateRoot $task7TempRoot -VerifiedOsTempRoot $task7OsTempRoot -RunGuid $task7Guid -AllowedChildNames @('webkit-source-reference.json') -RequiredChildNames @('webkit-source-reference.json'))
 } catch {
-    if ((Test-Path -LiteralPath $task7TempRoot -PathType Container) -and ([IO.Path]::GetFileName((Resolve-Path -LiteralPath $task7TempRoot).Path) -ceq "carerisk-task7-$task7Guid")) { Remove-Item -LiteralPath $task7TempRoot -Recurse -Force -ErrorAction Stop }
-    throw
+    $acquisitionError = $_
+    try {
+        $ownedRoot = Resolve-Task7OwnedCleanupTarget -CandidateRoot $task7TempRoot -VerifiedOsTempRoot $task7OsTempRoot -RunGuid $task7Guid -AllowedChildNames @('webkit-upstream-config.raw', 'webkit-source-reference.json') -RequiredChildNames @()
+        Remove-Item -LiteralPath $ownedRoot -Recurse -Force -ErrorAction Stop
+    } catch {
+        throw "Task 7 acquisition failed and ambiguous cleanup target was retained: $($_.Exception.Message)"
+    }
+    throw $acquisitionError
 }
 ```
 
-`acquire-webkit-source-reference` must make exactly one HTTPS GET only to its exact `--url`, reject a missing/alternate `--allow-network`, literal URL, output path, or GUID, validate raw length/hash/three assignments, and return/load a typed `WebKitSourceReference`. It writes only bounded parsed metadata/evidence to `$sourceRef`, never raw source bytes. Keep this session and its exact `$sourceRef` through the later offline commands; do not stage, copy, export, or upload it.
+This inline controller procedure is the complete network-acquisition owner. It uses platform TLS validation, disables redirects, sends exactly one GET, accepts only HTTP 200 from the exact URL, validates raw length/hash and the three quoted assignments, removes the transient raw file, and writes only bounded metadata/evidence to `$sourceRef`. There is no generator acquisition subcommand. Before Task 1, run controller lifecycle probes that mutate the URL, HTTP status/redirect, request count, length, hash, each assignment, output root, metadata name, run GUID, phase, network-permission value, and retained-raw flag; every mutation must fail closed. Run cleanup probes for root-as-candidate, sibling/outside/prefix-collision candidate, wrong GUID-derived name, OS-temp or candidate reparse point, symlink/reparse/unknown/directory child, missing phase-required child, and extra child. Both the acquisition catch path and the later success finalizer must call the same `Resolve-Task7OwnedCleanupTarget`; any ambiguity retains the target untouched. Keep the live session and exact `$sourceRef` through the later offline commands. Never stage, copy, export, upload, or serialize its path, raw body, or run GUID into a distributed receipt.
 
 - [ ] **Step 1: Write failing lock/base/inventory tests**
 
@@ -1537,20 +1617,22 @@ def test_distribution_surface_registry_is_closed_and_complete(mutation: str) -> 
         validate_distribution_exclusion(mutated_surface_registry(mutation))
 
 @pytest.mark.parametrize("mutation", [
-    "acquire_without_allow_network", "acquire_false_allow_network", "acquire_alternate_url",
-    "acquire_non_guid_output", "acquire_wrong_run_guid", "offline_test_missing_offline",
-    "offline_test_missing_bomb", "offline_test_alternate_source_ref", "verify_missing_offline",
-    "verify_images_missing_bomb", "inventory_wrong_phase", "verify_locks_wrong_phase",
+    "source_reference_missing", "source_reference_alternate", "run_guid_missing",
+    "run_guid_wrong", "phase_missing", "phase_wrong", "offline_missing",
+    "offline_false", "network_bomb_missing", "network_bomb_false",
+    "metadata_network_permission_missing", "metadata_network_permission_wrong",
+    "metadata_https_get_count_wrong", "metadata_raw_body_retained_true",
 ])
 def test_source_reference_phase_contract_rejects_every_control_mutation(mutation: str) -> None:
     with pytest.raises(ValueError, match="source reference phase contract"):
         run_or_parse_mutated_source_reference_phase(mutation)
 
-def test_offline_test_installs_network_bomb_before_child_argv() -> None:
+def test_offline_test_installs_network_bomb_before_argv() -> None:
     events: list[str] = []
     assert run_network_bombed_child(
-        source_reference=SOURCE_REFERENCE, offline=True, network_bomb=True,
-        child_argv=("pytest", "-q"), event_sink=events,
+        source_reference=SOURCE_REFERENCE_PATH, run_guid=RUN_GUID,
+        phase="offline_verify", offline=True, network_bomb=True,
+        argv=("pytest", "-q"), event_sink=events.append,
     ) == 0
     assert events == ["load_reference", "install_network_bomb", "spawn_child"]
 ```
@@ -1558,7 +1640,7 @@ def test_offline_test_installs_network_bomb_before_child_argv() -> None:
 - [ ] **Step 2: Run RED**
 
 ```powershell
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --offline --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --run-guid $task7Guid --phase offline-verify --offline --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
 ```
 
 Expected: FAIL because inputs, generator, locks, base record, SBOM, and license inventory do not exist.
@@ -1577,46 +1659,45 @@ class WebKitSourceReference:
     base_branch: str
     base_revision: str
 
-def acquire_webkit_source_reference(*, url: str, metadata_output: Path, run_guid: str, allow_network: Literal[True]) -> WebKitSourceReference: ...
-def load_webkit_source_reference(path: Path) -> WebKitSourceReference: ...
+def load_webkit_source_reference(path: Path, *, run_guid: str, phase: Literal["offline_verify"], offline: Literal[True], network_bomb: Literal[True]) -> WebKitSourceReference: ...
+def verify_image_record(path: Path, *, source_reference: WebKitSourceReference, offline: Literal[True], network_bomb: Literal[True]) -> None: ...
 def verify_existing_locks(runtime_lock: Path, development_lock: Path, *, source_reference: WebKitSourceReference, offline: Literal[True], network_bomb: Literal[True]) -> None: ...
-def run_network_bombed_child(*, source_reference: Path, offline: Literal[True], network_bomb: Literal[True], child_argv: Sequence[str]) -> int: ...
+def build_inventory_and_sbom(args: argparse.Namespace, *, source_reference: WebKitSourceReference, offline: Literal[True], network_bomb: Literal[True]) -> None: ...
+def verify_all(repo_root: Path, *, source_reference: WebKitSourceReference, offline: Literal[True], network_bomb: Literal[True]) -> None: ...
+def emit_bounded_lifecycle_event(event: str) -> None: ...
+def run_network_bombed_child(*, source_reference: Path, run_guid: str, phase: Literal["offline_verify"], offline: Literal[True], network_bomb: Literal[True], argv: Sequence[str], event_sink: Callable[[str], None]) -> int: ...
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "acquire-webkit-source-reference":
-        return acquire_webkit_source_reference(
-            url=args.url, metadata_output=Path(args.metadata_output), run_guid=args.run_guid,
-            allow_network=require_literal_true(args.allow_network),
-        )
     if args.command == "verify-images":
-        source_reference = load_webkit_source_reference(Path(args.source_reference))
+        source_reference = load_webkit_source_reference(Path(args.source_reference), run_guid=args.run_guid, phase=require_offline_phase(args.phase), offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb))
         install_network_bomb_before_work_or_child(args, offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb))
         verify_image_record(Path(args.input), source_reference=source_reference, offline=True, network_bomb=True)
         return 0
     if args.command == "lock":
         return build_locks(args)
     if args.command == "verify-locks":
-        source_reference = load_webkit_source_reference(Path(args.source_reference))
+        source_reference = load_webkit_source_reference(Path(args.source_reference), run_guid=args.run_guid, phase=require_offline_phase(args.phase), offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb))
         install_network_bomb_before_work_or_child(args, offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb))
         verify_existing_locks(Path(args.runtime_lock), Path(args.development_lock), source_reference=source_reference, offline=True, network_bomb=True)
         return 0
     if args.command == "inventory":
-        source_reference = load_webkit_source_reference(Path(args.source_reference))
+        source_reference = load_webkit_source_reference(Path(args.source_reference), run_guid=args.run_guid, phase=require_offline_phase(args.phase), offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb))
         install_network_bomb_before_work_or_child(args, offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb))
-        return build_inventory_and_sbom(args, source_reference=source_reference, offline=True, network_bomb=True)
+        build_inventory_and_sbom(args, source_reference=source_reference, offline=True, network_bomb=True)
+        return 0
     if args.command == "verify":
-        source_reference = load_webkit_source_reference(Path(args.source_reference))
+        source_reference = load_webkit_source_reference(Path(args.source_reference), run_guid=args.run_guid, phase=require_offline_phase(args.phase), offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb))
         install_network_bomb_before_work_or_child(args, offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb))
         verify_all(Path(args.repo_root), source_reference=source_reference, offline=True, network_bomb=True)
         return 0
     if args.command == "offline-test":
-        return run_network_bombed_child(source_reference=Path(args.source_reference), offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb), child_argv=args.child_command)
+        return run_network_bombed_child(source_reference=Path(args.source_reference), run_guid=args.run_guid, phase=require_offline_phase(args.phase), offline=require_literal_true(args.offline), network_bomb=require_literal_true(args.network_bomb), argv=args.child_command, event_sink=emit_bounded_lifecycle_event)
     raise AssertionError("unreachable")
 ```
 
-`acquire-webkit-source-reference` accepts exactly the fixed `--url`, validated `--metadata-output` owned by the current GUID OS-temp child, exact `--run-guid`, and literal `--allow-network`; its typed `WebKitSourceReference` return is serialized as bounded parsed metadata/evidence only. It is the sole network-enabled command and makes one HTTPS GET only to that literal URL. It verifies exact raw length/hash and `REMOTE_URL`/`BASE_BRANCH`/`BASE_REVISION`, then writes no raw source bytes. `verify-images`, `inventory`, `verify`, and `offline-test` each require exact `--source-reference`, literal `--offline`, and literal `--network-bomb`; their runner first loads and validates the reference, then installs the bomb before any in-process work or child/pytest `argv` executes. Missing, alternate, reordered-as-value, or false flags, a path outside the live GUID child, a wrong URL/GUID, or a wrong phase fail closed. `verify-images` is read-only: it validates the existing measured `base-image.json` against the frozen runtime/reviewer tag, OCI index digest, linux/amd64 manifest digest, Python target, system-package inventory digest, source registry, browser/support revision/version/tree identity, and exact WebKit provenance contract. The current Task 7 correction may extend that measured record only with the exact WebKit version/provenance fields; it must not run `resolve-images`, query for a replacement, overwrite the record from a registry response, or select another tag/platform. A legitimate future image re-resolution is outside this plan and requires a separately approved design/policy tuple, fresh measurement and license review, updated mutations, and a new custody baseline.
+There is no product/generator network-acquisition command. Step 0 creates the bounded controller metadata before this implementation exists. `load_webkit_source_reference` requires the exact live GUID-child path, matching GUID, literal `phase="offline_verify"`, `offline=True`, and `network_bomb=True`; it rejects a missing/alternate source path, GUID, phase, flag, controller acquisition phase, network-permission value, request count, or retained-raw status before producing `WebKitSourceReference`. Each CLI subcommand requires `--source-reference $sourceRef --run-guid $task7Guid --phase offline-verify --offline --network-bomb`, then installs the network bomb before any in-process verifier/inventory work or child/pytest `argv`. `run_network_bombed_child` has no optional/default control arguments; direct tests pass `event_sink=events.append`, while `main() -> int` passes the declared bounded event function and returns only an integer status. `verify-images` is read-only: it validates the existing measured `base-image.json` against the frozen runtime/reviewer tag, OCI index digest, linux/amd64 manifest digest, Python target, system-package inventory digest, source registry, browser/support revision/version/tree identity, and exact WebKit provenance contract. The current Task 7 correction may extend that measured record only with the exact WebKit version/provenance fields; it must not run `resolve-images`, query for a replacement, overwrite the record from a registry response, or select another tag/platform. A legitimate future image re-resolution is outside this plan and requires a separately approved design/policy tuple, fresh measurement and license review, updated mutations, and a new custody baseline.
 
 `lock` is the separately authorized historic controlled dependency/wheel acquisition interface: it emits `requirements.lock` as the complete runtime closure for the runtime Linux/Python target and `requirements-dev.lock` as the complete runtime-plus-development union closure for the reviewer Linux/Python target. The normalized package/version pairs from the runtime lock must be an unchanged subset of the development lock. Each lock was installed alone with `--require-hashes --no-deps`; its prior controlled acquisition filled a temporary wheelhouse with accepted hashes, then a separate no-egress `--no-index` step verified installation. Do not describe that historic dependency acquisition as offline, and do not re-run it in this Task 7 corrective resume. This resume invokes only `verify-locks` with `$sourceRef --offline --network-bomb`, which validates the frozen existing lock bytes and installs the bomb before inspection.
 
@@ -1635,28 +1716,26 @@ The direct runtime input contains only `gradio==6.26.0`; a candidate range such 
 ```powershell
 $task7Succeeded = $false
 try {
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json --source-reference $sourceRef --offline --network-bomb
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify-locks --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --source-reference $sourceRef --offline --network-bomb
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference $sourceRef --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline --network-bomb
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify --repo-root . --source-reference $sourceRef --offline --network-bomb
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --offline --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify-images --input tools/space/base-image.json --source-reference $sourceRef --run-guid $task7Guid --phase offline-verify --offline --network-bomb
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify-locks --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --source-reference $sourceRef --run-guid $task7Guid --phase offline-verify --offline --network-bomb
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference $sourceRef --run-guid $task7Guid --phase offline-verify --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline --network-bomb
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py verify --repo-root . --source-reference $sourceRef --run-guid $task7Guid --phase offline-verify --offline --network-bomb
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py offline-test --source-reference $sourceRef --run-guid $task7Guid --phase offline-verify --offline --network-bomb -- .venv-space\Scripts\python.exe -m pytest tests/test_hf_space_supply_chain.py -q
 $trackedOutputs = @('space/requirements.lock', 'space/requirements-dev.lock', 'space/SBOM.spdx.json', 'space/THIRD_PARTY_LICENSES.json')
 $first = @($trackedOutputs | ForEach-Object { $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_; '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant() })
-& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference $sourceRef --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline --network-bomb
+& "$toolVenv\Scripts\python.exe" scripts/build_hf_space_supply_chain.py inventory --base tools/space/base-image.json --runtime-lock space/requirements.lock --development-lock space/requirements-dev.lock --license-policy tools/space/license-policy.json --source-reference $sourceRef --run-guid $task7Guid --phase offline-verify --licenses-output space/THIRD_PARTY_LICENSES.json --sbom-output space/SBOM.spdx.json --offline --network-bomb
 $second = @($trackedOutputs | ForEach-Object { $item = Get-FileHash -Algorithm SHA256 -LiteralPath $_; '{0}|{1}' -f $_, $item.Hash.ToLowerInvariant() })
 if ([string]::Join("`n", $first) -cne [string]::Join("`n", $second)) { throw 'Supply-chain outputs are not reproducible' }
 $task7Succeeded = $true
 } finally {
     if ($task7Succeeded) {
-        $resolvedTask7Root = (Resolve-Path -LiteralPath $task7TempRoot -ErrorAction Stop).Path
-        $resolvedSourceRef = (Resolve-Path -LiteralPath $sourceRef -ErrorAction Stop).Path
-        if (-not $resolvedTask7Root.StartsWith($task7OsTempRoot, [StringComparison]::Ordinal) -or -not $resolvedSourceRef.StartsWith($resolvedTask7Root, [StringComparison]::Ordinal) -or ([IO.Path]::GetFileName($resolvedTask7Root) -cne "carerisk-task7-$task7Guid")) { throw 'Refusing to clean an unowned Task 7 temp path' }
-        Remove-Item -LiteralPath $resolvedTask7Root -Recurse -Force -ErrorAction Stop
+        $ownedRoot = Resolve-Task7OwnedCleanupTarget -CandidateRoot $task7TempRoot -VerifiedOsTempRoot $task7OsTempRoot -RunGuid $task7Guid -AllowedChildNames @('webkit-source-reference.json') -RequiredChildNames @('webkit-source-reference.json')
+        Remove-Item -LiteralPath $ownedRoot -Recurse -Force -ErrorAction Stop
     } else { Write-Error "Task 7 failed; retain bounded GUID-owned parsed metadata at $task7TempRoot for diagnosis. Never stage, copy, export, or upload it." }
 }
 ```
 
-Expected: the Step 0 acquisition is already the sole network-enabled command. This correction performs no dependency-lock re-acquisition, no image re-resolution, and no overwrite/reselection of `base-image.json`; `verify-locks` and `verify-images` accept only frozen measured custody inputs plus the exact added provenance/version fields. Every later `verify-images`, `verify-locks`, both deterministic `inventory` runs, `verify`, and pytest uses the exact `$sourceRef --offline --network-bomb` contract; its runner installs the bomb before any work or child process, and no later command may fetch or refetch. The finalizer removes only the validated current GUID root after all outputs/receipts succeed; on failure it retains only that bounded owned temp evidence for diagnosis and never stages, copies, exports, or uploads it. The eleven sanctioned Task 7 tracked paths remain the only tracked outputs; only parsed canonical metadata needed downstream appears in their policy/inventory records. Review package source URLs, both base-image inventories, embedded-browser revisions/versions, typed tree count/size/algorithm/identity and derived source-relative-file absence, official Playwright tag URL/registry/CDN, exact external source-reference provenance, license texts/references, notices, notice completeness, all eleven distribution surfaces, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components whose bytes could be exported/deployed stop the task.
+Expected: the Step 0 controller acquisition is the sole network-enabled Task 7 provenance action. This correction performs no dependency-lock re-acquisition, no image re-resolution, and no overwrite/reselection of `base-image.json`; `verify-locks` and `verify-images` accept only frozen measured custody inputs plus the exact added provenance/version fields. Every later `verify-images`, `verify-locks`, both deterministic `inventory` runs, `verify`, and pytest uses the exact `$sourceRef --run-guid $task7Guid --phase offline-verify --offline --network-bomb` contract; its runner installs the bomb before any work or child process, and no later command may fetch or refetch. The success finalizer invokes the same ownership validator as Task 0 catch and removes only the validated current GUID root; a missing/extra/ambiguous child, wrong identity, or reparse/symlink condition leaves it untouched. On verification failure the bounded owned metadata remains for diagnosis and is never staged, copied, exported, or uploaded. The eleven sanctioned Task 7 tracked paths remain the only tracked outputs; only parsed canonical metadata needed downstream appears in their policy/inventory records. Review package source URLs, both base-image inventories, embedded-browser revisions/versions, typed tree count/size/algorithm/identity and derived source-relative-file absence, official Playwright tag URL/registry/CDN, exact external source-reference provenance, license texts/references, notices, notice completeness, all eleven distribution surfaces, and dispositions before proceeding. Unknown, missing, incompatible, or non-redistributable components whose bytes could be exported/deployed stop the task.
 
 - [ ] **Step 5: Run reproducibility and installation GREEN**
 
@@ -3057,7 +3136,7 @@ if ((git rev-parse HEAD^).Trim() -cne $appSourceSha) { throw 'Manifest is not th
 - Consumes: the complete Task 7 `WebKitReviewerPolicy` value, including Playwright tag URL, tagged `browsers.json`, registry source, CDN artifact, external tag-commit/source-relative-path/raw-byte/parsed-assignment provenance, WebKit tree algorithm/digest and image-tree absence proof, and ordered official licensing references; abbreviated tuples are invalid.
 - Produces: a final JSON receipt on stdout after ownership-safe cleanup, including the complete WebKit metadata tuple, the exact closed eleven-member distribution-surface registry, and an integer zero reviewer-byte count for each surface; no tracked change and no commit.
 
-Before Task 13 implementation can be considered ready, `tests/test_hf_space_live_review.py` must contain `test_final_receipt_binds_complete_webkit_reviewer_policy_tuple`, `test_final_verifier_rejects_reviewer_bytes_on_each_distribution_surface`, `test_final_receipt_requires_zero_count_for_each_distribution_surface`, `test_final_verifier_rejects_nonclosed_distribution_surface_registry`, and `test_final_receipt_excludes_transient_source_reference_execution_fields`. The first test mutates every tuple/provenance field independently, including `playwright_tag_commit`, `repository_relative_path`, `commit_pinned_raw_url`, `raw_byte_length`, `raw_sha256`, `remote_url`, `base_branch`, `base_revision`, `playwright_tag_url`, and `webkit_tree_algorithm`; it also rejects a source filename represented as an image-tree member. The receipt-exclusion test proves the Task 13 receipt carries only the sanctioned policy tuple/derived absence proof and never a transient source-reference path, raw body, run GUID, `--allow-network`, `--offline`, or `--network-bomb` execution value; those controls are Task 7 local runner evidence, not a distributed receipt claim. The next two parameterize all eleven surfaces: `public_export`, `candidate`, `runtime_stage`, `final_image`, `deployment_artifact`, `saved_archive`, `pushed_image`, `uploaded_artifact`, `published_image`, `build_output`, and `other_distributed_output`. The registry test rejects an omitted, duplicate, unknown, empty, or unclassified member. These tests run in the Task 13 pytest command in Step 3 and must fail before the receipt/verifier contract is complete.
+Before Task 13 implementation can be considered ready, `tests/test_hf_space_live_review.py` must contain `test_final_receipt_binds_complete_webkit_reviewer_policy_tuple`, `test_final_verifier_rejects_reviewer_bytes_on_each_distribution_surface`, `test_final_receipt_requires_zero_count_for_each_distribution_surface`, `test_final_verifier_rejects_nonclosed_distribution_surface_registry`, `test_final_receipt_records_bounded_task7_source_reference_lifecycle_evidence`, and `test_final_receipt_excludes_transient_source_reference_execution_fields`. The first test mutates every tuple/provenance field independently, including `playwright_tag_commit`, `repository_relative_path`, `commit_pinned_raw_url`, `raw_byte_length`, `raw_sha256`, `remote_url`, `base_branch`, `base_revision`, `playwright_tag_url`, and `webkit_tree_algorithm`; it also rejects a source filename represented as an image-tree member. The bounded lifecycle test requires the exact canonical evidence object `{controller_owned_acquisition: true, exact_https_get_count: 1, redirect_count: 0, raw_body_retained: false, offline_phase: "offline_verify", network_bomb_before_work: true, shared_cleanup_validator: true, cleanup_mutation_matrix_passed: true}` and rejects any missing/extra/type/value drift. The receipt-exclusion test proves the Task 13 receipt carries only the sanctioned policy tuple/derived absence proof and this bounded lifecycle object—never a transient source-reference path, raw body, run GUID, task temp name, or command-line flag value. The next two parameterize all eleven surfaces: `public_export`, `candidate`, `runtime_stage`, `final_image`, `deployment_artifact`, `saved_archive`, `pushed_image`, `uploaded_artifact`, `published_image`, `build_output`, and `other_distributed_output`. The registry test rejects an omitted, duplicate, unknown, empty, or unclassified member. These tests run in the Task 13 pytest command in Step 3 and must fail before the receipt/verifier contract is complete.
 
 - [ ] **Step 1: Verify clean two-commit inputs before creating any temporary path**
 
@@ -3093,7 +3172,7 @@ if ($receipt.schema_version -ne 1 -or $receipt.status -cne 'passed') { throw 'In
 6. Create the Docker `--internal` network with the complete ownership labels exact current GUID plus `resource_role=network`. Run the exact final image with network alias `carerisk-app` in a normal container labeled exact GUID/`resource_role=normal`/exact final-image digest, then separately run each retained variant reference in a container named exactly `carerisk-<GUID>-NEVER_DEPLOY-<code>` and labeled exact GUID/`resource_role=failure_variant`/exact base digest/code/`NEVER_DEPLOY=true`, all with the same alias, entrypoint, command, environment scrub, runtime flags, and no-egress network. Normal, reviewer, and network resource names must not contain `NEVER_DEPLOY`. Run the exact reviewer image in a container labeled exact GUID/`resource_role=reviewer`/exact reviewer-image digest against `http://carerisk-app:7860` for all five live page states at 1440×900 and 390×844. The reviewer container is local/CI-only, ephemeral, and is never committed, saved, exported, pushed, uploaded, published, or deployed. Apply shared assertions to all ten records; apply four-radio/panel/keyboard/focus/visibility/normal-claims assertions only to the two normal records; apply zero-control/panel/transition/metric/canonical-value plus exact code/message assertions only to the eight reachable-failure records. Verify root/config/exact theme/manifest/favicon/package members, exact membership/tree digest parity, zero app-owned inputs/dependencies/functions/API, pinned `enable_queue == true`, exact request method/path/query, zero outer blocks/POST/event/session/queue/public-state delta/external/console errors, and no partial evidence/download/model initialization. Separately repeat URL/local-file, zero/nonzero/oversized upload, body-framing, hostile authority/query/cookie/header, CORS/Brotli, WebSocket, dangerous-family, metadata/PWA, absent-asset, encoded, traversal, case, and slash probes. Missing/duplicate raw-wire Host and blocked-wire-HEAD evidence remains layer-separated. Any route, parser, variant, delta, authority, asset, state, or assertion drift stops verification for exact source audit, RED test, and central review; no wildcard or fifth live failure is added.
 7. In `finally`, enumerate only the literal resource IDs recorded by the current run and freshly inspect each one before deletion. Dispatch by Docker resource type and validate the complete exact reserved ownership-label schema, current GUID, role, identity/reference, and applicable final/reviewer/base digest and failure code. For failure images and containers, retrieve the controller-retained expected record by code and independently compare the actual image reference, image ID, and content digest to it; for a container, also require Docker `.Image` and configured image reference to identify that same record. Labels are necessary but insufficient. Tests with labels/base/code left correct but variant digest swapped, reference changed, container `.Image` wrong, or configured image reference wrong must fail closed and preserve the resource. Failure-container names must exactly match `carerisk-<GUID>-NEVER_DEPLOY-<code>`; normal/reviewer/network names must omit `NEVER_DEPLOY`. Normal, reviewer, and network resources never carry or are validated as failure variants. Missing retained records, missing or extra contradictory labels, ambiguous reference/identity, stale GUID, digest/code/reference mismatch, or type/role/name mismatch fails closed and preserves that resource. Only after every Docker resource passes its own schema may the verifier validate and delete the current ownership-marked temp run root. Emit the JSON receipt after cleanup. Any cleanup validation failure is itself a failed run and leaves the suspect resource/path untouched for manual inspection; it never uses broad filters or broadens the delete target.
 
-Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The exact reviewer image remains local/CI-only and no save/export/output/push/upload/publication/deployment path exists. All eleven closed surfaces and the Docker command plan contain no reviewer/browser bytes; upload, publication, build-output, and other-distributed-output absence is recorded explicitly rather than inferred from omission. Only the exact metadata-only WebKit record is present in the two inventory documents. The final receipt includes the exact tag/index/manifest/Playwright tag and tag URL/tagged `browsers.json`/registry/CDN, external tag commit/source-relative-path/commit-pinned raw URL/raw length/raw SHA-256/parsed `REMOTE_URL`/`BASE_BRANCH`/`BASE_REVISION`, explicit immutable-image-tree absence proof, WebKit revision/version/tree algorithm/tree digest/ordered licensing-reference tuple, both SPDX `NOASSERTION` values, `reviewer_test_only_not_redistributed`, `complete_digest_bound_notice=false`, the exact eleven-member surface registry, every named exclusion gate, and eleven integer-zero reviewer-byte observations, in addition to clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime and four derived image digests; exact parser identity `h11`; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; normal-only static radio visibility transitions; failure-only zero-surface counts; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; three normal cold starts; ten viewport/state records; four controller-retained variant reference/ID/digest/base/code/GUID/label/delta records; five-code owning-gate/live-reachability/evidence-type/precedence/status records; exact role-specific normal/reviewer/network/failure cleanup records including failure container names and actual image/container-to-record identity comparisons; and no-egress observations. `receipt_schema_invalid` is recorded as unit/component/ASGI evidence with its exact three-part failure copy and sole bounded code, dominated by the immutable receipt anchor, and `not_live_reviewed`, never as a passed live state. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the explicit h11 parser, direct outer ASGI/authority boundary, exact package membership, accepted Host identity, WebKit exception/exclusion boundary, or role-specific cleanup identity is absent, ineffective, ambiguous, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
+Expected: the candidate has exactly the 24 paths in `PUBLIC_PATHS`, no `.git`, no extra bytes, and every file matches its manifest source/hash/size relationship. Linux tests run only in the reviewer image from the standalone candidate; the Windows host never attempts to install a Linux-only lock. The exact reviewer image remains local/CI-only and no save/export/output/push/upload/publication/deployment path exists. All eleven closed surfaces and the Docker command plan contain no reviewer/browser bytes; upload, publication, build-output, and other-distributed-output absence is recorded explicitly rather than inferred from omission. Only the exact metadata-only WebKit record is present in the two inventory documents. The final receipt includes the exact tag/index/manifest/Playwright tag and tag URL/tagged `browsers.json`/registry/CDN, external tag commit/source-relative-path/commit-pinned raw URL/raw length/raw SHA-256/parsed `REMOTE_URL`/`BASE_BRANCH`/`BASE_REVISION`, explicit immutable-image-tree absence proof, WebKit revision/version/tree algorithm/tree digest/ordered licensing-reference tuple, both SPDX `NOASSERTION` values, `reviewer_test_only_not_redistributed`, `complete_digest_bound_notice=false`, and the exact bounded Task 7 lifecycle object proving controller ownership, one GET/no redirect, no retained raw body, offline verification, bomb-before-work, one shared cleanup validator, and the passed cleanup mutation matrix without exposing a transient path/GUID/flag value. It also includes the exact eleven-member surface registry, every named exclusion gate, and eleven integer-zero reviewer-byte observations, in addition to clean-export tree digest; both base/platform digests; lock/SBOM/license hashes; test counts; runtime and four derived image digests; exact parser identity `h11`; `/usr/bin/env` inventory; exact pre-import/post-Blocks/PID 1/child environments; poisoned-environment behavior; zero app-owned input/dependency/function/API observations; pinned `config.enable_queue == true`; zero public-interaction state delta; parent/inner registered-route classification; mount/exact-two-argument-outer-wrapper/Uvicorn identity; four-authority map and exact sanitized scopes; package membership counts/tree digests in runtime and reviewer; exact manifest/favicon/logo body hashes; exact browser method/path/query graph; accepted metadata counts; guard-block/POST/event/session/queue/external/console counts; normal-only static radio visibility transitions; failure-only zero-surface counts; direct-ASGI fixed Host/HEAD message evidence; pinned Uvicorn+h11 missing/duplicate Host 400 statuses and zero app-entry delta; valid-unlisted-Host guard 404 evidence; blocked wire HEAD zero-entity/content-length evidence; blocked-probe downstream/receive/CORS/compression/fetch/temp/echo counts; defense-in-depth state; history/monitoring results; three normal cold starts; ten viewport/state records; four controller-retained variant reference/ID/digest/base/code/GUID/label/delta records; five-code owning-gate/live-reachability/evidence-type/precedence/status records; exact role-specific normal/reviewer/network/failure cleanup records including failure container names and actual image/container-to-record identity comparisons; and no-egress observations. `receipt_schema_invalid` is recorded as unit/component/ASGI evidence with its exact three-part failure copy and sole bounded code, dominated by the immutable receipt anchor, and `not_live_reviewed`, never as a passed live state. Parser-layer 400s are never labeled as guard executions. If `/usr/bin/env -i`, the explicit h11 parser, direct outer ASGI/authority boundary, exact package membership, accepted Host identity, WebKit exception/exclusion boundary, or role-specific cleanup identity is absent, ineffective, ambiguous, or incompatible with the Hugging Face Docker Space runtime, verification stops and the threat boundary is not weakened.
 
 - [ ] **Step 3: Re-run legacy baseline and source-only final gates after candidate cleanup**
 
