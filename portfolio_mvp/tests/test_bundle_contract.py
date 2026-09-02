@@ -119,6 +119,17 @@ def test_candidate_audit_rejects_every_extra_member(
         audit_candidate(destination)
 
 
+def test_candidate_audit_rejects_empty_directory(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "candidate"
+    _write_valid_source(source)
+    build_candidate(source, destination)
+    (destination / ".git").mkdir()
+
+    with pytest.raises(CandidateError, match="candidate_membership_invalid"):
+        audit_candidate(destination)
+
+
 def test_builder_refuses_missing_file_and_preexisting_destination(
     tmp_path: Path,
 ) -> None:
@@ -133,6 +144,32 @@ def test_builder_refuses_missing_file_and_preexisting_destination(
     destination.mkdir()
     with pytest.raises(CandidateError, match="destination_exists"):
         build_candidate(source, destination)
+
+
+def test_builder_rejects_secret_inside_allowlisted_file_and_cleans_candidate(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "candidate"
+    _write_valid_source(source)
+    (source / "README.md").write_text("ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ", encoding="utf-8")
+
+    with pytest.raises(CandidateError, match="secret_content_forbidden"):
+        build_candidate(source, destination)
+    assert not destination.exists()
+
+
+def test_builder_rejects_symlink_source_root(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source_link = tmp_path / "source-link"
+    _write_valid_source(source)
+    try:
+        source_link.symlink_to(source, target_is_directory=True)
+    except OSError:
+        pytest.skip("Windows account lacks symlink creation privilege")
+
+    with pytest.raises(CandidateError, match="source_root_invalid"):
+        build_candidate(source_link, tmp_path / "candidate")
 
 
 @pytest.mark.parametrize(

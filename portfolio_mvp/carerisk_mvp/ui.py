@@ -12,6 +12,15 @@ SAFETY_ZH = "本頁僅使用固定合成資料作研究展示；不提供個案�
 SAFETY_EN = "Synthetic research demonstration only — not for clinical or care decisions."
 
 
+class StaticBlocks(gr.Blocks):
+    """Blocks variant whose public configuration advertises no queue."""
+
+    def get_config_file(self) -> dict:
+        config = super().get_config_file()
+        config["enable_queue"] = False
+        return config
+
+
 _STYLES = """
 <style>
   :root { color-scheme: light; }
@@ -79,7 +88,7 @@ _STYLES = """
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(34, 92, 112, .14);
   }
-  .cr-option:has(input:focus-visible) { outline: 3px solid #f0a34a; outline-offset: 2px; }
+  .cr-option:has(input:focus-visible) { outline: 3px solid #9a4d00; outline-offset: 2px; }
   .cr-option input {
     width: 22px;
     height: 22px;
@@ -87,7 +96,7 @@ _STYLES = """
     accent-color: var(--accent);
     flex: 0 0 auto;
   }
-  .cr-option input:focus-visible { outline: 3px solid #f0a34a; outline-offset: 3px; }
+  .cr-option input:focus-visible { outline: 3px solid #9a4d00; outline-offset: 3px; }
   .cr-label { display: grid; gap: 2px; }
   .cr-label small { color: var(--muted); }
   .cr-panels { margin-top: 18px; }
@@ -188,10 +197,10 @@ def create_demo() -> gr.Blocks:
     except Exception:
         markup = render_unavailable_html()
 
-    with gr.Blocks(
+    with StaticBlocks(
         title="CareRisk 48H — Synthetic Evidence Explorer",
         analytics_enabled=False,
     ) as demo:
-        gr.HTML(markup, elem_id="carerisk-static-explorer")
+        gr.HTML(markup, elem_id="carerisk-static-explorer", js_on_load=None)
     demo.enable_queue = False
     return demo
