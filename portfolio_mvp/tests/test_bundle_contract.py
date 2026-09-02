@@ -5,14 +5,13 @@ import re
 from pathlib import Path
 
 import pytest
-
+from scripts.browser_smoke import request_violation, validate_target_url
 from scripts.build_space_candidate import (
     SPACE_PATHS,
     CandidateError,
     audit_candidate,
     build_candidate,
 )
-
 
 MVP_ROOT = Path(__file__).parents[1]
 REPOSITORY_ROOT = MVP_ROOT.parent
@@ -134,3 +133,28 @@ def test_builder_refuses_missing_file_and_preexisting_destination(
     destination.mkdir()
     with pytest.raises(CandidateError, match="destination_exists"):
         build_candidate(source, destination)
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "file:///tmp/index.html",
+        "https://user@example.test/",
+        "https://example.test/?token=secret",
+        "https://example.test/#fragment",
+    ),
+)
+def test_browser_smoke_rejects_ambiguous_target_url(url: str) -> None:
+    with pytest.raises(ValueError, match="target_url_invalid"):
+        validate_target_url(url)
+
+
+def test_browser_smoke_classifies_request_boundary() -> None:
+    origin = "https://example.test"
+    assert request_violation("GET", "https://example.test/assets/app.js", origin) is None
+    assert request_violation("POST", "https://example.test/", origin) == "post_request"
+    assert request_violation("GET", "https://other.test/app.js", origin) == "external_request"
+    assert (
+        request_violation("GET", "https://example.test/gradio_api/queue/status", origin)
+        == "event_transport"
+    )

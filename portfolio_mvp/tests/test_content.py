@@ -4,9 +4,7 @@ import re
 from dataclasses import FrozenInstanceError, fields
 
 import pytest
-
 from carerisk_mvp.content import EVIDENCE_STATES, STATE_IDS, EvidenceState
-
 
 EXPECTED_STATE_IDS = (
     "evidence_available",

@@ -9,7 +9,6 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
-
 SPACE_PATHS: tuple[str, ...] = (
     "README.md",
     "LICENSE",
