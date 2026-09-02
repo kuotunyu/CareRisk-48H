@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 import re
 import stat
 from pathlib import Path, PurePosixPath
@@ -129,6 +131,31 @@ FORBIDDEN_CONTENT = (
     re.compile(rb"\bAKIA[0-9A-Z]{16}\b"),
 )
 EXECUTABLE_BINARY_SIGNATURES = (b"\x7fELF", b"MZ", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa")
+REVIEWER_BROWSER_BYTE_SIGNATURES = (
+    b"/ms-" b"playwright/chromium-",
+    b"/ms-" b"playwright/chromium_headless_shell-",
+    b"/ms-" b"playwright/firefox-",
+    b"/ms-" b"playwright/webkit-",
+    b"/ms-" b"playwright/ffmpeg-",
+    b"chrome-linux64/" b"chrome",
+    b"firefox/" b"firefox",
+    b"minibrowser-gtk/" b"bin/MiniBrowser",
+    b"minibrowser-wpe/" b"bin/MiniBrowser",
+)
+WEBKIT_EXCEPTION_MARKER = b"reviewer_test_only_" b"not_redistributed"
+WEBKIT_METADATA_PATHS = frozenset({"SBOM.spdx.json", "THIRD_PARTY_LICENSES.json"})
+EXPECTED_SBOM_WEBKIT_RECORD_SHA256 = (
+    "63f2a7be2b20d7adaae63361e12ea95e0f3894fc69c6202a227be6f797a707b8"
+)
+EXPECTED_THIRD_PARTY_WEBKIT_RECORD_SHA256 = (
+    "20831fd7b773fe13bf5a7508181b301b49bb9d0e0d89ccc4d1b25ac8baca7046"
+)
+EXPECTED_THIRD_PARTY_BROWSER_RECORD_SHA256 = {
+    "chromium": "116821ea11186ffc5eab80b7740f38dc162b0f61b1f1aac30eb6bde5bf8b7705",
+    "firefox": "f438e37eee9b74996b1afdca3244ad4ce2aaf9f5bb3bf05995b03795e38431bf",
+    "webkit": EXPECTED_THIRD_PARTY_WEBKIT_RECORD_SHA256,
+    "ffmpeg": "1c9e9d22be5dd9d05d8b76af7d5510517eb45c457c0d88ffafdd711a32a11264",
+}
 
 
 def _public_paths_from_ast() -> tuple[str, ...]:
@@ -196,6 +223,57 @@ def accepts_public_file(path: str, raw: bytes, mode: int) -> bool:
     return not any(pattern.search(raw) for pattern in FORBIDDEN_CONTENT)
 
 
+def _canonical_record_sha256(value: object) -> str:
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
+def assert_exact_webkit_metadata_only(bundle_root: Path) -> None:
+    """Assert the reviewer-only WebKit exception is exactly the Task 7 metadata pair."""
+
+    sbom = json.loads((bundle_root / "SBOM.spdx.json").read_bytes())
+    third_party = json.loads((bundle_root / "THIRD_PARTY_LICENSES.json").read_bytes())
+    sbom_records = [item for item in sbom["packages"] if item.get("name") == "webkit"]
+    third_party_records = [
+        item for item in third_party["components"] if item.get("package") == "webkit"
+    ]
+    assert len(sbom_records) == len(third_party_records) == 1
+    assert _canonical_record_sha256(sbom_records[0]) == EXPECTED_SBOM_WEBKIT_RECORD_SHA256
+    assert (
+        _canonical_record_sha256(third_party_records[0])
+        == EXPECTED_THIRD_PARTY_WEBKIT_RECORD_SHA256
+    )
+    for path in PUBLIC_PATHS:
+        candidate = bundle_root.joinpath(*path.split("/"))
+        if path not in WEBKIT_METADATA_PATHS and candidate.exists():
+            assert WEBKIT_EXCEPTION_MARKER not in candidate.read_bytes()
+
+
+def assert_no_reviewer_or_browser_bytes(bundle_root: Path) -> None:
+    for path in PUBLIC_PATHS:
+        candidate = bundle_root.joinpath(*path.split("/"))
+        if candidate.exists():
+            raw = candidate.read_bytes()
+            if path == "THIRD_PARTY_LICENSES.json":
+                value = json.loads(raw)
+                for record in value["components"]:
+                    package = record.get("package")
+                    if package in EXPECTED_THIRD_PARTY_BROWSER_RECORD_SHA256:
+                        assert (
+                            _canonical_record_sha256(record)
+                            == EXPECTED_THIRD_PARTY_BROWSER_RECORD_SHA256[package]
+                        )
+                        encoded = json.dumps(
+                            record,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode()
+                        assert raw.count(encoded) == 1
+                        raw = raw.replace(encoded, b"", 1)
+            assert all(token not in raw for token in REVIEWER_BROWSER_BYTE_SIGNATURES)
+
+
 def test_public_paths_are_exact_and_independently_repeated() -> None:
     assert PUBLIC_PATHS == EXPECTED_PUBLIC_PATHS
     assert len(PUBLIC_PATHS) == len(set(PUBLIC_PATHS)) == 24
@@ -259,3 +337,8 @@ def test_public_candidate_rejects_oversize_special_executable_and_credential_byt
     assert not accepts_public_file("README.md", b"\x7fELFsynthetic", regular | stat.S_IXUSR)
     assert not accepts_public_file("README.md", b"token=synthetic-secret", regular)
     assert not accepts_public_file("README.md", b"-----BEGIN PRIVATE KEY-----", regular)
+
+
+def test_task7_webkit_exception_is_exact_metadata_not_reviewer_payload() -> None:
+    assert_exact_webkit_metadata_only(SPACE_ROOT)
+    assert_no_reviewer_or_browser_bytes(SPACE_ROOT)
