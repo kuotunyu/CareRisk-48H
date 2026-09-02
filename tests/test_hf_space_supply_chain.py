@@ -847,8 +847,64 @@ def test_static_license_trust_root_is_exact_artifact_indexed() -> None:
         all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in hashes)
         for _name, _version, hashes in identities
     )
-    expected = license_inventory_keys(LICENSES) | {("carerisk-space", "0.2.0")}
+    expected = license_inventory_keys(LICENSES)
     assert {(name, version) for name, version, _hashes in identities} == expected
+
+
+def test_license_trust_root_rejects_empty_artifact_hash_tuple(tmp_path: Path) -> None:
+    module = _supply_chain_module()
+    document = json.loads(LICENSE_TRUST_ROOT.read_text(encoding="utf-8"))
+    document["components"][0]["artifact_sha256"] = []
+    root_path = tmp_path / "license-trust-root.json"
+    _write_canonical_json(root_path, document)
+
+    with pytest.raises(ValueError, match="license trust root artifact identity invalid"):
+        module.load_license_trust_root(root_path)
+
+
+def test_license_trust_root_rejects_first_party_component(tmp_path: Path) -> None:
+    module = _supply_chain_module()
+    document = json.loads(LICENSE_TRUST_ROOT.read_text(encoding="utf-8"))
+    first_party = dict(document["components"][0])
+    first_party.update(
+        {
+            "artifact_sha256": ["0" * 64],
+            "package": "carerisk-space",
+            "source_url": "https://github.com/kuotunyu/CareRisk-48H",
+            "version": "0.2.0",
+        }
+    )
+    document["components"].append(first_party)
+    document["components"].sort(
+        key=lambda component: (
+            component["package"],
+            component["version"],
+            tuple(component["artifact_sha256"]),
+        )
+    )
+    root_path = tmp_path / "license-trust-root.json"
+    _write_canonical_json(root_path, document)
+
+    with pytest.raises(ValueError, match="first-party component is outside Task 7"):
+        module.load_license_trust_root(root_path)
+
+
+def test_license_policy_rejects_first_party_component() -> None:
+    module = _supply_chain_module()
+    document = json.loads(LICENSE_POLICY.read_text(encoding="utf-8"))
+    first_party = dict(document["components"][0])
+    first_party.update(
+        {
+            "artifact_sha256": ["0" * 64],
+            "package": "carerisk-space",
+            "source_url": "https://github.com/kuotunyu/CareRisk-48H",
+            "version": "0.2.0",
+        }
+    )
+    document["components"].append(first_party)
+
+    with pytest.raises(ValueError, match="first-party component is outside Task 7"):
+        module.validate_license_policy(document)
 
 
 def test_webkit_absence_proof_is_recomputed_from_ordered_tree_inventory() -> None:
@@ -888,7 +944,6 @@ def test_webkit_absence_proof_is_recomputed_from_ordered_tree_inventory() -> Non
 def test_sbom_and_license_inventory_cover_every_lock_package_once() -> None:
     locked = normalized_locked_packages(RUNTIME_LOCK, DEVELOPMENT_LOCK)
     image_components = {
-        ("carerisk-space", "0.2.0"),
         ("python-runtime-base", "3.11"),
         ("playwright-reviewer-base", "1.62.0"),
         ("chromium", "pinned"),
@@ -898,9 +953,7 @@ def test_sbom_and_license_inventory_cover_every_lock_package_once() -> None:
     }
 
     assert sbom_package_keys(SBOM) == locked | image_components
-    assert license_inventory_keys(LICENSES) == locked | (
-        image_components - {("carerisk-space", "0.2.0")}
-    )
+    assert license_inventory_keys(LICENSES) == locked | image_components
     records = {
         (_canonical_package_name(str(item["package"])), str(item["version"])): item
         for item in load_licenses(LICENSES)
