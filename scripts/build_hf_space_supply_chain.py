@@ -34,7 +34,7 @@ IMAGE_COMPONENTS = {
     ("webkit", "26.5"),
     ("ffmpeg", "pinned"),
 }
-FIRST_PARTY_COMPONENTS = {("carerisk-space", "0.2.0")}
+FIRST_PARTY_PACKAGE_NAMES = {"carerisk-space"}
 AGGREGATE_CLAIM_CEILING = "aggregate_identity_and_notice_evidence_only_no_single_spdx_conclusion"
 UNCERTAIN_AGGREGATE_DISPOSITIONS = {
     ("python-runtime-base", "3.11"): "runtime_distribution_not_license_approved",
@@ -1190,7 +1190,7 @@ def validate_license_policy(
         key = canonical_name(str(record.get("package"))), str(record.get("version"))
         if key in result:
             raise ValueError(f"duplicate policy record {key}")
-        if key in FIRST_PARTY_COMPONENTS:
+        if key[0] in FIRST_PARTY_PACKAGE_NAMES:
             raise ValueError("first-party component is outside Task 7")
         if key == ("webkit", "26.5") or record.get("package") == "webkit":
             if record != exact_webkit:
@@ -1327,7 +1327,8 @@ def load_license_trust_root(path: Path) -> LicenseTrustRoot:
     for component in components:
         if not isinstance(component, dict) or set(component) != LICENSE_TRUST_ROOT_FIELDS:
             raise ValueError("license trust root entry invalid")
-        if (component.get("package"), component.get("version")) in FIRST_PARTY_COMPONENTS:
+        package = component.get("package")
+        if isinstance(package, str) and canonical_name(package) in FIRST_PARTY_PACKAGE_NAMES:
             raise ValueError("first-party component is outside Task 7")
         identity = _license_trust_identity(component)
         if identity in result:

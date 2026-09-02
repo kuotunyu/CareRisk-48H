@@ -862,16 +862,26 @@ def test_license_trust_root_rejects_empty_artifact_hash_tuple(tmp_path: Path) ->
         module.load_license_trust_root(root_path)
 
 
-def test_license_trust_root_rejects_first_party_component(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("package", "version"),
+    (
+        ("carerisk-space", "0.2.1"),
+        ("CareRisk-Space", "0.2.1"),
+        ("carerisk_space", "0.2.1"),
+    ),
+)
+def test_license_trust_root_rejects_first_party_component(
+    tmp_path: Path, package: str, version: str
+) -> None:
     module = _supply_chain_module()
     document = json.loads(LICENSE_TRUST_ROOT.read_text(encoding="utf-8"))
     first_party = dict(document["components"][0])
     first_party.update(
         {
             "artifact_sha256": ["0" * 64],
-            "package": "carerisk-space",
+            "package": package,
             "source_url": "https://github.com/kuotunyu/CareRisk-48H",
-            "version": "0.2.0",
+            "version": version,
         }
     )
     document["components"].append(first_party)
@@ -889,16 +899,24 @@ def test_license_trust_root_rejects_first_party_component(tmp_path: Path) -> Non
         module.load_license_trust_root(root_path)
 
 
-def test_license_policy_rejects_first_party_component() -> None:
+@pytest.mark.parametrize(
+    ("package", "version"),
+    (
+        ("carerisk-space", "0.2.1"),
+        ("CareRisk-Space", "0.2.1"),
+        ("carerisk_space", "0.2.1"),
+    ),
+)
+def test_license_policy_rejects_first_party_component(package: str, version: str) -> None:
     module = _supply_chain_module()
     document = json.loads(LICENSE_POLICY.read_text(encoding="utf-8"))
     first_party = dict(document["components"][0])
     first_party.update(
         {
             "artifact_sha256": ["0" * 64],
-            "package": "carerisk-space",
+            "package": package,
             "source_url": "https://github.com/kuotunyu/CareRisk-48H",
-            "version": "0.2.0",
+            "version": version,
         }
     )
     document["components"].append(first_party)
