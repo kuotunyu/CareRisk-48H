@@ -6,7 +6,6 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import gradio as gr
-
 from carerisk_mvp.ui import (
     SAFETY_EN,
     SAFETY_ZH,
@@ -14,11 +13,8 @@ from carerisk_mvp.ui import (
     render_explorer_html,
 )
 
-
 EXPECTED_SAFETY_ZH = "本頁僅使用固定合成資料作研究展示；不提供個案風險、診斷、治療或照護決策。"
-EXPECTED_SAFETY_EN = (
-    "Synthetic research demonstration only — not for clinical or care decisions."
-)
+EXPECTED_SAFETY_EN = "Synthetic research demonstration only — not for clinical or care decisions."
 
 
 class MarkupRecorder(HTMLParser):
@@ -26,9 +22,7 @@ class MarkupRecorder(HTMLParser):
         super().__init__()
         self.start_tags: list[tuple[str, dict[str, str | None]]] = []
 
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.start_tags.append((tag, dict(attrs)))
 
 
@@ -48,9 +42,7 @@ def test_rendered_document_has_one_heading_and_four_labeled_radios() -> None:
     assert sum(tag == "h1" for tag, _ in parser.start_tags) == 1
     assert any(attrs.get("lang") == "zh-TW" for _, attrs in parser.start_tags)
     radios = [
-        attrs
-        for tag, attrs in parser.start_tags
-        if tag == "input" and attrs.get("type") == "radio"
+        attrs for tag, attrs in parser.start_tags if tag == "input" and attrs.get("type") == "radio"
     ]
     assert len(radios) == 4
     assert {attrs["value"] for attrs in radios} == {
@@ -60,9 +52,7 @@ def test_rendered_document_has_one_heading_and_four_labeled_radios() -> None:
         "provenance_withheld",
     }
     label_targets = {
-        attrs["for"]
-        for tag, attrs in parser.start_tags
-        if tag == "label" and attrs.get("for")
+        attrs["for"] for tag, attrs in parser.start_tags if tag == "label" and attrs.get("for")
     }
     assert {attrs["id"] for attrs in radios} == label_targets
 
@@ -75,9 +65,7 @@ def test_all_states_are_prerendered_and_css_controls_visibility() -> None:
         "schema_withheld",
         "provenance_withheld",
     ):
-        assert (
-            markup.count(f'<article class="cr-panel" data-state="{state_id}"') == 1
-        )
+        assert markup.count(f'<article class="cr-panel" data-state="{state_id}"') == 1
         assert f"#{'state-' + state_id}:checked" in markup
     assert ":has(" in markup
     assert ":focus-visible" in markup
@@ -129,8 +117,11 @@ def test_product_modules_import_no_capability_bearing_library() -> None:
                 imports.add(node.module.split(".", 1)[0])
         allowed_imports.update({"carerisk_mvp", "content"})
         assert imports <= allowed_imports
-        assert not {
-            node.func.id
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        } & forbidden_calls
+        assert (
+            not {
+                node.func.id
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            }
+            & forbidden_calls
+        )

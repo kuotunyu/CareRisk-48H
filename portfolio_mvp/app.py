@@ -2,7 +2,6 @@
 
 from carerisk_mvp.ui import create_demo
 
-
 demo = create_demo()
 
 
