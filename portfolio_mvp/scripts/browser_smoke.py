@@ -52,6 +52,26 @@ def validate_target_url(url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", "", ""))
 
 
+def _is_matching_hf_platform_lookup(url: str, expected_origin: str) -> bool:
+    requested = urlsplit(url)
+    target = urlsplit(expected_origin)
+    target_host = target.hostname or ""
+    if target.scheme != "https" or not target_host.endswith(".hf.space"):
+        return False
+    subdomain = target_host.removesuffix(".hf.space")
+    return (
+        bool(subdomain)
+        and requested.scheme == "https"
+        and requested.hostname == "huggingface.co"
+        and requested.port is None
+        and requested.username is None
+        and requested.password is None
+        and requested.path == f"/api/spaces/by-subdomain/{subdomain}"
+        and not requested.query
+        and not requested.fragment
+    )
+
+
 def request_violation(method: str, url: str, expected_origin: str) -> str | None:
     """Classify browser traffic that exceeds the read-only same-origin boundary."""
 
@@ -59,6 +79,8 @@ def request_violation(method: str, url: str, expected_origin: str) -> str | None
     origin = f"{parsed.scheme}://{parsed.netloc}"
     if method.upper() == "POST":
         return "post_request"
+    if method.upper() == "GET" and _is_matching_hf_platform_lookup(url, expected_origin):
+        return None
     if origin != expected_origin:
         return "external_request"
     if any(part in parsed.path.casefold() for part in EVENT_PATH_PARTS):
