@@ -1,7 +1,7 @@
 ---
 title: CareRisk 48H Synthetic Evidence Explorer
 emoji: 🧭
-colorFrom: slate
+colorFrom: gray
 colorTo: blue
 sdk: docker
 app_port: 7860
