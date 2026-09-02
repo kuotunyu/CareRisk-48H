@@ -61,6 +61,8 @@ def test_space_card_and_notice_disclose_the_narrow_boundary() -> None:
     assert "sdk: docker" in front_matter
     assert "app_port: 7860" in front_matter
     assert "license: apache-2.0" in front_matter
+    assert "colorFrom: gray" in front_matter
+    assert "colorTo: blue" in front_matter
     assert "本頁僅使用固定合成資料作研究展示；不提供個案風險、診斷、治療或照護決策。" in readme
     assert "Synthetic research demonstration only" in readme
     assert "air-gapped" not in readme.casefold()
