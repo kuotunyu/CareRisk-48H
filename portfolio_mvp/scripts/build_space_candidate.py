@@ -41,7 +41,9 @@ _FORBIDDEN_PATH = re.compile(
     re.IGNORECASE,
 )
 _SECRET_CONTENT = re.compile(
-    r"(?:hf_[A-Za-z0-9]{24,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+    r"(?:hf_[A-Za-z0-9]{24,}|gh[pousr]_[A-Za-z0-9]{36,}|"
+    r"github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----)"
 )
 _LEGACY_CONTENT = (
     "scripts/export_hf_space.py",
@@ -80,18 +82,15 @@ def _read_public_text(path: Path, relative: str) -> bytes:
 def audit_candidate(destination: Path) -> tuple[Path, ...]:
     """Validate exact membership and public-safe text for a built candidate."""
 
+    if destination.is_symlink():
+        raise CandidateError("candidate_root_invalid")
     root = destination.resolve(strict=True)
-    if not root.is_dir() or root.is_symlink():
+    if not root.is_dir():
         raise CandidateError("candidate_root_invalid")
 
-    members = tuple(
-        sorted(
-            path.relative_to(root).as_posix()
-            for path in root.rglob("*")
-            if path.is_file() or path.is_symlink()
-        )
-    )
-    if members != tuple(sorted(SPACE_PATHS)):
+    members = tuple(sorted(path.relative_to(root).as_posix() for path in root.rglob("*")))
+    expected_members = tuple(sorted((*SPACE_PATHS, "carerisk_mvp")))
+    if members != expected_members:
         raise CandidateError("candidate_membership_invalid")
 
     audited: list[Path] = []
@@ -107,31 +106,34 @@ def audit_candidate(destination: Path) -> tuple[Path, ...]:
 def build_candidate(source_root: Path, destination: Path) -> tuple[Path, ...]:
     """Copy only literal allowlisted files into a new destination."""
 
-    source = source_root.resolve(strict=True)
-    target = destination.resolve(strict=False)
-    if not source.is_dir() or source.is_symlink():
+    if source_root.is_symlink() or not source_root.is_dir():
         raise CandidateError("source_root_invalid")
     if destination.exists() or destination.is_symlink():
         raise CandidateError("destination_exists")
+    source = source_root.resolve(strict=True)
+    target = destination.resolve(strict=False)
     if target == source or target == source.parent:
         raise CandidateError("destination_scope_invalid")
 
     run_id = uuid.uuid4().hex
-    marker = target / ".carerisk-mvp-build"
-    target.mkdir(parents=False)
+    marker = target.parent / f".{target.name}.{run_id}.carerisk-owner"
     marker.write_text(run_id, encoding="ascii")
     try:
+        target.mkdir(parents=False)
         for relative in SPACE_PATHS:
             source_path = source / relative
             raw = _read_public_text(source_path, relative)
             destination_path = target / relative
             destination_path.parent.mkdir(parents=True, exist_ok=True)
             destination_path.write_bytes(raw)
+        audited = audit_candidate(target)
         marker.unlink()
-        return audit_candidate(target)
+        return audited
     except Exception:
         if marker.is_file() and marker.read_text(encoding="ascii") == run_id:
-            shutil.rmtree(target)
+            if target.exists() and target.parent == marker.parent:
+                shutil.rmtree(target)
+            marker.unlink()
         raise
 
 
