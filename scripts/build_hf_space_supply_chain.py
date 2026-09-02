@@ -34,6 +34,13 @@ IMAGE_COMPONENTS = {
     ("webkit", "26.5"),
     ("ffmpeg", "pinned"),
 }
+AGGREGATE_CLAIM_CEILING = "aggregate_identity_and_notice_evidence_only_no_single_spdx_conclusion"
+UNCERTAIN_AGGREGATE_DISPOSITIONS = {
+    ("python-runtime-base", "3.11"): "runtime_distribution_not_license_approved",
+    ("playwright-reviewer-base", "1.62.0"): "reviewer_test_only_not_redistributed",
+    ("chromium", "pinned"): "reviewer_test_only_not_redistributed",
+    ("firefox", "pinned"): "reviewer_test_only_not_redistributed",
+}
 
 DISTRIBUTION_SURFACE_NAMES = (
     "public_export",
@@ -69,6 +76,28 @@ SOURCE_REFERENCE_VALUES: dict[str, object] = {
     "base_branch": "main",
     "base_revision": "343e13bf22dca9d0ec227801419aab0f9001a32f",
 }
+OFFLINE_CHILD_PYTEST_ARGUMENTS = (
+    "-m",
+    "pytest",
+    "tests/test_hf_space_supply_chain.py",
+    "-q",
+)
+OFFLINE_CHILD_NETWORK_BOMB_PROBE_CODE = """\
+import socket
+import urllib.request
+
+for operation in (
+    lambda: socket.create_connection(("127.0.0.1", 1), timeout=0.01),
+    lambda: urllib.request.urlopen("http://127.0.0.1:1", timeout=0.01),
+):
+    try:
+        operation()
+    except RuntimeError as error:
+        if str(error) != "TASK7_NETWORK_BOMB":
+            raise
+    else:
+        raise SystemExit(91)
+"""
 
 
 @dataclass(frozen=True)
@@ -325,6 +354,30 @@ def emit_bounded_lifecycle_event(event: str) -> None:
     print(f"TASK7_OFFLINE_EVENT|{event}", flush=True)
 
 
+def validated_offline_child_argv(argv: Sequence[str]) -> list[str]:
+    if not argv or any(not isinstance(token, str) or "\x00" in token for token in argv):
+        raise ValueError("offline child argv not allowlisted")
+    repo_root = Path(__file__).resolve().parents[1]
+    relative_python = (
+        Path(".venv-space/Scripts/python.exe")
+        if os.name == "nt"
+        else Path(".venv-space/bin/python")
+    )
+    try:
+        expected_python = (repo_root / relative_python).resolve(strict=True)
+        supplied_python = Path(argv[0]).resolve(strict=True)
+    except OSError as error:
+        raise ValueError("offline child argv not allowlisted") from error
+    allowed_arguments = {
+        OFFLINE_CHILD_PYTEST_ARGUMENTS,
+        ("-c", OFFLINE_CHILD_NETWORK_BOMB_PROBE_CODE),
+    }
+    arguments = tuple(argv[1:])
+    if supplied_python != expected_python or arguments not in allowed_arguments:
+        raise ValueError("offline child argv not allowlisted")
+    return [str(expected_python), *arguments]
+
+
 def run_network_bombed_child(
     *,
     source_reference: Path,
@@ -345,12 +398,7 @@ def run_network_bombed_child(
     event_sink("load_reference")
     install_network_bomb()
     event_sink("install_network_bomb")
-    if (
-        not argv
-        or any("\x00" in token for token in argv)
-        or any(token in {"-I", "-S"} for token in argv)
-    ):
-        raise ValueError("source reference phase contract")
+    command = validated_offline_child_argv(argv)
     event_sink("spawn_child")
     sitecustomize = """\
 import socket
@@ -378,10 +426,9 @@ urllib.request.urlopen = _carerisk_task7_blocked
             "ALL_PROXY": "http://127.0.0.1:9",
             "NO_PROXY": "",
             "PYTHONNOUSERSITE": "1",
-            "PYTHONPATH": str(bomb_root)
-            + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""),
+            "PYTHONPATH": str(bomb_root),
         }
-        return subprocess.run(list(argv), check=False, env=child_environment).returncode
+        return subprocess.run(command, check=False, env=child_environment).returncode
 
 
 def direct_pins(path: Path) -> dict[str, str]:
@@ -1053,19 +1100,17 @@ def image_records(base: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]
         (
             "python-runtime-base",
             "3.11",
-            "LicenseRef-Aggregate-Reviewed-Python-Debian-Image",
             f"https://hub.docker.com/_/python@{runtime['linux_amd64_digest']}",
             runtime,
         ),
         (
             "playwright-reviewer-base",
             "1.62.0",
-            "LicenseRef-Aggregate-Reviewed-Playwright-Ubuntu-Image",
             f"https://mcr.microsoft.com/v2/playwright/python/manifests/{reviewer['linux_amd64_digest']}",
             reviewer,
         ),
     ]
-    for name, version, expression, source, image in specifications:
+    for name, version, source, image in specifications:
         system_notices = [
             {
                 "architecture": item["architecture"],
@@ -1078,32 +1123,36 @@ def image_records(base: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]
             for item in image["system_inventory"]
             if item["copyright_sha256"] is not None
         ]
-        result[(name, version)] = _approved_record(
+        evidence = {
+            "claim_ceiling": AGGREGATE_CLAIM_CEILING,
+            "image_notice_files": image["image_notice_files"],
+            "review_basis": "exact_image_manifest_system_inventory_and_notices",
+            "system_inventory_sha256": image["system_inventory_sha256"],
+            "system_package_copyright_files": system_notices,
+        }
+        result[(name, version)] = _uncertain_aggregate_record(
             package=name,
             version=version,
             hashes=[image["linux_amd64_digest"][7:]],
-            declared=expression,
-            evidence={
-                "image_notice_files": image["image_notice_files"],
-                "review_basis": "exact_image_manifest_system_inventory_and_notices",
-                "system_inventory_sha256": image["system_inventory_sha256"],
-                "system_package_copyright_files": system_notices,
-            },
+            evidence=evidence,
+            disposition=UNCERTAIN_AGGREGATE_DISPOSITIONS[(name, version)],
             source_url=source,
         )
     for name in ("chromium", "firefox"):
         evidence = reviewer["embedded_browsers"][name]
-        result[(name, "pinned")] = _approved_record(
+        key = (name, "pinned")
+        result[key] = _uncertain_aggregate_record(
             package=name,
             version="pinned",
             hashes=[evidence["content_identity"]["sha256"]],
-            declared=f"LicenseRef-Aggregate-Reviewed-{name.capitalize()}-Binary-Notices",
             evidence={
+                "claim_ceiling": AGGREGATE_CLAIM_CEILING,
                 "content_identity": evidence["content_identity"],
                 "notice_files": evidence["notice_files"],
                 "revision": evidence["revision"],
                 "review_basis": "exact_reviewer_image_browser_inventory_and_notices",
             },
+            disposition=UNCERTAIN_AGGREGATE_DISPOSITIONS[key],
             source_url=f"https://mcr.microsoft.com/v2/playwright/python/manifests/{reviewer['linux_amd64_digest']}",
         )
     support = reviewer["embedded_support_records"]["ffmpeg-1011"]
@@ -1147,6 +1196,18 @@ def validate_license_policy(
             continue
         declared = record.get("licenseDeclared")
         concluded = record.get("licenseConcluded")
+        if key in UNCERTAIN_AGGREGATE_DISPOSITIONS:
+            evidence = record.get("license_evidence")
+            if (
+                declared != "NOASSERTION"
+                or concluded != "NOASSERTION"
+                or record.get("review_disposition") != UNCERTAIN_AGGREGATE_DISPOSITIONS[key]
+                or not isinstance(evidence, dict)
+                or evidence.get("claim_ceiling") != AGGREGATE_CLAIM_CEILING
+            ):
+                raise ValueError(f"uncertain aggregate policy record invalid: {key}")
+            result[key] = dict(record)
+            continue
         if declared == "NOASSERTION" or concluded == "NOASSERTION":
             raise ValueError("NOASSERTION outside exact reviewer-only WebKit")
         if (
@@ -1173,6 +1234,124 @@ def validate_license_policy(
 
 def policy_records(document: dict[str, Any]) -> dict[tuple[str, str], dict[str, object]]:
     return validate_license_policy(document)
+
+
+LicenseTrustIdentity = tuple[str, str, tuple[str, ...]]
+LicenseTrustRoot = dict[LicenseTrustIdentity, dict[str, object]]
+LICENSE_TRUST_ROOT_FIELDS = {
+    "artifact_sha256",
+    "claim_ceiling",
+    "licenseConcluded",
+    "licenseDeclared",
+    "package",
+    "review_disposition",
+    "source_url",
+    "version",
+}
+
+
+def _license_trust_identity(
+    record: Mapping[str, object],
+) -> LicenseTrustIdentity:
+    package = record.get("package")
+    version = record.get("version")
+    artifacts = record.get("artifact_sha256")
+    if (
+        not isinstance(package, str)
+        or canonical_name(package) != package
+        or not isinstance(version, str)
+        or not version
+        or not isinstance(artifacts, list)
+        or artifacts != sorted(set(artifacts))
+        or any(
+            not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in artifacts
+        )
+    ):
+        raise ValueError("license trust root artifact identity invalid")
+    return package, version, tuple(artifacts)
+
+
+def _license_trust_projection(
+    record: Mapping[str, object],
+    *,
+    root_entry: bool,
+) -> dict[str, object]:
+    package, version, artifacts = _license_trust_identity(record)
+    declared = record.get("licenseDeclared")
+    concluded = record.get("licenseConcluded")
+    disposition = record.get("review_disposition")
+    source_url = record.get("source_url")
+    if source_url is None and (package, version) == ("webkit", "26.5"):
+        source_url = exact_webkit_reviewer_policy().playwright_tag_url
+    if root_entry:
+        claim_ceiling = record.get("claim_ceiling")
+    else:
+        evidence = record.get("license_evidence")
+        claim_ceiling = evidence.get("claim_ceiling") if isinstance(evidence, dict) else None
+    if (
+        not isinstance(declared, str)
+        or not declared
+        or not isinstance(concluded, str)
+        or not concluded
+        or not isinstance(disposition, str)
+        or not disposition
+        or not isinstance(source_url, str)
+        or not source_url
+        or (claim_ceiling is not None and not isinstance(claim_ceiling, str))
+    ):
+        raise ValueError("license trust root projection invalid")
+    return {
+        "artifact_sha256": list(artifacts),
+        "claim_ceiling": claim_ceiling,
+        "licenseConcluded": concluded,
+        "licenseDeclared": declared,
+        "package": package,
+        "review_disposition": disposition,
+        "source_url": source_url,
+        "version": version,
+    }
+
+
+def load_license_trust_root(path: Path) -> LicenseTrustRoot:
+    document = canonical_document(path)
+    components = document.get("components")
+    if document.get("schema_version") != 1 or not isinstance(components, list):
+        raise ValueError("license trust root schema invalid")
+    result: LicenseTrustRoot = {}
+    observed_identities: list[LicenseTrustIdentity] = []
+    for component in components:
+        if not isinstance(component, dict) or set(component) != LICENSE_TRUST_ROOT_FIELDS:
+            raise ValueError("license trust root entry invalid")
+        identity = _license_trust_identity(component)
+        if identity in result:
+            raise ValueError("license trust root duplicate identity")
+        result[identity] = _license_trust_projection(component, root_entry=True)
+        observed_identities.append(identity)
+    if not result or observed_identities != sorted(observed_identities):
+        raise ValueError("license trust root ordering invalid")
+    return result
+
+
+def validate_records_against_license_trust_root(
+    records: Mapping[tuple[str, str], Mapping[str, object]],
+    trust_root: Mapping[LicenseTrustIdentity, Mapping[str, object]],
+    *,
+    surface: str,
+) -> None:
+    observed: LicenseTrustRoot = {}
+    for record in records.values():
+        identity = _license_trust_identity(record)
+        if identity in observed:
+            raise ValueError(f"{surface} differs from license trust root")
+        observed[identity] = _license_trust_projection(record, root_entry=False)
+    expected = {
+        identity: dict(projection)
+        for identity, projection in trust_root.items()
+        if identity[:2] != ("carerisk-space", "0.2.0")
+    }
+    if observed != expected:
+        raise ValueError(f"{surface} differs from license trust root")
 
 
 def validate_distribution_exclusion(surfaces: Sequence[DistributionSurface]) -> None:
@@ -1555,6 +1734,29 @@ def _approved_record(
     }
 
 
+def _uncertain_aggregate_record(
+    *,
+    package: str,
+    version: str,
+    hashes: Sequence[str],
+    evidence: Mapping[str, object],
+    disposition: str,
+    source_url: str,
+) -> dict[str, object]:
+    return {
+        "artifact_sha256": sorted(set(hashes)),
+        "complete_digest_bound_notice": False,
+        "distribution_scope": "runtime_or_review_tooling",
+        "licenseConcluded": "NOASSERTION",
+        "licenseDeclared": "NOASSERTION",
+        "license_evidence": dict(evidence),
+        "package": package,
+        "review_disposition": disposition,
+        "source_url": source_url,
+        "version": version,
+    }
+
+
 def reviewed_policy_records_from_wheels(
     base: Mapping[str, object],
     runtime: Mapping[tuple[str, str], tuple[str, ...]],
@@ -1649,31 +1851,22 @@ def validate_policy_against_frozen_inputs(
 
 
 def expected_spdx_document(
-    policy: Mapping[tuple[str, str], Mapping[str, object]],
+    trust_root: Mapping[LicenseTrustIdentity, Mapping[str, object]],
 ) -> dict[str, object]:
-    package_keys = sorted(set(policy) | {("carerisk-space", "0.2.0")})
     packages: list[dict[str, object]] = []
-    for name, version in package_keys:
-        if name == "carerisk-space":
-            declared = concluded = "Apache-2.0"
-            source_url = "https://github.com/kuotunyu/CareRisk-48H"
-            hashes: Sequence[str] = ()
-        else:
-            record = policy[(name, version)]
-            declared = str(record["licenseDeclared"])
-            concluded = str(record["licenseConcluded"])
-            source_url = str(
-                record.get("source_url", exact_webkit_reviewer_policy().playwright_tag_url)
-            )
-            record_hashes = record["artifact_sha256"]
-            if not isinstance(record_hashes, list):
-                raise ValueError("license policy artifact hash drift")
-            hashes = [str(value) for value in record_hashes]
+    package_keys: list[tuple[str, str]] = []
+    for identity in sorted(trust_root):
+        name, version, hashes = identity
+        record = trust_root[identity]
+        package_keys.append((name, version))
+        declared = str(record["licenseDeclared"])
+        concluded = str(record["licenseConcluded"])
+        source_url = str(record["source_url"])
         packages.append(
             {
                 "SPDXID": spdx_id(name, version),
                 "checksums": [
-                    {"algorithm": "SHA256", "checksumValue": digest} for digest in sorted(hashes)
+                    {"algorithm": "SHA256", "checksumValue": digest} for digest in hashes
                 ],
                 "copyrightText": "NOASSERTION",
                 "downloadLocation": source_url,
@@ -1707,6 +1900,25 @@ def expected_spdx_document(
     }
 
 
+def validate_spdx_against_license_trust_root(
+    document: Mapping[str, object],
+    trust_root: Mapping[LicenseTrustIdentity, Mapping[str, object]],
+) -> None:
+    expected = expected_spdx_document(trust_root)
+    if document.get("packages") != expected["packages"]:
+        raise ValueError("SPDX package projection drift: SBOM differs from license trust root")
+    if document.get("relationships") != expected["relationships"]:
+        raise ValueError("SPDX relationships drift: SBOM differs from license trust root")
+    observed_metadata = {
+        key: value for key, value in document.items() if key not in {"packages", "relationships"}
+    }
+    expected_metadata = {
+        key: value for key, value in expected.items() if key not in {"packages", "relationships"}
+    }
+    if observed_metadata != expected_metadata:
+        raise ValueError("SPDX document metadata drift: SBOM differs from license trust root")
+
+
 def build_inventory_and_sbom(
     args: argparse.Namespace,
     *,
@@ -1734,9 +1946,24 @@ def build_inventory_and_sbom(
     policy_path = Path(args.license_policy)
     policy = validate_license_policy(canonical_document(policy_path))
     validate_policy_against_frozen_inputs(policy, base, runtime, development)
+    trust_root = load_license_trust_root(policy_path.with_name("license-trust-root.json"))
+    validate_records_against_license_trust_root(
+        policy,
+        trust_root,
+        surface="license policy",
+    )
     components = [policy[key] for key in sorted(policy)]
-    write_json(Path(args.licenses_output), {"components": components, "document_version": 1})
-    write_json(Path(args.sbom_output), expected_spdx_document(policy))
+    license_inventory = {"components": components, "document_version": 1}
+    inventory_records = validate_license_policy(license_inventory)
+    validate_records_against_license_trust_root(
+        inventory_records,
+        trust_root,
+        surface="THIRD_PARTY_LICENSES",
+    )
+    spdx = expected_spdx_document(trust_root)
+    validate_spdx_against_license_trust_root(spdx, trust_root)
+    write_json(Path(args.licenses_output), license_inventory)
+    write_json(Path(args.sbom_output), spdx)
 
 
 def build_inventory(args: argparse.Namespace) -> int:
@@ -1809,21 +2036,23 @@ def verify_all(
         raise ValueError("policy coverage mismatch")
     base = canonical_document(base_path)
     validate_policy_against_frozen_inputs(policy, base, runtime, development)
+    trust_root = load_license_trust_root(repo_root / "tools/space/license-trust-root.json")
+    validate_records_against_license_trust_root(
+        policy,
+        trust_root,
+        surface="license policy",
+    )
     licenses = canonical_document(repo_root / "space/THIRD_PARTY_LICENSES.json")
+    inventory_records = validate_license_policy(licenses)
+    validate_records_against_license_trust_root(
+        inventory_records,
+        trust_root,
+        surface="THIRD_PARTY_LICENSES",
+    )
     if licenses.get("components") != [policy[key] for key in sorted(policy)]:
         raise ValueError("license inventory differs from policy")
     sbom = canonical_document(repo_root / "space/SBOM.spdx.json")
-    expected_spdx = expected_spdx_document(policy)
-    if sbom.get("packages") != expected_spdx["packages"]:
-        raise ValueError("SPDX package projection drift")
-    if sbom.get("relationships") != expected_spdx["relationships"]:
-        raise ValueError("SPDX relationships drift")
-    if {key: value for key, value in sbom.items() if key not in {"packages", "relationships"}} != {
-        key: value
-        for key, value in expected_spdx.items()
-        if key not in {"packages", "relationships"}
-    }:
-        raise ValueError("SPDX document metadata drift")
+    validate_spdx_against_license_trust_root(sbom, trust_root)
     webkit_packages = [
         item
         for item in sbom.get("packages", [])

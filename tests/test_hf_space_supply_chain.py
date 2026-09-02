@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import re
@@ -20,9 +21,26 @@ RUNTIME_LOCK = ROOT / "space" / "requirements.lock"
 DEVELOPMENT_LOCK = ROOT / "space" / "requirements-dev.lock"
 BASE_IMAGE = ROOT / "tools" / "space" / "base-image.json"
 LICENSE_POLICY = ROOT / "tools" / "space" / "license-policy.json"
+LICENSE_TRUST_ROOT = ROOT / "tools" / "space" / "license-trust-root.json"
 SBOM = ROOT / "space" / "SBOM.spdx.json"
 LICENSES = ROOT / "space" / "THIRD_PARTY_LICENSES.json"
 GENERATOR = ROOT / "scripts" / "build_hf_space_supply_chain.py"
+CHILD_NETWORK_BOMB_PROBE_CODE = """\
+import socket
+import urllib.request
+
+for operation in (
+    lambda: socket.create_connection(("127.0.0.1", 1), timeout=0.01),
+    lambda: urllib.request.urlopen("http://127.0.0.1:1", timeout=0.01),
+):
+    try:
+        operation()
+    except RuntimeError as error:
+        if str(error) != "TASK7_NETWORK_BOMB":
+            raise
+    else:
+        raise SystemExit(91)
+"""
 
 
 @dataclass(frozen=True)
@@ -275,15 +293,18 @@ def _policy_document(*records: dict[str, object]) -> dict[str, object]:
 
 WEBKIT_MUTATION_FIELDS = tuple(exact_webkit_policy_dict())[2:]
 ORDINARY_COMPONENTS = (
-    "python-runtime-base",
-    "playwright-reviewer-base",
-    "chromium",
-    "firefox",
     "ffmpeg",
     "gradio",
     "debian:libc6",
     "anyio",
 )
+AGGREGATE_CLAIM_CEILING = "aggregate_identity_and_notice_evidence_only_no_single_spdx_conclusion"
+UNCERTAIN_AGGREGATE_COMPONENTS = {
+    ("python-runtime-base", "3.11"): "runtime_distribution_not_license_approved",
+    ("playwright-reviewer-base", "1.62.0"): "reviewer_test_only_not_redistributed",
+    ("chromium", "pinned"): "reviewer_test_only_not_redistributed",
+    ("firefox", "pinned"): "reviewer_test_only_not_redistributed",
+}
 REVIEWER_BYTE_SIGNATURES = (
     "sha256:51d31fdfacb0cff99a1a724152e34ae408d2bd4e7da310ff157450f49261cc59",
     "/ms-playwright",
@@ -502,7 +523,7 @@ def test_offline_test_installs_network_bomb_before_argv() -> None:
             phase="offline_verify",
             offline=True,
             network_bomb=True,
-            argv=(sys.executable, "-c", "raise SystemExit(0)"),
+            argv=(sys.executable, "-c", CHILD_NETWORK_BOMB_PROBE_CODE),
             event_sink=events.append,
         )
         assert result == 0
@@ -514,22 +535,6 @@ def test_offline_test_installs_network_bomb_before_argv() -> None:
 def test_offline_test_child_enforces_socket_and_urllib_network_bomb() -> None:
     module = _supply_chain_module()
     path, run_guid = _source_reference_file()
-    child_code = """
-import socket
-import urllib.request
-
-for operation in (
-    lambda: socket.create_connection(("127.0.0.1", 1), timeout=0.01),
-    lambda: urllib.request.urlopen("http://127.0.0.1:1", timeout=0.01),
-):
-    try:
-        operation()
-    except RuntimeError as error:
-        if str(error) != "TASK7_NETWORK_BOMB":
-            raise
-    else:
-        raise SystemExit(91)
-"""
     try:
         result = module.run_network_bombed_child(
             source_reference=path,
@@ -537,12 +542,52 @@ for operation in (
             phase="offline_verify",
             offline=True,
             network_bomb=True,
-            argv=(sys.executable, "-c", child_code),
+            argv=(sys.executable, "-c", CHILD_NETWORK_BOMB_PROBE_CODE),
             event_sink=lambda _event: None,
         )
         assert result == 0
     finally:
         _remove_source_reference(path)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    (
+        ("definitely-not-python", "-c", "raise SystemExit(0)"),
+        (sys.executable, "-Iu", "-c", "raise SystemExit(0)"),
+        (sys.executable, "-Es", "-c", "raise SystemExit(0)"),
+        (sys.executable, "-Ss", "-c", "raise SystemExit(0)"),
+        (sys.executable, "-Is", "-c", "raise SystemExit(0)"),
+        (sys.executable, "-E", "-c", "raise SystemExit(0)"),
+        (sys.executable, "-s", "-c", "raise SystemExit(0)"),
+        (sys.executable, "-S", "-c", "raise SystemExit(0)"),
+        (sys.executable, "-I", "-c", "raise SystemExit(0)"),
+    ),
+)
+def test_offline_child_argv_is_deny_by_default(argv: tuple[str, ...]) -> None:
+    module = _supply_chain_module()
+    path, run_guid = _source_reference_file()
+    try:
+        with pytest.raises(ValueError, match="offline child argv not allowlisted"):
+            module.run_network_bombed_child(
+                source_reference=path,
+                run_guid=run_guid,
+                phase="offline_verify",
+                offline=True,
+                network_bomb=True,
+                argv=argv,
+                event_sink=lambda _event: None,
+            )
+    finally:
+        _remove_source_reference(path)
+
+
+def test_acquisition_commands_are_not_available_in_offline_cli() -> None:
+    module = _supply_chain_module()
+    parser = module.build_parser()
+    for command in ("lock", "resolve-images", "acquire-wheels"):
+        with pytest.raises(SystemExit):
+            parser.parse_args([command])
 
 
 @pytest.mark.parametrize("package", ORDINARY_COMPONENTS)
@@ -755,7 +800,55 @@ def test_policy_uses_extracted_wheel_and_image_evidence_not_placeholders() -> No
         evidence = records[key]["license_evidence"]
         assert isinstance(evidence, dict)
         assert evidence["review_basis"].startswith("exact_")
-        assert "claim_ceiling" not in evidence
+        assert evidence["claim_ceiling"] == AGGREGATE_CLAIM_CEILING
+
+
+def test_uncertain_aggregate_components_are_not_reported_as_license_approved() -> None:
+    policy_records = {
+        (_canonical_package_name(str(item["package"])), str(item["version"])): item
+        for item in json.loads(LICENSE_POLICY.read_text(encoding="utf-8"))["components"]
+    }
+    inventory_records = {
+        (_canonical_package_name(str(item["package"])), str(item["version"])): item
+        for item in load_licenses(LICENSES)
+    }
+    sbom_records = {
+        (_canonical_package_name(str(item["name"])), str(item["versionInfo"])): item
+        for item in json.loads(SBOM.read_text(encoding="utf-8"))["packages"]
+    }
+    for key, disposition in UNCERTAIN_AGGREGATE_COMPONENTS.items():
+        for records in (policy_records, inventory_records):
+            record = records[key]
+            assert record["licenseDeclared"] == "NOASSERTION"
+            assert record["licenseConcluded"] == "NOASSERTION"
+            assert record["review_disposition"] == disposition
+            evidence = record["license_evidence"]
+            assert isinstance(evidence, dict)
+            assert evidence["claim_ceiling"] == AGGREGATE_CLAIM_CEILING
+        assert sbom_records[key]["licenseDeclared"] == "NOASSERTION"
+        assert sbom_records[key]["licenseConcluded"] == "NOASSERTION"
+
+
+def test_static_license_trust_root_is_exact_artifact_indexed() -> None:
+    root = json.loads(LICENSE_TRUST_ROOT.read_text(encoding="utf-8"))
+    assert root["schema_version"] == 1
+    entries = root["components"]
+    identities = [
+        (
+            _canonical_package_name(str(item["package"])),
+            str(item["version"]),
+            tuple(item["artifact_sha256"]),
+        )
+        for item in entries
+    ]
+    assert identities == sorted(identities)
+    assert len(identities) == len(set(identities))
+    assert all(
+        all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in hashes)
+        for _name, _version, hashes in identities
+    )
+    expected = license_inventory_keys(LICENSES) | {("carerisk-space", "0.2.0")}
+    assert {(name, version) for name, version, _hashes in identities} == expected
 
 
 def test_webkit_absence_proof_is_recomputed_from_ordered_tree_inventory() -> None:
@@ -824,8 +917,117 @@ def test_sbom_and_license_inventory_cover_every_lock_package_once() -> None:
         and item["licenseDeclared"] != "NOASSERTION"
         and item["licenseConcluded"] != "NOASSERTION"
         for key, item in records.items()
-        if key != ("webkit", "26.5")
+        if key != ("webkit", "26.5") and key not in UNCERTAIN_AGGREGATE_COMPONENTS
     )
+
+
+def _copy_supply_chain_tree(destination_root: Path) -> None:
+    for relative in (
+        "tools/space/requirements-runtime.in",
+        "tools/space/requirements-dev.in",
+        "tools/space/lock-tooling.txt",
+        "tools/space/base-image.json",
+        "tools/space/license-policy.json",
+        "tools/space/license-trust-root.json",
+        "space/requirements.lock",
+        "space/requirements-dev.lock",
+        "space/SBOM.spdx.json",
+        "space/THIRD_PARTY_LICENSES.json",
+    ):
+        destination = destination_root / relative
+        if not (ROOT / relative).exists() and relative == "tools/space/license-trust-root.json":
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+
+
+def _write_canonical_json(path: Path, document: object) -> None:
+    path.write_text(
+        json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _tamper_gradio_license(path: Path, surface: str) -> None:
+    document = json.loads(path.read_text(encoding="utf-8"))
+    records = document["packages"] if surface == "sbom" else document["components"]
+    name_key = "name" if surface == "sbom" else "package"
+    [record] = [item for item in records if item[name_key] == "gradio"]
+    record["licenseDeclared"] = "MIT"
+    record["licenseConcluded"] = "MIT"
+    if surface == "sbom":
+        package_bytes = (
+            json.dumps(records, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+        document["documentNamespace"] = (
+            "https://github.com/kuotunyu/CareRisk-48H/spdx/"
+            + hashlib.sha256(package_bytes).hexdigest()
+        )
+    _write_canonical_json(path, document)
+
+
+@pytest.mark.parametrize("surface", ("policy", "inventory", "sbom"))
+def test_each_license_output_is_validated_independently_against_trust_root(
+    tmp_path: Path, surface: str
+) -> None:
+    module = _supply_chain_module()
+    _copy_supply_chain_tree(tmp_path)
+    paths = {
+        "policy": tmp_path / "tools/space/license-policy.json",
+        "inventory": tmp_path / "space/THIRD_PARTY_LICENSES.json",
+        "sbom": tmp_path / "space/SBOM.spdx.json",
+    }
+    _tamper_gradio_license(paths[surface], surface)
+    path, run_guid = _source_reference_file()
+    try:
+        source_reference = module.load_webkit_source_reference(
+            path,
+            run_guid=run_guid,
+            phase="offline_verify",
+            offline=True,
+            network_bomb=True,
+        )
+        with pytest.raises(ValueError, match="license trust root"):
+            module.verify_all(
+                tmp_path,
+                source_reference=source_reference,
+                offline=True,
+                network_bomb=True,
+            )
+    finally:
+        _remove_source_reference(path)
+
+
+def test_coherent_tampering_of_all_three_license_outputs_fails(
+    tmp_path: Path,
+) -> None:
+    module = _supply_chain_module()
+    _copy_supply_chain_tree(tmp_path)
+    for surface, relative in (
+        ("policy", "tools/space/license-policy.json"),
+        ("inventory", "space/THIRD_PARTY_LICENSES.json"),
+        ("sbom", "space/SBOM.spdx.json"),
+    ):
+        _tamper_gradio_license(tmp_path / relative, surface)
+    path, run_guid = _source_reference_file()
+    try:
+        source_reference = module.load_webkit_source_reference(
+            path,
+            run_guid=run_guid,
+            phase="offline_verify",
+            offline=True,
+            network_bomb=True,
+        )
+        with pytest.raises(ValueError, match="license trust root"):
+            module.verify_all(
+                tmp_path,
+                source_reference=source_reference,
+                offline=True,
+                network_bomb=True,
+            )
+    finally:
+        _remove_source_reference(path)
 
 
 def test_verify_all_accepts_the_committed_supply_chain_outputs() -> None:
@@ -864,6 +1066,7 @@ def test_verify_all_rejects_each_ordinary_spdx_projection_drift(
         "tools/space/lock-tooling.txt",
         "tools/space/base-image.json",
         "tools/space/license-policy.json",
+        "tools/space/license-trust-root.json",
         "space/requirements.lock",
         "space/requirements-dev.lock",
         "space/SBOM.spdx.json",
