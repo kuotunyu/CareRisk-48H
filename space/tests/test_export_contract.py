@@ -150,11 +150,37 @@ EXPECTED_SBOM_WEBKIT_RECORD_SHA256 = (
 EXPECTED_THIRD_PARTY_WEBKIT_RECORD_SHA256 = (
     "20831fd7b773fe13bf5a7508181b301b49bb9d0e0d89ccc4d1b25ac8baca7046"
 )
-EXPECTED_THIRD_PARTY_BROWSER_RECORD_SHA256 = {
-    "chromium": "116821ea11186ffc5eab80b7740f38dc162b0f61b1f1aac30eb6bde5bf8b7705",
-    "firefox": "f438e37eee9b74996b1afdca3244ad4ce2aaf9f5bb3bf05995b03795e38431bf",
-    "webkit": EXPECTED_THIRD_PARTY_WEBKIT_RECORD_SHA256,
-    "ffmpeg": "1c9e9d22be5dd9d05d8b76af7d5510517eb45c457c0d88ffafdd711a32a11264",
+EXPECTED_APPROVED_ORDINARY_BROWSER_RECORD_SHA256 = {
+    "SBOM.spdx.json": {
+        "chromium": "2b1061e9e52c75ce9b54a50f53053bb1eafde3b89e45f371a5e1d2dac0eae58b",
+        "firefox": "16649a7fa3e21bfd9940ee290dbd2dfb87a9236e49a67e4b6814bcb9b3aa71ca",
+        "ffmpeg": "325b0dde219da78a258c1e52aa1514fe50512bc40546db0aaa03652000448bbf",
+    },
+    "THIRD_PARTY_LICENSES.json": {
+        "chromium": "116821ea11186ffc5eab80b7740f38dc162b0f61b1f1aac30eb6bde5bf8b7705",
+        "firefox": "f438e37eee9b74996b1afdca3244ad4ce2aaf9f5bb3bf05995b03795e38431bf",
+        "ffmpeg": "1c9e9d22be5dd9d05d8b76af7d5510517eb45c457c0d88ffafdd711a32a11264",
+    },
+}
+EXPECTED_APPROVED_ORDINARY_BROWSER_COMPATIBILITY = {
+    "SBOM.spdx.json": {
+        "chromium": ("NOASSERTION", "NOASSERTION", None),
+        "firefox": ("NOASSERTION", "NOASSERTION", None),
+        "ffmpeg": ("LGPL-2.1-only", "LGPL-2.1-only", None),
+    },
+    "THIRD_PARTY_LICENSES.json": {
+        "chromium": (
+            "NOASSERTION",
+            "NOASSERTION",
+            "reviewer_test_only_" "not_redistributed",
+        ),
+        "firefox": (
+            "NOASSERTION",
+            "NOASSERTION",
+            "reviewer_test_only_" "not_redistributed",
+        ),
+        "ffmpeg": ("LGPL-2.1-only", "LGPL-2.1-only", "approved"),
+    },
 }
 
 
@@ -254,23 +280,66 @@ def assert_no_reviewer_or_browser_bytes(bundle_root: Path) -> None:
         candidate = bundle_root.joinpath(*path.split("/"))
         if candidate.exists():
             raw = candidate.read_bytes()
-            if path == "THIRD_PARTY_LICENSES.json":
+            if path in WEBKIT_METADATA_PATHS:
                 value = json.loads(raw)
-                for record in value["components"]:
-                    package = record.get("package")
-                    if package in EXPECTED_THIRD_PARTY_BROWSER_RECORD_SHA256:
-                        assert (
-                            _canonical_record_sha256(record)
-                            == EXPECTED_THIRD_PARTY_BROWSER_RECORD_SHA256[package]
-                        )
-                        encoded = json.dumps(
-                            record,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ).encode()
-                        assert raw.count(encoded) == 1
-                        raw = raw.replace(encoded, b"", 1)
+                collection_key = "packages" if path == "SBOM.spdx.json" else "components"
+                identity_key = "name" if path == "SBOM.spdx.json" else "package"
+                records = value[collection_key]
+                expected_hashes = EXPECTED_APPROVED_ORDINARY_BROWSER_RECORD_SHA256[path]
+                expected_compatibility = EXPECTED_APPROVED_ORDINARY_BROWSER_COMPATIBILITY[path]
+                browser_identities = frozenset((*expected_hashes, "webkit"))
+
+                for record in records:
+                    for other_key in ("name", "package"):
+                        identity = str(record.get(other_key, "")).casefold()
+                        if any(browser in identity for browser in browser_identities):
+                            assert other_key == identity_key
+                            assert identity in browser_identities
+
+                for identity, expected_hash in expected_hashes.items():
+                    matches = [record for record in records if record.get(identity_key) == identity]
+                    assert len(matches) == 1
+                    record = matches[0]
+                    assert _canonical_record_sha256(record) == expected_hash
+                    assert (
+                        record.get("licenseDeclared"),
+                        record.get("licenseConcluded"),
+                        record.get("review_disposition"),
+                    ) == expected_compatibility[identity]
+                    encoded = json.dumps(
+                        record,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                    assert raw.count(encoded) == 1
+                    raw = raw.replace(encoded, b"", 1)
+
+                webkit_records = [
+                    record for record in records if record.get(identity_key) == "webkit"
+                ]
+                assert len(webkit_records) == 1
+                webkit_record = webkit_records[0]
+                expected_webkit_hash = (
+                    EXPECTED_SBOM_WEBKIT_RECORD_SHA256
+                    if path == "SBOM.spdx.json"
+                    else EXPECTED_THIRD_PARTY_WEBKIT_RECORD_SHA256
+                )
+                assert _canonical_record_sha256(webkit_record) == expected_webkit_hash
+                assert webkit_record.get("licenseDeclared") == "NOASSERTION"
+                assert webkit_record.get("licenseConcluded") == "NOASSERTION"
+                if path == "THIRD_PARTY_LICENSES.json":
+                    assert webkit_record.get("review_disposition") == (
+                        "reviewer_test_only_" "not_redistributed"
+                    )
+                encoded = json.dumps(
+                    webkit_record,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+                assert raw.count(encoded) == 1
+                raw = raw.replace(encoded, b"", 1)
             assert all(token not in raw for token in REVIEWER_BROWSER_BYTE_SIGNATURES)
 
 

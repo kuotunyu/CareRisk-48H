@@ -26,6 +26,7 @@ from space.tests.test_export_contract import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TASK7_SOURCE_SHA = "78faab4d274ea14a6cfc945428600a6fafc24eed"
 TAG_OBJECT_SHA = "2f1ddb0e2276fa894e124b856de488e31e21e88c"
 TAG_COMMIT_SHA = "f4c820cce953f401c1ec525bd8df3a3c1678bbf3"
 RECEIPT_BLOB_SHA = "b13ec7655bbdb8db1079c3b4793a0bf5590ef69c"
@@ -245,13 +246,61 @@ def _default_app_files() -> dict[str, bytes]:
         source_path: f"synthetic committed bytes for {source_path}\n".encode()
         for source_path in EXPECTED_APP_SOURCE_MAP.values()
     }
+    sbom = json.loads(
+        _git(PROJECT_ROOT, "show", f"{TASK7_SOURCE_SHA}:space/SBOM.spdx.json")
+    )
+    third_party = json.loads(
+        _git(
+            PROJECT_ROOT,
+            "show",
+            f"{TASK7_SOURCE_SHA}:space/THIRD_PARTY_LICENSES.json",
+        )
+    )
+    browser_identities = {"chromium", "firefox", "ffmpeg", "webkit"}
     files["space/SBOM.spdx.json"] = _canonical_json(
-        {"packages": [SBOM_WEBKIT_RECORD], "spdxVersion": "SPDX-2.3"}
+        {
+            "packages": [
+                record for record in sbom["packages"] if record.get("name") in browser_identities
+            ],
+            "spdxVersion": "SPDX-2.3",
+        }
     )
     files["space/THIRD_PARTY_LICENSES.json"] = _canonical_json(
-        {"components": [THIRD_PARTY_WEBKIT_RECORD], "document_version": 1}
+        {
+            "components": [
+                record
+                for record in third_party["components"]
+                if record.get("package") in browser_identities
+            ],
+            "document_version": 1,
+        }
     )
     return files
+
+
+def _metadata_document(destination: str) -> tuple[dict[str, object], str, str]:
+    raw = _default_app_files()[EXPECTED_APP_SOURCE_MAP[destination]]
+    document = json.loads(raw)
+    if destination == "SBOM.spdx.json":
+        return document, "packages", "name"
+    return document, "components", "package"
+
+
+def _mutated_metadata(
+    destination: str,
+    identity: str,
+    mutation: Callable[[dict[str, object], list[object], dict[str, object]], None],
+) -> bytes:
+    document, collection_key, identity_key = _metadata_document(destination)
+    records = document[collection_key]
+    assert isinstance(records, list)
+    record = next(
+        item
+        for item in records
+        if isinstance(item, dict) and item.get(identity_key) == identity
+    )
+    mutation(document, records, record)
+    return _canonical_json(document)
 
 
 def _manifest(
@@ -609,6 +658,165 @@ def test_export_contains_webkit_policy_metadata_but_no_reviewer_or_browser_bytes
     )
     assert_exact_webkit_metadata_only(receipt.destination)
     assert_no_reviewer_or_browser_bytes(receipt.destination)
+
+
+@pytest.mark.parametrize("identity", ["chromium", "firefox", "ffmpeg"])
+@pytest.mark.parametrize("destination", ["SBOM.spdx.json", "THIRD_PARTY_LICENSES.json"])
+def test_export_requires_each_approved_ordinary_browser_metadata_record(
+    identity: str,
+    destination: str,
+    exporter_case: ExporterCase,
+) -> None:
+    def remove_record(
+        _document: dict[str, object], records: list[object], record: dict[str, object]
+    ) -> None:
+        records.remove(record)
+
+    raw = _mutated_metadata(destination, identity, remove_record)
+    repo = exporter_case.build(app_override=(destination, raw))
+    with pytest.raises(ExportError, match="approved_browser_metadata_invalid"):
+        export_space(
+            repo_root=repo.root,
+            app_source_sha=repo.app_sha,
+            manifest_source_sha=repo.manifest_sha,
+            destination=repo.destination,
+        )
+
+
+@pytest.mark.parametrize("identity", ["chromium", "firefox", "ffmpeg"])
+@pytest.mark.parametrize(
+    "record_source,destination",
+    [
+        ("SBOM.spdx.json", "SBOM.spdx.json"),
+        ("SBOM.spdx.json", "THIRD_PARTY_LICENSES.json"),
+        ("THIRD_PARTY_LICENSES.json", "SBOM.spdx.json"),
+        ("THIRD_PARTY_LICENSES.json", "THIRD_PARTY_LICENSES.json"),
+    ],
+)
+def test_export_rejects_duplicate_or_wrong_schema_non_webkit_record(
+    identity: str,
+    record_source: str,
+    destination: str,
+    exporter_case: ExporterCase,
+) -> None:
+    source_document, source_collection, source_identity = _metadata_document(record_source)
+    source_records = source_document[source_collection]
+    assert isinstance(source_records, list)
+    inserted = next(
+        dict(item)
+        for item in source_records
+        if isinstance(item, dict) and item.get(source_identity) == identity
+    )
+
+    def insert_record(
+        _document: dict[str, object], records: list[object], _record: dict[str, object]
+    ) -> None:
+        records.append(inserted)
+
+    raw = _mutated_metadata(destination, identity, insert_record)
+    repo = exporter_case.build(app_override=(destination, raw))
+    with pytest.raises(ExportError):
+        export_space(
+            repo_root=repo.root,
+            app_source_sha=repo.app_sha,
+            manifest_source_sha=repo.manifest_sha,
+            destination=repo.destination,
+        )
+
+
+@pytest.mark.parametrize("identity", ["chromium", "firefox", "ffmpeg"])
+@pytest.mark.parametrize("destination", ["SBOM.spdx.json", "THIRD_PARTY_LICENSES.json"])
+def test_export_rejects_unrecognized_browser_record(
+    identity: str,
+    destination: str,
+    exporter_case: ExporterCase,
+) -> None:
+    _document, _collection, identity_key = _metadata_document(destination)
+
+    def add_unrecognized(
+        _document: dict[str, object], records: list[object], record: dict[str, object]
+    ) -> None:
+        added = dict(record)
+        added[identity_key] = f"{identity}-nightly"
+        records.append(added)
+
+    raw = _mutated_metadata(destination, identity, add_unrecognized)
+    repo = exporter_case.build(app_override=(destination, raw))
+    with pytest.raises(ExportError):
+        export_space(
+            repo_root=repo.root,
+            app_source_sha=repo.app_sha,
+            manifest_source_sha=repo.manifest_sha,
+            destination=repo.destination,
+        )
+
+
+@pytest.mark.parametrize(
+    "destination,identity,updates",
+    [
+        ("SBOM.spdx.json", "chromium", {"licenseConcluded": "MIT"}),
+        ("SBOM.spdx.json", "ffmpeg", {"licenseDeclared": "NOASSERTION"}),
+        (
+            "THIRD_PARTY_LICENSES.json",
+            "firefox",
+            {"review_disposition": "approved"},
+        ),
+        (
+            "THIRD_PARTY_LICENSES.json",
+            "ffmpeg",
+            {
+                "licenseDeclared": "NOASSERTION",
+                "licenseConcluded": "NOASSERTION",
+                "review_disposition": "reviewer_test_only_not_redistributed",
+            },
+        ),
+        ("SBOM.spdx.json", "webkit", {"licenseConcluded": "LGPL-2.1-only"}),
+        (
+            "THIRD_PARTY_LICENSES.json",
+            "webkit",
+            {"review_disposition": "approved"},
+        ),
+    ],
+)
+def test_export_rejects_browser_license_or_disposition_drift(
+    destination: str,
+    identity: str,
+    updates: dict[str, object],
+    exporter_case: ExporterCase,
+) -> None:
+    def drift_record(
+        _document: dict[str, object], _records: list[object], record: dict[str, object]
+    ) -> None:
+        record.update(updates)
+
+    raw = _mutated_metadata(destination, identity, drift_record)
+    repo = exporter_case.build(app_override=(destination, raw))
+    with pytest.raises(ExportError):
+        export_space(
+            repo_root=repo.root,
+            app_source_sha=repo.app_sha,
+            manifest_source_sha=repo.manifest_sha,
+            destination=repo.destination,
+        )
+
+
+@pytest.mark.parametrize("token", REVIEWER_BROWSER_BYTE_SIGNATURES)
+@pytest.mark.parametrize("destination", ["SBOM.spdx.json", "THIRD_PARTY_LICENSES.json"])
+def test_export_rejects_residual_browser_signature_in_metadata(
+    token: bytes,
+    destination: str,
+    exporter_case: ExporterCase,
+) -> None:
+    document, _collection, _identity_key = _metadata_document(destination)
+    document["unexpected_browser_payload"] = token.decode()
+    repo = exporter_case.build(app_override=(destination, _canonical_json(document)))
+    with pytest.raises(ExportError, match="reviewer bytes reached public export"):
+        export_space(
+            repo_root=repo.root,
+            app_source_sha=repo.app_sha,
+            manifest_source_sha=repo.manifest_sha,
+            destination=repo.destination,
+        )
 
 
 @pytest.mark.parametrize("token", REVIEWER_BROWSER_BYTE_SIGNATURES)

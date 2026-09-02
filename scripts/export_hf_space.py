@@ -80,17 +80,41 @@ SBOM_WEBKIT_RECORD_SHA256: Final = (
 THIRD_PARTY_WEBKIT_RECORD_SHA256: Final = (
     "20831fd7b773fe13bf5a7508181b301b49bb9d0e0d89ccc4d1b25ac8baca7046"
 )
-_SBOM_BROWSER_RECORD_SHA256 = {
-    "chromium": "2b1061e9e52c75ce9b54a50f53053bb1eafde3b89e45f371a5e1d2dac0eae58b",
-    "firefox": "16649a7fa3e21bfd9940ee290dbd2dfb87a9236e49a67e4b6814bcb9b3aa71ca",
-    "webkit": SBOM_WEBKIT_RECORD_SHA256,
-    "ffmpeg": "325b0dde219da78a258c1e52aa1514fe50512bc40546db0aaa03652000448bbf",
+_APPROVED_ORDINARY_BROWSER_RECORD_SHA256 = {
+    "SBOM.spdx.json": {
+        "chromium": "2b1061e9e52c75ce9b54a50f53053bb1eafde3b89e45f371a5e1d2dac0eae58b",
+        "firefox": "16649a7fa3e21bfd9940ee290dbd2dfb87a9236e49a67e4b6814bcb9b3aa71ca",
+        "ffmpeg": "325b0dde219da78a258c1e52aa1514fe50512bc40546db0aaa03652000448bbf",
+    },
+    "THIRD_PARTY_LICENSES.json": {
+        "chromium": "116821ea11186ffc5eab80b7740f38dc162b0f61b1f1aac30eb6bde5bf8b7705",
+        "firefox": "f438e37eee9b74996b1afdca3244ad4ce2aaf9f5bb3bf05995b03795e38431bf",
+        "ffmpeg": "1c9e9d22be5dd9d05d8b76af7d5510517eb45c457c0d88ffafdd711a32a11264",
+    },
 }
-_THIRD_PARTY_BROWSER_RECORD_SHA256 = {
-    "chromium": "116821ea11186ffc5eab80b7740f38dc162b0f61b1f1aac30eb6bde5bf8b7705",
-    "firefox": "f438e37eee9b74996b1afdca3244ad4ce2aaf9f5bb3bf05995b03795e38431bf",
-    "webkit": THIRD_PARTY_WEBKIT_RECORD_SHA256,
-    "ffmpeg": "1c9e9d22be5dd9d05d8b76af7d5510517eb45c457c0d88ffafdd711a32a11264",
+_APPROVED_ORDINARY_BROWSER_COMPATIBILITY = {
+    ("SBOM.spdx.json", "chromium"): ("NOASSERTION", "NOASSERTION", None),
+    ("SBOM.spdx.json", "firefox"): ("NOASSERTION", "NOASSERTION", None),
+    ("SBOM.spdx.json", "ffmpeg"): ("LGPL-2.1-only", "LGPL-2.1-only", None),
+    ("THIRD_PARTY_LICENSES.json", "chromium"): (
+        "NOASSERTION",
+        "NOASSERTION",
+        "reviewer_test_only_not_redistributed",
+    ),
+    ("THIRD_PARTY_LICENSES.json", "firefox"): (
+        "NOASSERTION",
+        "NOASSERTION",
+        "reviewer_test_only_not_redistributed",
+    ),
+    ("THIRD_PARTY_LICENSES.json", "ffmpeg"): (
+        "LGPL-2.1-only",
+        "LGPL-2.1-only",
+        "approved",
+    ),
+}
+_WEBKIT_REVIEWER_EXCEPTION_RECORD_SHA256 = {
+    "SBOM.spdx.json": SBOM_WEBKIT_RECORD_SHA256,
+    "THIRD_PARTY_LICENSES.json": THIRD_PARTY_WEBKIT_RECORD_SHA256,
 }
 
 _SHA40 = re.compile(r"[0-9a-f]{40}")
@@ -430,7 +454,105 @@ def _record_sha256(value: object) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _validate_webkit_metadata(blobs: dict[str, _Blob]) -> None:
+def _subtract_exact_metadata_record(
+    residual: bytes,
+    records: list[dict[str, object]],
+    *,
+    identity_key: str,
+    identity: str,
+    expected_sha256: str,
+    error: str,
+) -> tuple[dict[str, object], bytes]:
+    matches = [record for record in records if record.get(identity_key) == identity]
+    if len(matches) != 1 or _record_sha256(matches[0]) != expected_sha256:
+        raise ExportError(error)
+    record = matches[0]
+    encoded = json.dumps(
+        record,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    if residual.count(encoded) != 1:
+        raise ExportError(error)
+    return record, residual.replace(encoded, b"", 1)
+
+
+def _reject_cross_schema_or_unrecognized_browser_records(
+    records: list[dict[str, object]], *, identity_key: str
+) -> None:
+    recognized = frozenset({"chromium", "firefox", "ffmpeg", "webkit"})
+    for record in records:
+        for candidate_key in ("name", "package"):
+            identity = record.get(candidate_key)
+            if not isinstance(identity, str):
+                continue
+            normalized = identity.casefold()
+            if not any(name in normalized for name in recognized):
+                continue
+            if candidate_key != identity_key or normalized not in recognized:
+                raise ExportError("browser_metadata_invalid")
+
+
+def _validate_approved_ordinary_browser_metadata(
+    destination: str,
+    records: list[dict[str, object]],
+    *,
+    identity_key: str,
+    residual: bytes,
+) -> bytes:
+    expected_records = _APPROVED_ORDINARY_BROWSER_RECORD_SHA256[destination]
+    for identity, expected_sha256 in expected_records.items():
+        record, residual = _subtract_exact_metadata_record(
+            residual,
+            records,
+            identity_key=identity_key,
+            identity=identity,
+            expected_sha256=expected_sha256,
+            error="approved_browser_metadata_invalid",
+        )
+        compatibility = (
+            record.get("licenseDeclared"),
+            record.get("licenseConcluded"),
+            record.get("review_disposition"),
+        )
+        if compatibility != _APPROVED_ORDINARY_BROWSER_COMPATIBILITY[
+            (destination, identity)
+        ]:
+            raise ExportError("approved_browser_metadata_invalid")
+    return residual
+
+
+def _validate_exact_webkit_reviewer_exception(
+    destination: str,
+    records: list[dict[str, object]],
+    *,
+    identity_key: str,
+    residual: bytes,
+) -> bytes:
+    record, residual = _subtract_exact_metadata_record(
+        residual,
+        records,
+        identity_key=identity_key,
+        identity="webkit",
+        expected_sha256=_WEBKIT_REVIEWER_EXCEPTION_RECORD_SHA256[destination],
+        error="webkit_metadata_invalid",
+    )
+    expected_disposition = (
+        None
+        if destination == "SBOM.spdx.json"
+        else "reviewer_test_only_not_redistributed"
+    )
+    if (
+        record.get("licenseDeclared") != "NOASSERTION"
+        or record.get("licenseConcluded") != "NOASSERTION"
+        or record.get("review_disposition") != expected_disposition
+    ):
+        raise ExportError("webkit_metadata_invalid")
+    return residual
+
+
+def _validate_browser_metadata_policy(blobs: dict[str, _Blob]) -> None:
     sbom = _strict_json(blobs["SBOM.spdx.json"].raw, "webkit_metadata_invalid")
     third_party = _strict_json(
         blobs["THIRD_PARTY_LICENSES.json"].raw, "webkit_metadata_invalid"
@@ -439,49 +561,37 @@ def _validate_webkit_metadata(blobs: dict[str, _Blob]) -> None:
     components = third_party.get("components")
     if not isinstance(packages, list) or not isinstance(components, list):
         raise ExportError("webkit_metadata_invalid")
-    sbom_records = [item for item in packages if isinstance(item, dict)]
-    third_party_records = [item for item in components if isinstance(item, dict)]
-    sbom_webkit = [item for item in sbom_records if item.get("name") == "webkit"]
-    third_party_webkit = [
-        item for item in third_party_records if item.get("package") == "webkit"
-    ]
-    if (
-        len(sbom_webkit) != 1
-        or len(third_party_webkit) != 1
-        or _record_sha256(sbom_webkit[0]) != SBOM_WEBKIT_RECORD_SHA256
-        or _record_sha256(third_party_webkit[0]) != THIRD_PARTY_WEBKIT_RECORD_SHA256
+    if any(not isinstance(item, dict) for item in packages) or any(
+        not isinstance(item, dict) for item in components
     ):
         raise ExportError("webkit_metadata_invalid")
-    for destination, records, identity_key, expected_hashes in (
-        ("SBOM.spdx.json", sbom_records, "name", _SBOM_BROWSER_RECORD_SHA256),
+    sbom_records = [item for item in packages if isinstance(item, dict)]
+    third_party_records = [item for item in components if isinstance(item, dict)]
+    for destination, records, identity_key in (
+        ("SBOM.spdx.json", sbom_records, "name"),
         (
             "THIRD_PARTY_LICENSES.json",
             third_party_records,
             "package",
-            _THIRD_PARTY_BROWSER_RECORD_SHA256,
         ),
     ):
         residual = blobs[destination].raw
-        seen: set[str] = set()
-        for record in records:
-            identity = record.get(identity_key)
-            if not isinstance(identity, str) or identity not in expected_hashes:
-                continue
-            if identity in seen or _record_sha256(record) != expected_hashes[identity]:
-                raise ExportError("webkit_metadata_invalid")
-            seen.add(identity)
-            encoded = json.dumps(
-                record,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
-            if residual.count(encoded) != 1:
-                raise ExportError("webkit_metadata_invalid")
-            residual = residual.replace(encoded, b"", 1)
+        _reject_cross_schema_or_unrecognized_browser_records(
+            records, identity_key=identity_key
+        )
+        residual = _validate_approved_ordinary_browser_metadata(
+            destination,
+            records,
+            identity_key=identity_key,
+            residual=residual,
+        )
+        residual = _validate_exact_webkit_reviewer_exception(
+            destination,
+            records,
+            identity_key=identity_key,
+            residual=residual,
+        )
         if any(token in residual for token in _REVIEWER_BROWSER_BYTE_SIGNATURES):
-            raise ExportError("reviewer bytes reached public export")
-        if _WEBKIT_EXCEPTION_MARKER in residual:
             raise ExportError("reviewer bytes reached public export")
 
 
@@ -648,7 +758,7 @@ def _collect_blobs(
         or hashlib.sha256(receipt.raw).hexdigest() != RECEIPT_SHA256
     ):
         raise ExportError("wrong_tag_commit")
-    _validate_webkit_metadata(blobs)
+    _validate_browser_metadata_policy(blobs)
     _validate_manifest(
         blobs["deployment-manifest.json"].raw,
         app_sha=app_sha,
