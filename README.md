@@ -6,6 +6,7 @@
 ![LightGBM 4.x](https://img.shields.io/badge/LightGBM-4.x-blue)
 ![PyTorch 2.1+](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Hugging Face Space](https://img.shields.io/badge/%F0%9F%A4%97%20Space-carerisk--48h-FFD21E)](https://huggingface.co/spaces/steven0226/carerisk-48h)
 
 CareRisk 48H 是可信賴 clinical ML 的研究軟體範例，使用 [PhysioNet Challenge 2012](https://physionet.org/content/challenge-2012/1.0.0/) ICU 入院最初 48 小時資料研究住院死亡風險。重點是可重現 split、防洩漏、機率校準、事前選模、abstention 與可稽核評估，不是臨床產品。
 
@@ -135,6 +136,8 @@ Synthetic safety demo：
 介面以正體中文（`zh-TW`）為主，並保留 `calibration`、`abstention`、`missingness`、`research operating point`、model／feature／schema 名稱等專有名詞原文。預設 synthetic fixture 可一鍵執行；fixture JSON 與 machine-readable output 預設收合，結果會先顯示 `evidence gates` 與是否需要人工複核，再決定是否呈現合成示範分數。
 
 這個互動介面只使用 synthetic data 與 synthetic-only bundle，不是 frozen Set B candidate 的臨床前端。分數僅是 demonstration value，`research operating point` 不是臨床 action threshold，`model signals` 也只具描述性、非因果意義。
+
+線上示範：[Hugging Face Space `steven0226/carerisk-48h`](https://huggingface.co/spaces/steven0226/carerisk-48h) 是從 [`portfolio_mvp/`](portfolio_mvp/) 建出的 synthetic evidence explorer，只展示四種預先渲染的教學狀態，不接受上傳、不做推論，也不含任何研究紀錄或模型權重。GitHub `kuotunyu` 與 Hugging Face `steven0226` 為同一人。
 
 ## 研究邊界
 

@@ -27,3 +27,9 @@ The Docker Space contains only the application entry point, two small UI/content
 modules, the exact runtime requirement, and its license and disclosure files.
 It includes no research records, trained weights, generated outputs, or formal
 evaluation evidence.
+
+## Source repository
+
+Source code, tests and the full research repository live on GitHub:
+<https://github.com/kuotunyu/CareRisk-48H>. GitHub `kuotunyu` and Hugging Face
+`steven0226` are the same author.
