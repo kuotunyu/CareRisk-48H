@@ -197,3 +197,20 @@ def test_browser_smoke_classifies_request_boundary() -> None:
         request_violation("GET", "https://example.test/gradio_api/queue/status", origin)
         == "event_transport"
     )
+
+
+def test_browser_smoke_allows_only_matching_hf_subdomain_lookup() -> None:
+    origin = "https://steven0226-carerisk-48h.hf.space"
+    lookup = "https://huggingface.co/api/spaces/by-subdomain/steven0226-carerisk-48h"
+
+    assert request_violation("GET", lookup, origin) is None
+    assert request_violation("POST", lookup, origin) == "post_request"
+    assert request_violation("GET", lookup + "?token=1", origin) == "external_request"
+    assert (
+        request_violation(
+            "GET",
+            "https://huggingface.co/api/spaces/by-subdomain/someone-else",
+            origin,
+        )
+        == "external_request"
+    )
