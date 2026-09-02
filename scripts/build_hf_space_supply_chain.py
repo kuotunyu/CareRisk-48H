@@ -28,7 +28,7 @@ DIRECT_PIN = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s#]+)$")
 LOCK_REQUIREMENT = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;]+)(.*)$")
 IMAGE_COMPONENTS = {
     ("python-runtime-base", "3.11"),
-    ("playwright-reviewer-base", "6.26.0"),
+    ("playwright-reviewer-base", "1.62.0"),
     ("chromium", "pinned"),
     ("firefox", "pinned"),
     ("webkit", "26.5"),
@@ -345,18 +345,43 @@ def run_network_bombed_child(
     event_sink("load_reference")
     install_network_bomb()
     event_sink("install_network_bomb")
-    if not argv or any("\x00" in token for token in argv):
+    if (
+        not argv
+        or any("\x00" in token for token in argv)
+        or any(token in {"-I", "-S"} for token in argv)
+    ):
         raise ValueError("source reference phase contract")
     event_sink("spawn_child")
-    child_environment = {
-        **os.environ,
-        "CARERISK_TASK7_NETWORK_BOMB": "1",
-        "HTTP_PROXY": "http://127.0.0.1:9",
-        "HTTPS_PROXY": "http://127.0.0.1:9",
-        "ALL_PROXY": "http://127.0.0.1:9",
-        "NO_PROXY": "",
-    }
-    return subprocess.run(list(argv), check=False, env=child_environment).returncode
+    sitecustomize = """\
+import socket
+import urllib.request
+
+def _carerisk_task7_blocked(*_args, **_kwargs):
+    raise RuntimeError("TASK7_NETWORK_BOMB")
+
+socket.create_connection = _carerisk_task7_blocked
+socket.socket.connect = _carerisk_task7_blocked
+urllib.request.urlopen = _carerisk_task7_blocked
+"""
+    with tempfile.TemporaryDirectory(prefix="carerisk-task7-network-bomb-") as temporary:
+        bomb_root = Path(temporary)
+        (bomb_root / "sitecustomize.py").write_text(
+            sitecustomize,
+            encoding="utf-8",
+            newline="\n",
+        )
+        child_environment = {
+            **os.environ,
+            "CARERISK_TASK7_NETWORK_BOMB": "1",
+            "HTTP_PROXY": "http://127.0.0.1:9",
+            "HTTPS_PROXY": "http://127.0.0.1:9",
+            "ALL_PROXY": "http://127.0.0.1:9",
+            "NO_PROXY": "",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": str(bomb_root)
+            + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""),
+        }
+        return subprocess.run(list(argv), check=False, env=child_environment).returncode
 
 
 def direct_pins(path: Path) -> dict[str, str]:
@@ -913,18 +938,68 @@ def wheel_record(wheel: Path) -> tuple[tuple[str, str], dict[str, Any]]:
     known = {
         "MIT": "MIT",
         "MIT License": "MIT",
+        "MIT license": "MIT",
         "Apache-2.0": "Apache-2.0",
+        "Apache 2.0": "Apache-2.0",
         "Apache Software License": "Apache-2.0",
+        "BSD": "BSD-3-Clause",
+        "BSD 3-Clause License": "BSD-3-Clause",
+        "BSD-2-Clause": "BSD-2-Clause",
         "BSD-3-Clause": "BSD-3-Clause",
+        "ISC License": "ISC",
         "ISC": "ISC",
+        "MPL 2.0": "MPL-2.0",
         "MPL-2.0": "MPL-2.0",
         "PSF-2.0": "PSF-2.0",
+        "PSFL": "PSF-2.0",
+        "MPL-2.0 AND MIT": "MPL-2.0 AND MIT",
+    }
+    exact_license_file_expressions = {
+        "b481f87296cb0abdb13fd8cbb94b14c328be880ec9e68547a61b84dacffd067a": "Apache-2.0",
+        "6a06a65cf27b3f66b5fcae2743f9a958fad69749e1fb4cbd3d09aa5ac33673ba": "MIT",
+        "5ea0cdf8cfc824b446cccf597ff6518c3607a659e9804bc75f1261f9c6ac4ada": "BSD-2-Clause",
+        "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551": "LGPL-2.1-or-later",
+        "b80ce9da8c42a1f91079627fbbe2bf27210ae108a0ffe5f077d5b08e076c24c8": "PSF-2.0",
+        "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5": "MPL-2.0",
+        "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4": "Apache-2.0",
+        "452c0410e9a3d75abbef1b6cb519d31b23047092ca00f9bd619df7cb0d8b9a99": "ISC",
+        "3b49dcee4105eb37bac10faf1be260408fe85d252b8e9df2e0979fc1e094437b": "BSD-3-Clause",
+        "d8b24f15d472885f788a2d6e985850f264627b86012a17bb242c83f310d907e5": "BSD-3-Clause",
+        "4a2260d6e2cd0f5a151a1e86dbfe7d3ed552b1e2beabf9941c1ba5c49cbce484": "MIT",
+        "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473": "MIT",
+        "7c605df6e28667a9603118e98274f64a49ce3eed0d26fccce9534a345e0ef955": "MIT",
+        "5c1052e921e62d36ccda50a61585e9c0444b80c62f39b57c4f3f0d5fb62f5071": "BSD-3-Clause",
+        "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85": "MPL-2.0",
+        "14ed54990120efea26042269885df36e1b53db858bf04b40c8cfc8c5e12f6fb1": "Apache-2.0",
+        "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594": "Apache-2.0",
+        "075f22737ed9245d386a23968c7ec906f66dfb7af35c3ff920aabd165a8ae920": "BSD-3-Clause",
+        "1b22b049b5267d6dfc23a67bf4a84d8ec04b9fdfb1a51d360e42b4342c8b4154": "MIT",
+        "ba00f51a0d92823b5a1cde27d8b5b9d2321e67ed8da9bc163eff96d5e17e577e": "Apache-2.0 AND BSD-3-Clause",
+        "5ba1a4f03626ccca6dcbf53a554545e4f776a335bfdaa233ec3bfe9bb7fac15d": "MIT",
+        "a85e7ef2fbc670d26781ed6844cd31a7e8ada65d21328f75a0b02402faae37ea": "BSD-3-Clause",
+        "f388fd38cad13112c1dc0f669bbe80e7f84541edbafb72f3030d2ca7642c3c9d": "ISC",
+        "1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6": "Apache-2.0",
+        "b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe": "MIT",
+        "fcff87c3a47ce8028a8512aa182d4fcf0ad1c90544ee75cf9b343684cac194de": "MPL-2.0 AND MIT",
     }
     if len(set(expressions)) == 1 and expressions[0] not in {"", "UNKNOWN"}:
         expression = expressions[0]
     else:
-        mapped = {known[value.strip()] for value in raw_licenses if value.strip() in known}
-        expression = mapped.pop() if len(mapped) == 1 else f"LicenseRef-Wheel-{name}-{version}"
+        file_mapped = {
+            exact_license_file_expressions[item["sha256"]]
+            for item in license_files
+            if item["sha256"] in exact_license_file_expressions
+        }
+        raw_mapped = {known[value.strip()] for value in raw_licenses if value.strip() in known}
+        classifier_mapped = {
+            known[classifier.rsplit(" :: ", 1)[-1]]
+            for classifier in classifiers
+            if classifier.rsplit(" :: ", 1)[-1] in known
+        }
+        candidates = file_mapped or raw_mapped or classifier_mapped
+        if len(candidates) != 1:
+            raise ValueError(f"unresolved exact wheel license evidence for {(name, version)}")
+        expression = next(iter(candidates))
     return (name, version), {
         "artifact_sha256": [sha256_bytes(wheel.read_bytes())],
         "license_evidence": {
@@ -932,6 +1007,7 @@ def wheel_record(wheel: Path) -> tuple[tuple[str, str], dict[str, Any]]:
             "license_files": license_files,
             "metadata_license": raw_licenses,
             "metadata_license_expression": expressions,
+            "review_basis": "exact_locked_wheel_metadata_and_notices",
         },
         "license_expression": expression,
         "notice_requirement": (
@@ -977,51 +1053,74 @@ def image_records(base: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]
         (
             "python-runtime-base",
             "3.11",
-            "LicenseRef-Exact-Python-Debian-Image",
+            "LicenseRef-Aggregate-Reviewed-Python-Debian-Image",
             f"https://hub.docker.com/_/python@{runtime['linux_amd64_digest']}",
             runtime,
         ),
         (
             "playwright-reviewer-base",
-            "6.26.0",
-            "LicenseRef-Exact-Playwright-Ubuntu-Image",
+            "1.62.0",
+            "LicenseRef-Aggregate-Reviewed-Playwright-Ubuntu-Image",
             f"https://mcr.microsoft.com/v2/playwright/python/manifests/{reviewer['linux_amd64_digest']}",
             reviewer,
         ),
     ]
     for name, version, expression, source, image in specifications:
-        result[(name, version)] = {
-            "artifact_sha256": [image["linux_amd64_digest"][7:]],
-            "license_evidence": {
+        system_notices = [
+            {
+                "architecture": item["architecture"],
+                "copyright_path": item["copyright_path"],
+                "copyright_sha256": item["copyright_sha256"],
+                "name": item["name"],
+                "source": item["source"],
+                "version": item["version"],
+            }
+            for item in image["system_inventory"]
+            if item["copyright_sha256"] is not None
+        ]
+        result[(name, version)] = _approved_record(
+            package=name,
+            version=version,
+            hashes=[image["linux_amd64_digest"][7:]],
+            declared=expression,
+            evidence={
                 "image_notice_files": image["image_notice_files"],
+                "review_basis": "exact_image_manifest_system_inventory_and_notices",
                 "system_inventory_sha256": image["system_inventory_sha256"],
-                "system_package_copyright_files": sum(
-                    1 for item in image["system_inventory"] if item["copyright_sha256"]
-                ),
+                "system_package_copyright_files": system_notices,
             },
-            "license_expression": expression,
-            "notice_requirement": "Preserve the exact image and Debian copyright inventory recorded in base-image.json.",
-            "package": name,
-            "review_disposition": "pending",
-            "source_url": source,
-            "version": version,
-        }
-    for name in ("chromium", "firefox", "webkit"):
+            source_url=source,
+        )
+    for name in ("chromium", "firefox"):
         evidence = reviewer["embedded_browsers"][name]
-        result[(name, "pinned")] = {
-            "artifact_sha256": [evidence["content_identity"]["sha256"]],
-            "license_evidence": {
+        result[(name, "pinned")] = _approved_record(
+            package=name,
+            version="pinned",
+            hashes=[evidence["content_identity"]["sha256"]],
+            declared=f"LicenseRef-Aggregate-Reviewed-{name.capitalize()}-Binary-Notices",
+            evidence={
                 "content_identity": evidence["content_identity"],
                 "notice_files": evidence["notice_files"],
                 "revision": evidence["revision"],
+                "review_basis": "exact_reviewer_image_browser_inventory_and_notices",
             },
-            "license_expression": f"LicenseRef-Exact-{name.capitalize()}-Binary",
-            "notice_requirement": "Preserve exact browser notice files and content identity from base-image.json.",
-            "package": name,
-            "review_disposition": "pending",
-            "source_url": f"https://mcr.microsoft.com/v2/playwright/python/manifests/{reviewer['linux_amd64_digest']}",
-            "version": "pinned",
-        }
+            source_url=f"https://mcr.microsoft.com/v2/playwright/python/manifests/{reviewer['linux_amd64_digest']}",
+        )
+    support = reviewer["embedded_support_records"]["ffmpeg-1011"]
+    result[("ffmpeg", "pinned")] = _approved_record(
+        package="ffmpeg",
+        version="pinned",
+        hashes=[support["content_identity"]["sha256"]],
+        declared="LGPL-2.1-only",
+        evidence={
+            "content_identity": support["content_identity"],
+            "embedded_support": ["ffmpeg-1011"],
+            "notice_files": support["notice_files"],
+            "revision": "1011",
+            "review_basis": "exact_reviewer_image_subtree_and_notice",
+        },
+        source_url=f"https://mcr.microsoft.com/v2/playwright/python/manifests/{reviewer['linux_amd64_digest']}",
+    )
     return result
 
 
@@ -1058,6 +1157,8 @@ def validate_license_policy(
             or not isinstance(concluded, str)
             or not concluded
             or concluded == "NONE"
+            or str(declared).startswith("LicenseRef-Hash-Locked")
+            or not isinstance(record.get("license_evidence"), dict)
             or not isinstance(record.get("artifact_sha256"), list)
             or not record["artifact_sha256"]
             or not all(
@@ -1130,6 +1231,84 @@ def _assert_source_reference_exact(source_reference: WebKitSourceReference) -> N
         raise ValueError("source reference phase contract")
 
 
+def tree_identity_from_ordered_inventory(
+    inventory: object,
+) -> dict[str, object]:
+    if not isinstance(inventory, list) or not inventory:
+        raise ValueError("ordered tree inventory missing")
+    expected_keys = {"mode", "path", "payload_sha256", "size", "type"}
+    paths: list[str] = []
+    digest = hashlib.sha256()
+    file_count = 0
+    byte_count = 0
+    for entry in inventory:
+        if not isinstance(entry, dict) or set(entry) != expected_keys:
+            raise ValueError("ordered tree inventory entry drift")
+        path = entry["path"]
+        mode = entry["mode"]
+        payload_sha256 = entry["payload_sha256"]
+        size = entry["size"]
+        kind = entry["type"]
+        if (
+            not isinstance(path, str)
+            or not path
+            or not path.isascii()
+            or path.startswith("/")
+            or "\\" in path
+            or "//" in path
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+            or not isinstance(mode, str)
+            or re.fullmatch(r"[0-7]{4}", mode) is None
+            or not isinstance(payload_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", payload_sha256) is None
+            or type(size) is not int
+            or size < 0
+            or kind not in {"D", "F", "L", "O"}
+            or (kind != "F" and size != 0)
+        ):
+            raise ValueError("ordered tree inventory entry drift")
+        paths.append(path)
+        digest.update(
+            str(kind).encode()
+            + b"\0"
+            + path.encode()
+            + b"\0"
+            + mode.encode()
+            + b"\0"
+            + bytes.fromhex(payload_sha256)
+        )
+        if kind == "F":
+            file_count += 1
+            byte_count += size
+    if paths != sorted(paths) or len(paths) != len(set(paths)):
+        raise ValueError("ordered tree inventory ordering drift")
+    return {
+        "algorithm": "sha256-canonical-tree-v1",
+        "byte_count": byte_count,
+        "file_count": file_count,
+        "sha256": digest.hexdigest(),
+    }
+
+
+def derive_webkit_absence_proof(
+    webkit: Mapping[str, object],
+    *,
+    source_relative_path: str,
+) -> dict[str, object]:
+    identity = tree_identity_from_ordered_inventory(webkit.get("ordered_tree_inventory"))
+    inventory = webkit["ordered_tree_inventory"]
+    assert isinstance(inventory, list)
+    paths = {str(entry["path"]) for entry in inventory}
+    return {
+        "repository_relative_path": source_relative_path,
+        "canonical_tree_algorithm": identity["algorithm"],
+        "canonical_tree_file_count": identity["file_count"],
+        "canonical_tree_total_bytes": identity["byte_count"],
+        "canonical_tree_sha256": identity["sha256"],
+        "present": source_relative_path in paths,
+    }
+
+
 def extend_frozen_base_record(path: Path, *, source_reference: WebKitSourceReference) -> None:
     _assert_source_reference_exact(source_reference)
     base = canonical_document(path)
@@ -1161,11 +1340,15 @@ def extend_frozen_base_record(path: Path, *, source_reference: WebKitSourceRefer
         or webkit.get("content_roots") != ["/ms-playwright/webkit-2336"]
     ):
         raise ValueError("frozen WebKit tree drift")
+    derived_proof = derive_webkit_absence_proof(
+        webkit,
+        source_relative_path=expected.repository_relative_path,
+    )
+    if derived_proof != dict(expected.image_tree_source_relative_path_absence_proof):
+        raise ValueError("frozen WebKit absence proof drift")
     webkit.update(
         {
-            "image_tree_source_relative_path_absence_proof": dict(
-                expected.image_tree_source_relative_path_absence_proof
-            ),
+            "image_tree_source_relative_path_absence_proof": derived_proof,
             "tree_algorithm": expected.webkit_tree_algorithm,
             "tree_file_count": expected.webkit_tree_file_count,
             "tree_total_bytes": expected.webkit_tree_total_bytes,
@@ -1284,16 +1467,49 @@ def verify_image_record(
         ):
             raise ValueError(f"frozen {name} tree drift")
     webkit = browsers["webkit"]
+    derived_identity = tree_identity_from_ordered_inventory(webkit.get("ordered_tree_inventory"))
+    derived_proof = derive_webkit_absence_proof(
+        webkit,
+        source_relative_path=expected.repository_relative_path,
+    )
     if (
         webkit.get("version") != expected.webkit_version
         or webkit.get("tree_algorithm") != expected.webkit_tree_algorithm
         or webkit.get("tree_file_count") != expected.webkit_tree_file_count
         or webkit.get("tree_total_bytes") != expected.webkit_tree_total_bytes
-        or webkit.get("image_tree_source_relative_path_absence_proof")
-        != dict(expected.image_tree_source_relative_path_absence_proof)
+        or derived_identity != webkit.get("content_identity")
+        or derived_proof != dict(expected.image_tree_source_relative_path_absence_proof)
+        or webkit.get("image_tree_source_relative_path_absence_proof") != derived_proof
         or any("UPSTREAM_CONFIG" in root for root in webkit.get("content_roots", []))
     ):
         raise ValueError("frozen WebKit absence proof drift")
+    support = reviewer.get("embedded_support_records")
+    if not isinstance(support, dict) or set(support) != {"ffmpeg-1011"}:
+        raise ValueError("frozen ffmpeg inventory drift")
+    ffmpeg = support["ffmpeg-1011"]
+    if not isinstance(ffmpeg, dict):
+        raise ValueError("frozen ffmpeg inventory drift")
+    ffmpeg_identity = tree_identity_from_ordered_inventory(ffmpeg.get("ordered_tree_inventory"))
+    expected_ffmpeg_identity = {
+        "algorithm": "sha256-canonical-tree-v1",
+        "byte_count": 5127582,
+        "file_count": 4,
+        "sha256": "1514c84470c5a5706b48eea2ce282c290ccdb508a46196c24c82b6b91ffc287a",
+    }
+    if (
+        ffmpeg.get("revision") != "1011"
+        or ffmpeg.get("content_identity") != expected_ffmpeg_identity
+        or ffmpeg_identity != expected_ffmpeg_identity
+        or ffmpeg.get("notice_files")
+        != [
+            {
+                "path": "/ms-playwright/ffmpeg-1011/COPYING.LGPLv2.1",
+                "sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe",
+                "size": 26526,
+            }
+        ]
+    ):
+        raise ValueError("frozen ffmpeg inventory drift")
 
 
 def verify_existing_locks(
@@ -1339,129 +1555,103 @@ def _approved_record(
     }
 
 
-def expected_policy_records(
+def reviewed_policy_records_from_wheels(
     base: Mapping[str, object],
     runtime: Mapping[tuple[str, str], tuple[str, ...]],
     development: Mapping[tuple[str, str], tuple[str, ...]],
+    wheelhouses: Sequence[Path],
 ) -> dict[tuple[str, str], dict[str, object]]:
     combined: dict[tuple[str, str], set[str]] = {}
     for source in (runtime, development):
-        for key, hashes in source.items():
-            combined.setdefault(key, set()).update(hashes)
+        for key, lock_hashes in source.items():
+            combined.setdefault(key, set()).update(lock_hashes)
+    discovered = discovered_python_records(wheelhouses)
+    if set(discovered) != set(combined):
+        raise ValueError("wheel evidence coverage differs from frozen locks")
     result: dict[tuple[str, str], dict[str, object]] = {}
     for (name, version), combined_hashes in sorted(combined.items()):
+        record = discovered[(name, version)]
+        if set(record["artifact_sha256"]) != combined_hashes:
+            raise ValueError(f"wheel evidence hash differs from frozen lock for {(name, version)}")
+        expression = str(record["license_expression"])
+        if not expression or expression.startswith("LicenseRef-Wheel-"):
+            raise ValueError(f"unresolved wheel license evidence for {(name, version)}")
         result[(name, version)] = _approved_record(
             package=name,
             version=version,
             hashes=sorted(combined_hashes),
-            declared="LicenseRef-Hash-Locked-Python-Package-Upstream-License",
-            evidence={
-                "lock_hashes": sorted(combined_hashes),
-                "claim_ceiling": (
-                    "Hash-locked package inventory; consult the exact upstream distribution "
-                    "for full license and notice text."
-                ),
-                "review_basis": "exact_hash_locked_wheel_set",
-            },
-            source_url=f"https://pypi.org/project/{name}/{version}/",
+            declared=expression,
+            evidence=record["license_evidence"],
+            source_url=str(record["source_url"]),
         )
-    images = base["images"]
-    assert isinstance(images, dict)
-    runtime_image = images["runtime"]
-    reviewer_image = images["reviewer"]
-    assert isinstance(runtime_image, dict) and isinstance(reviewer_image, dict)
-    result[("python-runtime-base", "3.11")] = _approved_record(
-        package="python-runtime-base",
-        version="3.11",
-        hashes=[str(runtime_image["linux_amd64_digest"])[7:]],
-        declared="LicenseRef-Exact-Python-Debian-Image",
-        evidence={"system_inventory_sha256": runtime_image["system_inventory_sha256"]},
-        source_url=f"https://hub.docker.com/_/python@{runtime_image['linux_amd64_digest']}",
-    )
-    result[("playwright-reviewer-base", "6.26.0")] = _approved_record(
-        package="playwright-reviewer-base",
-        version="6.26.0",
-        hashes=[str(reviewer_image["linux_amd64_digest"])[7:]],
-        declared="LicenseRef-Exact-Playwright-Ubuntu-Image",
-        evidence={"system_inventory_sha256": reviewer_image["system_inventory_sha256"]},
-        source_url=(
-            "https://mcr.microsoft.com/v2/playwright/python/manifests/"
-            f"{reviewer_image['linux_amd64_digest']}"
-        ),
-    )
-    browsers = reviewer_image["embedded_browsers"]
-    assert isinstance(browsers, dict)
-    for browser in ("chromium", "firefox"):
-        record = browsers[browser]
-        result[(browser, "pinned")] = _approved_record(
-            package=browser,
-            version="pinned",
-            hashes=[record["content_identity"]["sha256"]],
-            declared=f"LicenseRef-Exact-{browser.capitalize()}-Reviewer-Binary",
-            evidence={
-                "content_identity": record["content_identity"],
-                "notice_files": record["notice_files"],
-                "revision": record["revision"],
-            },
-            source_url=exact_webkit_reviewer_policy().cdn_artifact_url.replace(
-                "webkit/2336/webkit-ubuntu-24.04.zip", f"{browser}/{record['revision']}"
-            ),
-        )
-    result[("ffmpeg", "pinned")] = _approved_record(
-        package="ffmpeg",
-        version="pinned",
-        hashes=[hashlib.sha256(b"ffmpeg-1011").hexdigest()],
-        declared="LGPL-2.1-only",
-        evidence={"embedded_support": ["ffmpeg-1011"], "revision": "1011"},
-        source_url="https://github.com/microsoft/playwright/tree/v1.62.0",
-    )
+    result.update(image_records(dict(base)))
     result[("webkit", "26.5")] = exact_webkit_policy_record()
     return result
 
 
-def build_inventory_and_sbom(
-    args: argparse.Namespace,
-    *,
-    source_reference: WebKitSourceReference,
-    offline: Literal[True],
-    network_bomb: Literal[True],
+def validate_policy_against_frozen_inputs(
+    policy: Mapping[tuple[str, str], Mapping[str, object]],
+    base: Mapping[str, object],
+    runtime: Mapping[tuple[str, str], tuple[str, ...]],
+    development: Mapping[tuple[str, str], tuple[str, ...]],
 ) -> None:
-    _require_offline_controls(offline=offline, network_bomb=network_bomb)
-    verify_image_record(
-        Path(args.base),
-        source_reference=source_reference,
-        offline=True,
-        network_bomb=True,
-    )
-    verify_existing_locks(
-        Path(args.runtime_lock),
-        Path(args.development_lock),
-        source_reference=source_reference,
-        offline=True,
-        network_bomb=True,
-    )
-    base = canonical_document(Path(args.base))
-    runtime = parse_lock(Path(args.runtime_lock))
-    development = parse_lock(Path(args.development_lock))
-    expected = expected_policy_records(base, runtime, development)
-    policy_path = Path(args.license_policy)
-    write_json(
-        policy_path,
-        {
-            "components": [expected[key] for key in sorted(expected)],
-            "review_rule": (
-                "Approved exact locked components; sole WebKit reviewer metadata exception is "
-                "NOASSERTION and never distributed."
-            ),
-            "schema_version": 1,
-        },
-    )
-    policy = validate_license_policy(canonical_document(policy_path))
-    if policy != expected:
-        raise ValueError("license policy evidence drift")
-    components = [policy[key] for key in sorted(policy)]
-    write_json(Path(args.licenses_output), {"components": components, "document_version": 1})
-    package_keys = sorted(set(expected) | {("carerisk-space", "0.2.0")})
+    combined: dict[tuple[str, str], set[str]] = {}
+    for source in (runtime, development):
+        for key, lock_hashes in source.items():
+            combined.setdefault(key, set()).update(lock_hashes)
+    expected_images = image_records(dict(base))
+    expected_images[("webkit", "26.5")] = exact_webkit_policy_record()
+    if set(policy) != set(combined) | set(expected_images):
+        raise ValueError("license policy coverage differs from frozen inputs")
+    evidence_keys = {
+        "license_classifiers",
+        "license_files",
+        "metadata_license",
+        "metadata_license_expression",
+        "review_basis",
+    }
+    for key, combined_hashes in combined.items():
+        record = policy[key]
+        evidence = record.get("license_evidence")
+        if (
+            record.get("artifact_sha256") != sorted(combined_hashes)
+            or record.get("source_url") != f"https://pypi.org/project/{key[0]}/{key[1]}/"
+            or record.get("licenseDeclared") != record.get("licenseConcluded")
+            or str(record.get("licenseDeclared", "")).startswith("LicenseRef-Hash-Locked")
+            or not isinstance(evidence, dict)
+            or set(evidence) != evidence_keys
+            or evidence.get("review_basis") != "exact_locked_wheel_metadata_and_notices"
+            or not any(
+                evidence.get(field)
+                for field in (
+                    "license_classifiers",
+                    "license_files",
+                    "metadata_license",
+                    "metadata_license_expression",
+                )
+            )
+        ):
+            raise ValueError(f"wheel license evidence drift for {key}")
+        license_files = evidence["license_files"]
+        if not isinstance(license_files, list) or any(
+            not isinstance(item, dict)
+            or set(item) != {"path", "sha256", "size"}
+            or not isinstance(item["path"], str)
+            or re.fullmatch(r"[0-9a-f]{64}", str(item["sha256"])) is None
+            or type(item["size"]) is not int
+            or item["size"] < 0
+            for item in license_files
+        ):
+            raise ValueError(f"wheel license file evidence drift for {key}")
+    for key, expected in expected_images.items():
+        if policy[key] != expected:
+            raise ValueError(f"image license evidence drift for {key}")
+
+
+def expected_spdx_document(
+    policy: Mapping[tuple[str, str], Mapping[str, object]],
+) -> dict[str, object]:
+    package_keys = sorted(set(policy) | {("carerisk-space", "0.2.0")})
     packages: list[dict[str, object]] = []
     for name, version in package_keys:
         if name == "carerisk-space":
@@ -1495,31 +1685,58 @@ def build_inventory_and_sbom(
             }
         )
     namespace_hash = sha256_bytes(canonical_json(packages))
-    write_json(
-        Path(args.sbom_output),
-        {
-            "SPDXID": "SPDXRef-DOCUMENT",
-            "creationInfo": {
-                "created": "2026-09-01T00:00:00Z",
-                "creators": ["Tool: scripts/build_hf_space_supply_chain.py"],
-            },
-            "dataLicense": "CC0-1.0",
-            "documentNamespace": (
-                "https://github.com/kuotunyu/CareRisk-48H/spdx/" + namespace_hash
-            ),
-            "name": "carerisk-space-sbom",
-            "packages": packages,
-            "relationships": [
-                {
-                    "relatedSpdxElement": spdx_id(name, version),
-                    "relationshipType": "DESCRIBES",
-                    "spdxElementId": "SPDXRef-DOCUMENT",
-                }
-                for name, version in package_keys
-            ],
-            "spdxVersion": "SPDX-2.3",
+    return {
+        "SPDXID": "SPDXRef-DOCUMENT",
+        "creationInfo": {
+            "created": "2026-09-01T00:00:00Z",
+            "creators": ["Tool: scripts/build_hf_space_supply_chain.py"],
         },
+        "dataLicense": "CC0-1.0",
+        "documentNamespace": ("https://github.com/kuotunyu/CareRisk-48H/spdx/" + namespace_hash),
+        "name": "carerisk-space-sbom",
+        "packages": packages,
+        "relationships": [
+            {
+                "relatedSpdxElement": spdx_id(name, version),
+                "relationshipType": "DESCRIBES",
+                "spdxElementId": "SPDXRef-DOCUMENT",
+            }
+            for name, version in package_keys
+        ],
+        "spdxVersion": "SPDX-2.3",
+    }
+
+
+def build_inventory_and_sbom(
+    args: argparse.Namespace,
+    *,
+    source_reference: WebKitSourceReference,
+    offline: Literal[True],
+    network_bomb: Literal[True],
+) -> None:
+    _require_offline_controls(offline=offline, network_bomb=network_bomb)
+    verify_image_record(
+        Path(args.base),
+        source_reference=source_reference,
+        offline=True,
+        network_bomb=True,
     )
+    verify_existing_locks(
+        Path(args.runtime_lock),
+        Path(args.development_lock),
+        source_reference=source_reference,
+        offline=True,
+        network_bomb=True,
+    )
+    base = canonical_document(Path(args.base))
+    runtime = parse_lock(Path(args.runtime_lock))
+    development = parse_lock(Path(args.development_lock))
+    policy_path = Path(args.license_policy)
+    policy = validate_license_policy(canonical_document(policy_path))
+    validate_policy_against_frozen_inputs(policy, base, runtime, development)
+    components = [policy[key] for key in sorted(policy)]
+    write_json(Path(args.licenses_output), {"components": components, "document_version": 1})
+    write_json(Path(args.sbom_output), expected_spdx_document(policy))
 
 
 def build_inventory(args: argparse.Namespace) -> int:
@@ -1590,18 +1807,23 @@ def verify_all(
     expected = set(runtime) | set(development) | IMAGE_COMPONENTS
     if set(policy) != expected:
         raise ValueError("policy coverage mismatch")
+    base = canonical_document(base_path)
+    validate_policy_against_frozen_inputs(policy, base, runtime, development)
     licenses = canonical_document(repo_root / "space/THIRD_PARTY_LICENSES.json")
     if licenses.get("components") != [policy[key] for key in sorted(policy)]:
         raise ValueError("license inventory differs from policy")
     sbom = canonical_document(repo_root / "space/SBOM.spdx.json")
-    package_keys = {
-        (canonical_name(item["name"]), item["versionInfo"]) for item in sbom.get("packages", [])
-    }
-    if (
-        package_keys != expected | {("carerisk-space", "0.2.0")}
-        or sbom.get("spdxVersion") != "SPDX-2.3"
-    ):
-        raise ValueError("SPDX coverage/schema mismatch")
+    expected_spdx = expected_spdx_document(policy)
+    if sbom.get("packages") != expected_spdx["packages"]:
+        raise ValueError("SPDX package projection drift")
+    if sbom.get("relationships") != expected_spdx["relationships"]:
+        raise ValueError("SPDX relationships drift")
+    if {key: value for key, value in sbom.items() if key not in {"packages", "relationships"}} != {
+        key: value
+        for key, value in expected_spdx.items()
+        if key not in {"packages", "relationships"}
+    }:
+        raise ValueError("SPDX document metadata drift")
     webkit_packages = [
         item
         for item in sbom.get("packages", [])

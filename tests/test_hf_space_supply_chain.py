@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import shutil
 import sys
 import tempfile
 import uuid
@@ -510,6 +511,40 @@ def test_offline_test_installs_network_bomb_before_argv() -> None:
         _remove_source_reference(path)
 
 
+def test_offline_test_child_enforces_socket_and_urllib_network_bomb() -> None:
+    module = _supply_chain_module()
+    path, run_guid = _source_reference_file()
+    child_code = """
+import socket
+import urllib.request
+
+for operation in (
+    lambda: socket.create_connection(("127.0.0.1", 1), timeout=0.01),
+    lambda: urllib.request.urlopen("http://127.0.0.1:1", timeout=0.01),
+):
+    try:
+        operation()
+    except RuntimeError as error:
+        if str(error) != "TASK7_NETWORK_BOMB":
+            raise
+    else:
+        raise SystemExit(91)
+"""
+    try:
+        result = module.run_network_bombed_child(
+            source_reference=path,
+            run_guid=run_guid,
+            phase="offline_verify",
+            offline=True,
+            network_bomb=True,
+            argv=(sys.executable, "-c", child_code),
+            event_sink=lambda _event: None,
+        )
+        assert result == 0
+    finally:
+        _remove_source_reference(path)
+
+
 @pytest.mark.parametrize("package", ORDINARY_COMPONENTS)
 def test_noassertion_fails_for_public_or_any_other_component(package: str) -> None:
     module = _supply_chain_module()
@@ -640,12 +675,129 @@ def test_both_base_images_are_patch_tagged_digest_pinned_and_compatible() -> Non
         assert re.fullmatch(r"sha256:[0-9a-f]{64}", base["system_inventory_sha256"])
 
 
+def test_reviewer_base_component_uses_exact_playwright_version() -> None:
+    records = {
+        (_canonical_package_name(str(item["package"])), str(item["version"])): item
+        for item in load_licenses(LICENSES)
+    }
+    assert ("playwright-reviewer-base", "1.62.0") in records
+    assert ("playwright-reviewer-base", "6.26.0") not in records
+
+
+def test_ffmpeg_has_no_fabricated_content_checksum() -> None:
+    records = {
+        (_canonical_package_name(str(item["package"])), str(item["version"])): item
+        for item in load_licenses(LICENSES)
+    }
+    ffmpeg = records[("ffmpeg", "pinned")]
+    exact_tree_sha256 = "1514c84470c5a5706b48eea2ce282c290ccdb508a46196c24c82b6b91ffc287a"
+    assert ffmpeg["artifact_sha256"] == [exact_tree_sha256]
+    assert ffmpeg["license_evidence"] == {
+        "content_identity": {
+            "algorithm": "sha256-canonical-tree-v1",
+            "byte_count": 5127582,
+            "file_count": 4,
+            "sha256": exact_tree_sha256,
+        },
+        "embedded_support": ["ffmpeg-1011"],
+        "notice_files": [
+            {
+                "path": "/ms-playwright/ffmpeg-1011/COPYING.LGPLv2.1",
+                "sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe",
+                "size": 26526,
+            }
+        ],
+        "revision": "1011",
+        "review_basis": "exact_reviewer_image_subtree_and_notice",
+    }
+    sbom = json.loads(SBOM.read_text(encoding="utf-8"))
+    [package] = [item for item in sbom["packages"] if item["name"] == "ffmpeg"]
+    assert package["checksums"] == [{"algorithm": "SHA256", "checksumValue": exact_tree_sha256}]
+
+
+def test_policy_uses_extracted_wheel_and_image_evidence_not_placeholders() -> None:
+    policy = json.loads(LICENSE_POLICY.read_text(encoding="utf-8"))
+    records = {
+        (_canonical_package_name(str(item["package"])), str(item["version"])): item
+        for item in policy["components"]
+    }
+    locked = normalized_locked_packages(RUNTIME_LOCK, DEVELOPMENT_LOCK)
+    for key in locked:
+        record = records[key]
+        assert record["licenseDeclared"] == record["licenseConcluded"]
+        assert not str(record["licenseDeclared"]).startswith("LicenseRef-Hash-Locked")
+        assert not str(record["licenseDeclared"]).startswith("LicenseRef-Wheel-")
+        evidence = record["license_evidence"]
+        assert isinstance(evidence, dict)
+        assert evidence["review_basis"] == "exact_locked_wheel_metadata_and_notices"
+        assert set(evidence) == {
+            "license_classifiers",
+            "license_files",
+            "metadata_license",
+            "metadata_license_expression",
+            "review_basis",
+        }
+        lock_hashes = {
+            digest
+            for lock in (RUNTIME_LOCK, DEVELOPMENT_LOCK)
+            for entry in parse_hash_lock(lock.read_text(encoding="utf-8"))
+            if (entry.package, entry.version) == key
+            for digest in entry.sha256_hashes
+        }
+        assert set(record["artifact_sha256"]) == lock_hashes
+
+    for key in (
+        ("python-runtime-base", "3.11"),
+        ("playwright-reviewer-base", "1.62.0"),
+        ("chromium", "pinned"),
+        ("firefox", "pinned"),
+    ):
+        evidence = records[key]["license_evidence"]
+        assert isinstance(evidence, dict)
+        assert evidence["review_basis"].startswith("exact_")
+        assert "claim_ceiling" not in evidence
+
+
+def test_webkit_absence_proof_is_recomputed_from_ordered_tree_inventory() -> None:
+    module = _supply_chain_module()
+    base = json.loads(BASE_IMAGE.read_text(encoding="utf-8"))
+    webkit = base["images"]["reviewer"]["embedded_browsers"]["webkit"]
+    inventory = webkit["ordered_tree_inventory"]
+    assert isinstance(inventory, list) and inventory
+    assert [entry["path"] for entry in inventory] == sorted(entry["path"] for entry in inventory)
+    assert sum(entry["size"] for entry in inventory if entry["type"] == "F") == 306401261
+    assert sum(entry["type"] == "F" for entry in inventory) == 38
+    proof = module.derive_webkit_absence_proof(
+        webkit,
+        source_relative_path="browser_patches/webkit/UPSTREAM_CONFIG.sh",
+    )
+    assert proof == webkit["image_tree_source_relative_path_absence_proof"]
+    mutated = json.loads(json.dumps(webkit))
+    mutated["ordered_tree_inventory"].append(
+        {
+            "mode": "0644",
+            "path": "browser_patches/webkit/UPSTREAM_CONFIG.sh",
+            "payload_sha256": "0" * 64,
+            "size": 0,
+            "type": "F",
+        }
+    )
+    mutated["ordered_tree_inventory"].sort(key=lambda item: item["path"])
+    assert (
+        module.derive_webkit_absence_proof(
+            mutated,
+            source_relative_path="browser_patches/webkit/UPSTREAM_CONFIG.sh",
+        )["present"]
+        is True
+    )
+
+
 def test_sbom_and_license_inventory_cover_every_lock_package_once() -> None:
     locked = normalized_locked_packages(RUNTIME_LOCK, DEVELOPMENT_LOCK)
     image_components = {
         ("carerisk-space", "0.2.0"),
         ("python-runtime-base", "3.11"),
-        ("playwright-reviewer-base", "6.26.0"),
+        ("playwright-reviewer-base", "1.62.0"),
         ("chromium", "pinned"),
         ("firefox", "pinned"),
         ("webkit", "26.5"),
@@ -694,5 +846,69 @@ def test_verify_all_accepts_the_committed_supply_chain_outputs() -> None:
             network_bomb=True,
         )
         assert LICENSE_POLICY.is_file()
+    finally:
+        _remove_source_reference(path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("spdx_id", "license", "download", "checksum", "relationships"),
+)
+def test_verify_all_rejects_each_ordinary_spdx_projection_drift(
+    tmp_path: Path, mutation: str
+) -> None:
+    module = _supply_chain_module()
+    for relative in (
+        "tools/space/requirements-runtime.in",
+        "tools/space/requirements-dev.in",
+        "tools/space/lock-tooling.txt",
+        "tools/space/base-image.json",
+        "tools/space/license-policy.json",
+        "space/requirements.lock",
+        "space/requirements-dev.lock",
+        "space/SBOM.spdx.json",
+        "space/THIRD_PARTY_LICENSES.json",
+    ):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+
+    sbom_path = tmp_path / "space/SBOM.spdx.json"
+    sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
+    [ordinary] = [item for item in sbom["packages"] if item["name"] == "gradio"]
+    if mutation == "spdx_id":
+        ordinary["SPDXID"] += "-drift"
+    elif mutation == "license":
+        ordinary["licenseConcluded"] = "LicenseRef-Deliberate-Test-Drift"
+    elif mutation == "download":
+        ordinary["downloadLocation"] = "https://example.invalid/drift"
+    elif mutation == "checksum":
+        ordinary["checksums"][0]["checksumValue"] = "0" * 64
+    elif mutation == "relationships":
+        sbom["relationships"].pop()
+    else:  # pragma: no cover
+        raise AssertionError(mutation)
+    sbom_path.write_text(
+        json.dumps(sbom, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    path, run_guid = _source_reference_file()
+    try:
+        source_reference = module.load_webkit_source_reference(
+            path,
+            run_guid=run_guid,
+            phase="offline_verify",
+            offline=True,
+            network_bomb=True,
+        )
+        with pytest.raises(ValueError, match="SPDX .* drift"):
+            module.verify_all(
+                tmp_path,
+                source_reference=source_reference,
+                offline=True,
+                network_bomb=True,
+            )
     finally:
         _remove_source_reference(path)
