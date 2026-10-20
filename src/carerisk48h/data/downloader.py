@@ -37,9 +37,59 @@ def sha256_file(path: str | Path, *, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def _copy_response(response: BinaryIO, output: IO[bytes], *, chunk_size: int = 1024 * 1024) -> None:
+def _copy_response(response: BinaryIO, output: IO[bytes], *, chunk_size: int = 1024 * 1024) -> int:
+    written = 0
     while chunk := response.read(chunk_size):
         output.write(chunk)
+        written += len(chunk)
+    return written
+
+
+@dataclass(frozen=True)
+class _ContentRange:
+    start: int
+    end: int
+    total: int | None
+
+
+def _header(response: object, name: str) -> str | None:
+    getter = getattr(response, "getheader", None)
+    if getter is not None:
+        return getter(name)
+    headers = getattr(response, "headers", None)
+    return headers.get(name) if headers is not None else None
+
+
+def _int_header(response: object, name: str) -> int | None:
+    raw = _header(response, name)
+    if raw is None:
+        return None
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return None
+
+
+def _parse_content_range(value: str | None) -> _ContentRange | None:
+    """Parse ``bytes start-end/total``; return None when absent or unusable."""
+    if not value:
+        return None
+    units, _, spec = value.strip().partition(" ")
+    if units.lower() != "bytes":
+        return None
+    span, _, total_text = spec.strip().partition("/")
+    start_text, separator, end_text = span.partition("-")
+    if not separator:
+        return None
+    try:
+        start = int(start_text)
+        end = int(end_text)
+        total = None if total_text.strip() == "*" else int(total_text)
+    except ValueError:
+        return None
+    if start < 0 or end < start or (total is not None and end >= total):
+        return None
+    return _ContentRange(start, end, total)
 
 
 def download_file(
@@ -70,15 +120,51 @@ def download_file(
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             status = getattr(response, "status", response.getcode())
-            append = resume_at > 0 and status == 206
+            advertised = _int_header(response, "Content-Length")
+            expected_body: int | None
+            expected_size: int | None
+            if status == 206:
+                # Validate the served range before any byte touches the partial file,
+                # so a wrong range can never poison a resumable prefix.
+                served = _parse_content_range(_header(response, "Content-Range"))
+                if served is None:
+                    raise RuntimeError(f"resumed response has an unusable Content-Range: {url}")
+                if served.total is None:
+                    raise RuntimeError(
+                        f"resumed response has an unknown Content-Range total, so completion "
+                        f"cannot be established: {url}"
+                    )
+                if served.start != resume_at:
+                    raise RuntimeError(
+                        f"resumed response Content-Range starts at {served.start}, "
+                        f"expected {resume_at}: {url}"
+                    )
+                expected_body = served.end - served.start + 1
+                if advertised is not None and advertised != expected_body:
+                    raise RuntimeError(
+                        f"resumed response Content-Length disagrees with Content-Range: {url}"
+                    )
+                append = resume_at > 0
+                expected_size = served.total
+            else:
+                append = False
+                expected_body = advertised
+                expected_size = advertised
             mode = "ab" if append else "wb"
             with partial.open(mode) as output:
-                _copy_response(response, output)
+                written = _copy_response(response, output)
     except (urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError(f"download failed for {url}: {exc}") from exc
 
     if not partial.exists() or partial.stat().st_size == 0:
         raise RuntimeError(f"download produced an empty file: {url}")
+    if expected_body is not None and written != expected_body:
+        raise RuntimeError(
+            f"download delivered {written} of {expected_body} advertised bytes: {url}"
+        )
+    size = partial.stat().st_size
+    if expected_size is not None and size != expected_size:
+        raise RuntimeError(f"download is incomplete: {size} of {expected_size} bytes: {url}")
     os.replace(partial, target_path)
     return DownloadRecord(
         target_path.name,
